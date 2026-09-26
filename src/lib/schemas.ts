@@ -666,8 +666,17 @@ export function migrateStoredSettings(
   };
 }
 
+// `enableLocalPro` unlocks the Pro feature gates without a Dyad cloud
+// credential. It is deliberately kept separate from hasDyadProKey: the model
+// client keys its engine override off hasDyadProKey (get_model_client.ts), so
+// leaving that false is what keeps inference on the user's own providers
+// instead of Dyad's hosted engine.
 export function isDyadProEnabled(settings: UserSettings): boolean {
-  return settings.enableDyadPro === true && hasDyadProKey(settings);
+  return (
+    settings.enableDyadPro === true &&
+    (hasDyadProKey(settings) ||
+      (settings as { enableLocalPro?: boolean }).enableLocalPro === true)
+  );
 }
 
 export function hasDyadProKey(settings: UserSettings): boolean {

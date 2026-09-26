@@ -392,28 +392,9 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
       contextWindow: 128_000,
       temperature: 0,
     },
-    {
-      name: "free-pro",
-      displayName: "Free (Daily)",
-      description:
-        "5 free messages per day for Dyad Pro users (note: your data may be used for training models)",
-      tag: "Free",
-      tagColor: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-      maxOutputTokens: 32_000,
-      contextWindow: 128_000,
-      temperature: 0,
-      dollarSigns: 0,
-    },
-    {
-      name: "value",
-      displayName: "Super Value",
-      description: "Uses the most cost-effective models available",
-      maxOutputTokens: 32_000,
-      contextWindow: 256_000,
-      temperature: 1,
-      tag: "Budget",
-      tagColor: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-    },
+    // "free-pro" and "value" are engine-routed pseudo-models that need a real
+    // Dyad Pro credential, so they are omitted: every model offered here
+    // resolves to a concrete provider endpoint the user holds a key for.
   ],
   azure: [
     {

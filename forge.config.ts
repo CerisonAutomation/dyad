@@ -195,24 +195,28 @@ const config: ForgeConfig = {
     ],
     icon: "./assets/icon/logo",
 
-    osxSign: isEndToEndTestBuild
-      ? undefined
-      : ({
-          identity: process.env.APPLE_TEAM_ID,
-          // Surface the actual signing error instead of silently continuing
-          // (@electron/packager defaults continueOnError to true, which masks failures)
-          continueOnError: false,
-          // Skip provisioning profile search (not needed for Developer ID distribution,
-          // and the cwd scan crashes on broken symlinks like CLAUDE.md)
-          preEmbedProvisioningProfile: false,
-        } as Record<string, unknown>),
-    osxNotarize: isEndToEndTestBuild
-      ? undefined
-      : {
-          appleId: process.env.APPLE_ID!,
-          appleIdPassword: process.env.APPLE_PASSWORD!,
-          teamId: process.env.APPLE_TEAM_ID!,
-        },
+    // Local builds have no Developer ID identity; skip signing rather than
+    // failing the package step. Unsigned bundles still run locally.
+    osxSign:
+      isEndToEndTestBuild || !process.env.APPLE_TEAM_ID
+        ? false
+        : ({
+            identity: process.env.APPLE_TEAM_ID,
+            // Surface the actual signing error instead of silently continuing
+            // (@electron/packager defaults continueOnError to true, which masks failures)
+            continueOnError: false,
+            // Skip provisioning profile search (not needed for Developer ID distribution,
+            // and the cwd scan crashes on broken symlinks like CLAUDE.md)
+            preEmbedProvisioningProfile: false,
+          } as Record<string, unknown>),
+    osxNotarize:
+      isEndToEndTestBuild || !process.env.APPLE_TEAM_ID
+        ? false
+        : {
+            appleId: process.env.APPLE_ID!,
+            appleIdPassword: process.env.APPLE_PASSWORD!,
+            teamId: process.env.APPLE_TEAM_ID!,
+          },
     asar: {
       // Native modules and node-pty helper binaries must be loadable from disk.
       unpackDir:
