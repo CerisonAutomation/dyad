@@ -1,5 +1,6 @@
 import { getLanguageModelProviders } from "../shared/language_model_helpers";
 import {
+  hasDyadProKey,
   isDyadProEnabled,
   type ModelSelection,
   type UserSettings,
@@ -35,9 +36,14 @@ export async function resolveSubscriptionModel(
   if (model.provider === "claude-code")
     return { ...identity, connection: "subscription" };
   const proEnabled = isDyadProEnabled(settings);
-  const fallback = proEnabled
-    ? { ...identity, connection: "pro" as const }
-    : identity;
+  // Billing a turn as Pro credits needs a real Dyad cloud credential. Pro
+  // features can be enabled without one, so gate the connection on the key and
+  // leave it unset otherwise — the turn then falls through to the user's own
+  // provider via the default model.
+  const fallback =
+    proEnabled && hasDyadProKey(settings)
+      ? { ...identity, connection: "pro" as const }
+      : identity;
   const subscriptionAuto = !proEnabled && isChatGPTAutoSelection(model);
   if (!proEnabled && model.provider !== "openai" && !subscriptionAuto)
     return identity;

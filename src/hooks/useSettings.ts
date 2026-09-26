@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ipc } from "@/ipc/types";
-import { type UserSettings, hasDyadProKey } from "@/lib/schemas";
+import {
+  type UserSettings,
+  isDyadProEnabled,
+} from "@/lib/schemas";
 import {
   getInitialLoadTelemetryProperties,
   getSettingsPersonTelemetryProperties,
@@ -189,6 +192,6 @@ function processSettingsForTelemetry(settings: UserSettings) {
   }
   window.localStorage.setItem(
     DYAD_PRO_STATUS_KEY,
-    hasDyadProKey(settings) ? "true" : "false",
+    isDyadProEnabled(settings) ? "true" : "false",
   );
 }
