@@ -99,13 +99,7 @@ export function spawnWithBadFdRetry(
     for (const event of ["close", "exit"] as const) {
       real.on(event, (...rest: unknown[]) => {
         if (!attemptErrored) settled = true;
-        // Defer the re-emit by a macrotask. A child that exits immediately
-        // (e.g. /bin/true) would otherwise close the proxy before the caller
-        // had a chance to attach a listener, and the event would be lost —
-        // Node's own ChildProcess buffers this, the proxy must too.
-        setImmediate(() => {
-          (proxy.emit as (...a: unknown[]) => void)(event, ...rest);
-        });
+        (proxy.emit as (...a: unknown[]) => void)(event, ...rest);
       });
     }
     real.on("error", () => {

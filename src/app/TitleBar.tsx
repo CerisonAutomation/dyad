@@ -82,7 +82,7 @@ export const TitleBar = () => {
     }
   };
 
-  const isDyadPro = !!settings?.providerSettings?.auto?.apiKey?.isSet;
+  const isDyadPro = !!settings?.providerSettings?.auto?.apiKey?.value;
   const isAgent2Enabled = Boolean(settings?.enableDyadPro);
 
   return (

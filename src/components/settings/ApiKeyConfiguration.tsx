@@ -111,10 +111,12 @@ export function ApiKeyConfiguration({
   }
 
   const envApiKey = envVarName ? envVars[envVarName] : undefined;
-  // The value is redacted over IPC; only "is a key configured" is available.
-  // Redacted over IPC: presence is all the UI can know.
-  const hasUserKey = Boolean(settings?.providerSettings?.[provider]?.apiKey?.isSet);
-  const isValidUserKey = hasUserKey;
+  const userApiKey = settings?.providerSettings?.[provider]?.apiKey?.value;
+
+  const isValidUserKey =
+    !!userApiKey &&
+    !userApiKey.startsWith("Invalid Key") &&
+    userApiKey !== "Not Set";
   const hasEnvKey = !!envApiKey;
   const isMutatingKey = isSaving || isTesting;
 
@@ -165,7 +167,7 @@ export function ApiKeyConfiguration({
               <AlertDescription>
                 <div className="flex items-center justify-between gap-2 w-full">
                   <p className="font-mono text-sm break-all mr-2">
-                    {hasUserKey ? maskUserApiKey("") : ""}
+                    {showUserApiKey ? userApiKey : maskUserApiKey(userApiKey)}
                   </p>
                   <Button
                     type="button"
@@ -272,8 +274,8 @@ export function ApiKeyConfiguration({
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => onTestKey(apiKeyInput || "")}
-                  disabled={isMutatingKey || (!apiKeyInput && !hasUserKey)}
+                  onClick={() => onTestKey(apiKeyInput || userApiKey || "")}
+                  disabled={isMutatingKey || (!apiKeyInput && !userApiKey)}
                 >
                   {isTesting ? "Testing..." : "Test Key"}
                 </Button>

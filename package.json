@@ -63,7 +63,7 @@
     "benchmark:code-explorer:smoke": "node benchmarks/code-explorer/suite.mjs --mode smoke",
     "benchmark:code-explorer:full": "node benchmarks/code-explorer/suite.mjs --mode full",
     "build:fast": "cross-env DYAD_REACT_COMPILER=false vite build --config vite.renderer.config.mts",
-    "package:fast": "npm run rebuild:keychain-reader && npm run clean && cross-env DYAD_REACT_COMPILER=false electron-forge package"
+    "package:fast": "npm run rebuild:keychain-reader && cross-env DYAD_REACT_COMPILER=false electron-forge package"
   },
   "dependencies": {
     "@ai-sdk/amazon-bedrock": "^4.0.46",
