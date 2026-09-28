@@ -727,7 +727,12 @@ export function migrateStoredSettings(
     activeSettings.enableAgent2 =
       legacy ?? (activeSettings as { enableLocalPro?: boolean }).enableLocalPro;
   }
-  delete activeSettings.enableDyadPro;
+  // Keep enableDyadPro populated as a derived alias rather than deleting it.
+  // 17 call sites still read it; leaving it undefined made them permanently
+  // falsy, which silently disabled smart-context, free-model access, and
+  // theme generation. It is no longer a writable setting — the only writer
+  // is enableAgent2.
+  activeSettings.enableDyadPro = activeSettings.enableAgent2;
   delete (activeSettings as { enableLocalPro?: boolean }).enableLocalPro;
   if (stored.agentToolConsents) {
     const agentToolConsents = { ...stored.agentToolConsents };

@@ -20,6 +20,8 @@ interface Session {
 }
 
 const sessions = new Map<number, Session>();
+/** In-flight launches, so two concurrent tool calls for one app share a page. */
+const launching = new Map<number, Promise<Session | null>>();
 const NAV_TIMEOUT_MS = 20_000;
 const ACTION_TIMEOUT_MS = 10_000;
 
@@ -64,11 +66,25 @@ async function getSession(appId: number): Promise<Session | null> {
   const existing = sessions.get(appId);
   if (existing) return existing;
 
+  const inFlight = launching.get(appId);
+  if (inFlight) return inFlight;
+
   const baseUrl = getRunningTestBaseUrl(appId);
   if (!baseUrl) {
     logger.debug("No running preview proxy for app", appId);
     return null;
   }
+
+  const promise = launchSession(appId, baseUrl);
+  launching.set(appId, promise);
+  try {
+    return await promise;
+  } finally {
+    launching.delete(appId);
+  }
+}
+
+async function launchSession(appId: number, baseUrl: string): Promise<Session | null> {
 
   try {
     const { page, close } = await launchPage();
