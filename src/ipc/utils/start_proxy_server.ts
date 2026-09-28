@@ -27,6 +27,29 @@ export async function startProxy(
       DyadErrorKind.Validation,
     );
   const { port, onStarted, onError, fixedHeaders, authBootstrapToken } = opts;
+
+  // A proxy pointed at its own port forwards to itself, so every request
+  // dead-ends and surfaces as 502 / "Parse Error: Header overflow". This
+  // happened when a stale dev-server command (`next dev -p 3000 ... ; true
+  // --port 32115`) caused port discovery to resolve the app to the proxy's
+  // own listening port. Fail loudly at construction instead.
+  const targetPort = (() => {
+    try {
+      const parsed = new URL(targetOrigin);
+      if (parsed.port) return Number(parsed.port);
+      return parsed.protocol === "https:" ? 443 : 80;
+    } catch {
+      return undefined;
+    }
+  })();
+  if (targetPort !== undefined && targetPort === port) {
+    throw new DyadError(
+      `startProxy: targetOrigin port ${targetPort} is the proxy's own ` +
+        "port. The proxy cannot forward to itself; the app's port was " +
+        "mis-detected.",
+      DyadErrorKind.Validation,
+    );
+  }
   const fallbackPortStart = getProxyFallbackPortStart();
   logger.info("Starting proxy on port", port);
 
