@@ -1,4 +1,5 @@
 import { isAgent2Enabled, type LargeLanguageModel } from "@/lib/schemas";
+import { isFreeModelName } from "@/lib/freeModel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -173,21 +174,6 @@ const providerBadge = (providerId: string) =>
  * the user picked: Kilo answers with the ROUTED model id, and without this the
  * label jumps to some unrelated free model, which looks like nothing happened.
  */
-const KILO_FREE_ROUTER = "kilo-auto/free";
-const isKiloFreeModel = (apiName: string) =>
-  apiName.endsWith(":free") || apiName.endsWith("/free");
-
-export const routeKiloFreeModel = (model: LargeLanguageModel) => {
-  if (model.provider !== "kilocode") return model;
-  if (!isKiloFreeModel(model.name) || model.name === KILO_FREE_ROUTER) {
-    return model;
-  }
-  return { ...model, name: KILO_FREE_ROUTER };
-};
-
-const isFreeOpenRouterModelName = (apiName: string) =>
-  apiName.endsWith(":free") || apiName.endsWith("/free");
-
 const formatModelCount = (count: number) =>
   `${count} model${count === 1 ? "" : "s"}`;
 
@@ -330,7 +316,7 @@ export function ModelPicker() {
     if (modelSearchTerm && !apiName.toLowerCase().includes(modelSearchTerm)) {
       return false;
     }
-    if (freeOnly && !isFreeOpenRouterModelName(apiName)) {
+    if (freeOnly && !isFreeModelName(apiName)) {
       return false;
     }
     return true;
@@ -372,7 +358,7 @@ export function ModelPicker() {
     >;
     for (const [providerId, models] of Object.entries(byProvider)) {
       for (const model of models ?? []) {
-        if (freeOnly && !isFreeOpenRouterModelName(model.apiName)) continue;
+        if (freeOnly && !isFreeModelName(model.apiName)) continue;
         if (
           modelSearchTerm &&
           !model.apiName.toLowerCase().includes(modelSearchTerm) &&
@@ -834,7 +820,7 @@ export function ModelPicker() {
   };
 
   const unlockTargetIsFreeModel = unlockTarget
-    ? isFreeOpenRouterModelName(unlockTarget.model.apiName)
+    ? isFreeModelName(unlockTarget.model.apiName)
     : false;
   const unlockTargetProviderName = unlockTarget
     ? getProviderDisplayName(unlockTarget.providerId)
@@ -890,7 +876,7 @@ export function ModelPicker() {
     const isAutoProviderRow = providerId === "auto";
     const isFreeProRow = isFreeProLanguageModel(providerId, model.apiName);
     const isFreeProviderRow =
-      providerId === "openrouter" && isFreeOpenRouterModelName(model.apiName);
+      providerId === "openrouter" && isFreeModelName(model.apiName);
     const isAutoOpenRouterFreeRow =
       isAutoProviderRow && model.apiName === "free";
     const shouldShowDataSharingDisclosure =
@@ -1520,13 +1506,12 @@ export function ModelPicker() {
               {searchResults.map((model) => (
                 <DropdownMenuItem
                   key={`search-${model.providerId}-${model.apiName}`}
-                  onSelect={() => {
-                    void onModelSelect({
-                      model: { name: model.apiName, provider: model.providerId },
-                      catalogModel: model.catalogModel,
-                    });
-                    setOpen(false);
-                  }}
+                  onSelect={() =>
+                    handleCloudModelSelect(
+                      model.providerId,
+                      model.catalogModel,
+                    )
+                  }
                   className="flex items-center justify-between gap-2 cursor-pointer"
                 >
                   <span className="truncate">{model.displayName ?? model.apiName}</span>
@@ -1545,7 +1530,7 @@ export function ModelPicker() {
                         default
                       </span>
                     )}
-                    {isFreeOpenRouterModelName(model.apiName) && (
+                    {isFreeModelName(model.apiName) && (
                       <span className="text-[10px] uppercase font-medium text-emerald-600 dark:text-emerald-400">
                         free
                       </span>
