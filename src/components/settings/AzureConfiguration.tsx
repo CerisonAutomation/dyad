@@ -33,7 +33,8 @@ export function AzureConfiguration({
   const existing =
     (settings?.providerSettings?.azure as AzureProviderSetting | undefined) ??
     {};
-  const existingApiKey = existing.apiKey?.value ?? "";
+  // Redacted over IPC; presence is what the form needs.
+  const existingApiKey = existing.apiKey?.isSet ? "configured" : "";
   const existingResourceName = existing.resourceName ?? "";
 
   const [apiKey, setApiKey] = useState(existingApiKey);

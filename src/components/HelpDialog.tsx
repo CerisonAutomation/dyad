@@ -259,7 +259,7 @@ export function HelpDialog() {
     : null;
   const { userBudget } = useUserBudgetInfo();
   const posthog = usePostHog();
-  const isDyadProUser = settings?.providerSettings?.["auto"]?.apiKey?.value;
+  const isDyadProUser = settings?.providerSettings?.["auto"]?.apiKey?.isSet;
 
   // ---------------------------------------------------------------------------
   // Navigation and lifecycle
