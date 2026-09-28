@@ -91,12 +91,20 @@ export function spawnWithBadFdRetry(
         (source as NodeJS.ReadableStream).pipe(target);
       }
     }
+    // A failed spawn emits `error` THEN `close`. Marking the attempt settled
+    // on `close` therefore cancelled the very retry that `error` had just
+    // scheduled, so the retry never ran and callers saw a silent empty
+    // result. Only a close WITHOUT a preceding error ends this attempt.
+    let attemptErrored = false;
     for (const event of ["close", "exit"] as const) {
       real.on(event, (...rest: unknown[]) => {
-        settled = true;
+        if (!attemptErrored) settled = true;
         (proxy.emit as (...a: unknown[]) => void)(event, ...rest);
       });
     }
+    real.on("error", () => {
+      attemptErrored = true;
+    });
   };
 
   const launch = () => {
