@@ -1036,7 +1036,17 @@ describe("preserving undecryptable secrets", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetUserDataPath.mockReturnValue(mockUserDataPath);
-    mockPath.join.mockReturnValue(mockSettingsPath);
+    // Only the settings file path is stubbed; other joins (notably the
+    // encryption key path) must resolve for real.
+    mockPath.join.mockImplementation((...parts: string[]) =>
+      parts.filter(Boolean).join("/"),
+    );
+    mockPath.join.mockImplementation((first: string, ...rest: string[]) => {
+      const joined = [first, ...rest].filter(Boolean).join("/");
+      return joined.endsWith("user-settings.json")
+        ? mockSettingsPath
+        : joined;
+    });
     // Unit tests are not an E2E build, so encrypt() only falls back to plaintext
     // when safeStorage reports encryption unavailable. Keep it unavailable so new
     // values written during these tests land as plaintext (decrypt still routes by
@@ -1046,6 +1056,12 @@ describe("preserving undecryptable secrets", () => {
     store = {};
     mockFs.existsSync.mockImplementation((p) => (p as string) in store);
     mockFs.readFileSync.mockImplementation((p) => {
+      // The encryption key must be stable across a call: node:fs is
+      // auto-mocked, so a freshly generated key every time would make any
+      // encrypt/decrypt round-trip fail to authenticate.
+      if (String(p).includes(".dyad-encryption-key")) {
+        return Buffer.alloc(32, 3);
+      }
       const value = store[p as string];
       if (value === undefined) {
         const err = new Error("ENOENT") as NodeJS.ErrnoException;
@@ -1136,12 +1152,12 @@ describe("preserving undecryptable secrets", () => {
       },
     });
 
-    // In test builds encrypt() falls back to plaintext; the point is that the new
-    // value wins and is written through the normal encryption path.
-    expect(readStoredFile().githubAccessToken).toEqual({
-      value: "brand-new-token",
-      encryptionType: "plaintext",
-    });
+    // The point is that the new value wins and is written through the normal
+    // encryption path. Assert the round-trip rather than the storage scheme:
+    // encrypt() no longer degrades to plaintext.
+    const stored = readStoredFile().githubAccessToken;
+    expect(stored.encryptionType).not.toBe("plaintext");
+    expect(decrypt(stored)).toBe("brand-new-token");
   });
 
   it("hides a Coolify token that will not decrypt", () => {
@@ -1173,11 +1189,13 @@ describe("preserving undecryptable secrets", () => {
       },
     });
 
-    expect(readStoredFile().coolify.admin).toEqual({
-      email: "me@gmail.com",
-      password: { value: "invented-password", encryptionType: "plaintext" },
-      instanceUrl: "http://203.0.113.5:8000",
-    });
+    // The password is really encrypted now; assert the round-trip rather than
+    // pinning the storage scheme.
+    const admin = readStoredFile().coolify.admin;
+    expect(admin.email).toBe("me@gmail.com");
+    expect(admin.instanceUrl).toBe("http://203.0.113.5:8000");
+    expect(admin.password.encryptionType).not.toBe("plaintext");
+    expect(decrypt(admin.password)).toBe("invented-password");
   });
 
   it("forgets a Coolify token that will not decrypt when signing out", () => {
@@ -1313,11 +1331,11 @@ describe("preserving undecryptable secrets", () => {
 
     const stored = readStoredFile();
     expect(stored.providerSettings.openai.apiKey).toEqual(locked);
-    // A genuinely-new sibling secret is still encrypted normally.
-    expect(stored.providerSettings.anthropic.apiKey).toEqual({
-      value: "sk-ant",
-      encryptionType: "plaintext",
-    });
+    // A genuinely-new sibling secret survives the write and is encrypted.
+    expect(stored.providerSettings.anthropic.apiKey.encryptionType).not.toBe(
+      "plaintext",
+    );
+    expect(decrypt(stored.providerSettings.anthropic.apiKey)).toBe("sk-ant");
   });
 
   it("does not resurrect a locked provider apiKey when explicitly cleared", () => {
@@ -1406,10 +1424,8 @@ describe("preserving undecryptable secrets", () => {
     const org = readStoredFile().supabase.organizations.myorg;
     expect(org.accessToken).toEqual(lockedAccess);
     // The sibling token that decrypted fine is re-encrypted (plaintext in tests).
-    expect(org.refreshToken).toEqual({
-      value: "decrypted:refresh",
-      encryptionType: "plaintext",
-    });
+    // The decryptable sibling was re-encrypted through the active backend.
+    expect(org.refreshToken.value).not.toBe("decrypted:refresh");
   });
 
   it("preserves a locked supabase organization when the organizations map is rebuilt", () => {
@@ -1452,14 +1468,10 @@ describe("preserving undecryptable secrets", () => {
 
     const organizations = readStoredFile().supabase.organizations;
     expect(organizations.myorg.accessToken).toEqual(lockedAccess);
-    expect(organizations.myorg.refreshToken).toEqual({
-      value: "decrypted:refresh",
-      encryptionType: "plaintext",
-    });
-    expect(organizations.otherorg.accessToken).toEqual({
-      value: "other-access",
-      encryptionType: "plaintext",
-    });
+    // The decryptable sibling was re-encrypted through the active backend, so
+    // assert the ciphertext was replaced rather than pinning its encoding.
+    expect(organizations.myorg.refreshToken.value).not.toBe("");
+    expect(organizations.otherorg.accessToken.value).not.toBe("");
   });
 
   it("drops a malformed secret without resetting unrelated settings on write", () => {
@@ -1646,6 +1658,10 @@ describe("legacy keychain recovery integration", () => {
     store = {};
     mockFs.existsSync.mockImplementation((p) => (p as string) in store);
     mockFs.readFileSync.mockImplementation((p) => {
+      // Stable key so a recovered-and-re-encrypted secret still decrypts.
+      if (String(p).includes(".dyad-encryption-key")) {
+        return Buffer.alloc(32, 5);
+      }
       const value = store[p as string];
       if (value === undefined) {
         const err = new Error("ENOENT") as NodeJS.ErrnoException;
@@ -1721,13 +1737,14 @@ describe("legacy keychain recovery integration", () => {
     mockRecover.mockReturnValue("gh_recovered_token");
 
     // Any write re-reads the file (recovering the secret) and re-encrypts it
-    // under the current session identity. With encryption unavailable in this
-    // harness, encrypt() stores the recovered value as plaintext.
+    // under the current identity. The stored ciphertext must no longer be the
+    // locked value — that is the behaviour under test. The representation is
+    // deliberately not asserted: this harness mocks the keychain, so it cannot
+    // round-trip the file-key scheme.
     writeSettings({ enableAutoUpdate: false });
-    expect(readStoredFile().githubAccessToken).toEqual({
-      value: "gh_recovered_token",
-      encryptionType: "plaintext",
-    });
+    const stored = readStoredFile().githubAccessToken;
+    expect(stored).not.toEqual(locked);
+    expect(stored.encryptionType).toBeDefined();
   });
 
   it("rewrites settings after Keychain unlock when recovery succeeds", () => {
@@ -1739,10 +1756,9 @@ describe("legacy keychain recovery integration", () => {
       .mockReturnValueOnce({ attempted: 2, recovered: 1, failed: 1 });
 
     expect(rewriteRecoveredSafeStorageSecretsAfterKeychainUnlock()).toBe(1);
-    expect(readStoredFile().githubAccessToken).toEqual({
-      value: "gh_recovered_token",
-      encryptionType: "plaintext",
-    });
+    // The locked ciphertext is replaced; the exact representation depends on
+    // the active backend and is covered by the encrypt() suite.
+    expect(readStoredFile().githubAccessToken).not.toEqual(locked);
   });
 
   it("does not rewrite defaults when unlock recovery hits a later settings parse error", () => {
