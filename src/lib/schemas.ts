@@ -5,10 +5,18 @@ import {
 } from "./providerUtils";
 
 export const SecretSchema = z.object({
+  /**
+   * The secret itself. Populated in the MAIN process only. Values that cross
+   * the IPC boundary are redacted by `redactSecretsForRenderer`, which leaves
+   * `value` empty and sets `isSet` instead — the renderer only ever needs to
+   * know whether a key exists, never what it is.
+   */
   value: z.string(),
   encryptionType: z
     .enum(["electron-safe-storage", "dyad-file-key", "plaintext"])
     .optional(),
+  /** True when a secret is configured, even though `value` is redacted. */
+  isSet: z.boolean().optional(),
 });
 export type Secret = z.infer<typeof SecretSchema>;
 
