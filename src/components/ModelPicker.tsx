@@ -1,5 +1,6 @@
 import { isAgent2Enabled, type LargeLanguageModel } from "@/lib/schemas";
 import { isFreeModelName } from "@/lib/freeModel";
+import { showError } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -224,7 +225,20 @@ export function ModelPicker() {
     rememberEffort = false,
     recentModels,
   }: ModelSelectParams & { recentModels: LargeLanguageModel[] }) => {
-    if (!settings || (isChatRoute && chatId != null && chatLoading)) return;
+    // This used to return silently. The menu is populated from the model
+    // catalog, which loads independently of settings, so it can be fully
+    // clickable while `settings` is still undefined — and every pick was then
+    // dropped with no error and no change. Make the reason visible instead.
+    if (!settings || (isChatRoute && chatId != null && chatLoading)) {
+      const reason = !settings
+        ? "user settings are still loading"
+        : "this chat is still loading";
+      posthog.capture("model-picker:select-dropped", { reason });
+      showError(
+        `Could not apply the model: ${reason}. Try again in a moment.`,
+      );
+      return;
+    }
     const model = requestedModel;
     const modelSelection = createModelSelection({
       model,
