@@ -142,23 +142,19 @@ export function ProviderSettingsPage({ provider }: ProviderSettingsPageProps) {
   const envVarName = isDyad ? undefined : providerData?.envVarName;
 
   // Use provider ID (which is the 'provider' prop)
-  // The value is redacted over IPC; only "is a key configured" is available.
-  const hasUserKey = Boolean(
-    settings?.providerSettings?.[provider]?.apiKey?.isSet,
-  );
+  const userApiKey = settings?.providerSettings?.[provider]?.apiKey?.value;
 
   // --- Configuration Logic --- Updated Priority ---
-  // Redacted over IPC: presence is all the UI can know, so there is no
-  // sentinel string to compare against any more.
-  const isValidUserKey = hasUserKey;
+  const isValidUserKey =
+    !!userApiKey &&
+    !userApiKey.startsWith("Invalid Key") &&
+    userApiKey !== "Not Set";
   const hasEnvKey = !!(envVarName && envVars[envVarName]);
 
   const azureSettings = settings?.providerSettings?.azure as
     | AzureProviderSetting
     | undefined;
-  // Redacted over IPC; presence is what the form needs.
-  const azureHasApiKey = Boolean(azureSettings?.apiKey?.isSet);
-  const azureApiKeyFromSettings = azureHasApiKey ? "configured" : "";
+  const azureApiKeyFromSettings = (azureSettings?.apiKey?.value ?? "").trim();
   const azureResourceNameFromSettings = (
     azureSettings?.resourceName ?? ""
   ).trim();
