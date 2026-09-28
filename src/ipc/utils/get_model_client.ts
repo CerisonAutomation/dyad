@@ -259,36 +259,6 @@ export async function getModelClient(
     );
   }
 
-  // Direct providers retain their transport while Engine bills reported usage.
-  if (
-    isAgent2EnabledForRequest &&
-    (isLocalProvider || providerConfig.type === "custom")
-  ) {
-    const regular = getRegularModelClient(
-      model,
-      settings,
-      providerConfig,
-      true,
-    );
-    return {
-      ...regular,
-      modelClient: {
-        ...regular.modelClient,
-        model: wrapExternalModelBilling(
-          regular.modelClient.model,
-          {
-            connection: isLocalProvider ? "local" : "byok",
-            modelProvider: model.provider,
-          },
-          dyadApiKey!,
-          context?.externalModelAdmission,
-        ),
-      },
-      runtimeModel: model,
-      isEngineEnabled: false,
-    };
-  }
-
   // Agent2 has no hosted engine: every turn uses the provider and model the
   // user selected. The former Pro-override branch routed inference through
   // Dyad's engine and is intentionally not reachable.
