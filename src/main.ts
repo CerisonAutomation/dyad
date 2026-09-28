@@ -43,6 +43,7 @@ import {
 import { handleSupabaseOAuthReturn } from "./supabase_admin/supabase_return_handler";
 import { handleDyadProReturn } from "./main/pro";
 import { IS_TEST_BUILD } from "./ipc/utils/test_utils";
+import { closeAllPreviewBrowserSessions } from "./ipc/utils/preview_browser_driver";
 import { BackupManager } from "./backup_manager";
 import { db, getDatabasePath, initializeDatabase } from "./db";
 import { apps } from "./db/schema";
@@ -1695,6 +1696,9 @@ app.on("before-quit", (event) => {
 // IMPORTANT: This handler must be synchronous because Electron's EventEmitter
 // does not await async callbacks — the returned Promise would be silently ignored.
 app.on("will-quit", () => {
+  // Headless Chromium instances are held per app by the preview browser
+  // driver; without this they outlive the app and leak ~150-300MB each.
+  void closeAllPreviewBrowserSessions();
   logLifecycle("app:will-quit");
   logger.info("App is quitting");
 

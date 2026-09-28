@@ -86,7 +86,14 @@ function expandIpv6(host: string): string | undefined {
  *  - IPv4-mapped IPv6 (::ffff:0:0/96) carrying any of the above
  */
 export function isPrivateIp(hostname: string): boolean {
-  const host = hostname.toLowerCase().trim();
+  // `new URL("http://[::1]/").hostname` yields "[::1]" WITH brackets. The IPv6
+  // parser rejects them, so without stripping them every bracketed literal —
+  // including loopback ::1 and IPv4-mapped ::ffff:127.0.0.1 — was treated as a
+  // public address and allowed through.
+  const host = hostname
+    .toLowerCase()
+    .trim()
+    .replace(/^\[([\da-f:.]+)\]$/, "$1");
 
   // Well-known names
   if (host === "localhost" || host === "0.0.0.0" || host === "") return true;
@@ -101,6 +108,11 @@ export function isPrivateIp(hostname: string): boolean {
     if (a === 169 && b === 254) return true; // 169.254.0.0/16
     if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
     if (a === 192 && b === 168) return true; // 192.168.0.0/16
+    if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 CGNAT (RFC 6598)
+    if (a === 198 && (b === 18 || b === 19)) return true; // 198.18.0.0/15 benchmarking
+    if (a === 192 && b === 0) return true; // 192.0.0.0/24 IETF protocol assignments
+    if (a >= 240) return true; // 240.0.0.0/4 reserved, incl. 255.255.255.255
+    if (a === 224) return true; // 224.0.0.0/4 multicast
     return false;
   }
 
@@ -114,11 +126,11 @@ export function isPrivateIp(hostname: string): boolean {
   // fc00::/7 — IPv6 unique-local
   if (hex.startsWith("fc") || hex.startsWith("fd")) return true;
 
-  // fe80::/10 — link-local
-  if (hex.startsWith("fe80")) return true;
-
-  // fec0::/10 — deprecated site-local, block for SSRF defense-in-depth
-  if (hex.startsWith("fec0")) return true;
+  // fe80::/10 and fec0::/10 do not align to a 16-bit boundary, so a
+  // startsWith("fe80") test only covers fe80::/32. Mask the first 16 bits.
+  const firstGroup = parseInt(hex.slice(0, 4), 16);
+  if ((firstGroup & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
+  if ((firstGroup & 0xffc0) === 0xfec0) return true; // fec0::/10 site-local
 
   // Check embedded IPv4-mapped / IPv4-compatible addresses (::ffff:x.x.x.x or ::x.x.x.x)
   // The last 8 hex chars encode two 16-bit groups = 4 IPv4 octets.

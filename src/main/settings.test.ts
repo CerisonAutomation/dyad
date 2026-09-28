@@ -949,20 +949,40 @@ describe("writeSettings", () => {
 });
 
 describe("encrypt", () => {
+  // node:fs is auto-mocked for this file, so the file-backed key would be
+  // regenerated on every call and a round-trip could never authenticate.
+  // Pin it to a fixed 32-byte value for these tests.
+  beforeEach(() => {
+    // The outer suite mocks path.join to always return the settings path, which
+    // would make the key file indistinguishable from it. Let path.join behave
+    // normally here so the key lands on its own path.
+    mockPath.join.mockImplementation((...parts: string[]) =>
+      parts.filter(Boolean).join("/"),
+    );
+    mockFs.readFileSync.mockImplementation((target: unknown) => {
+      if (String(target).includes(".dyad-encryption-key")) {
+        return Buffer.alloc(32, 7);
+      }
+      return undefined;
+    });
+  });
+
+  // These assert behaviour, not the storage scheme: the secret must round-trip
+  // and be trimmed, whichever backend encrypts it. The scheme itself is
+  // asserted separately below.
   it("should trim whitespace before encrypting", () => {
     const result = encrypt("  my-api-key\n");
-    // In test builds, encryption falls back to plaintext
-    expect(result.value).toBe("my-api-key");
+    expect(decrypt(result)).toBe("my-api-key");
   });
 
   it("should trim trailing newlines", () => {
     const result = encrypt("sk-abc123\n\n");
-    expect(result.value).toBe("sk-abc123");
+    expect(decrypt(result)).toBe("sk-abc123");
   });
 
   it("should not alter values without whitespace", () => {
     const result = encrypt("sk-abc123");
-    expect(result.value).toBe("sk-abc123");
+    expect(decrypt(result)).toBe("sk-abc123");
   });
 });
 

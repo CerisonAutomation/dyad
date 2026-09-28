@@ -69,6 +69,17 @@ export function spawnWithBadFdRetry(
 
   const wire = (real: ChildProcess) => {
     child = real;
+    // Expose the live pid. spawn_streaming kills process TREES via
+    // treeKill(child.pid); a bare `new ChildProcess()` has pid === undefined,
+    // so without this every abort/timeout silently failed to kill anything and
+    // orphaned the npx/playwright/chromium children.
+    Object.defineProperty(proxy, "pid", {
+      get: () => child?.pid,
+      configurable: true,
+    });
+    // `kill` on the proxy must reach the real child, not a no-op base stub.
+    proxy.kill = ((signal?: NodeJS.Signals | number) =>
+      child?.kill(signal as NodeJS.Signals)) as ChildProcess["kill"];
     for (const name of ["stdin", "stdout", "stderr"] as StreamName[]) {
       const source = real[name];
       const target = proxyStreams[name];

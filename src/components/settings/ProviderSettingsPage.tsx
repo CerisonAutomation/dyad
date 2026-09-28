@@ -346,11 +346,13 @@ export function ProviderSettingsPage({ provider }: ProviderSettingsPageProps) {
   const handleToggleDyadPro = async (enabled: boolean) => {
     setIsSaving(true);
     try {
+      // enableDyadPro is deleted by migrateStoredSettings on every read, so
+      // writing it here was a no-op. enableAgent2 is the surviving key.
       await updateSettings({
-        enableDyadPro: enabled,
+        enableAgent2: enabled,
       });
     } catch (error: any) {
-      showError(`Error toggling Dyad Pro: ${error}`);
+      showError(`Error toggling Agent2: ${error}`);
     } finally {
       setIsSaving(false);
     }
@@ -573,8 +575,8 @@ export function ProviderSettingsPage({ provider }: ProviderSettingsPageProps) {
                 </p>
               </div>
               <Switch
-                aria-label="Enable Dyad Pro"
-                checked={settings?.enableDyadPro}
+                aria-label="Enable Agent2"
+                checked={settings?.enableAgent2}
                 onCheckedChange={handleToggleDyadPro}
                 disabled={isSaving}
               />

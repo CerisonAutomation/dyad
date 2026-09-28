@@ -835,13 +835,12 @@ function resolveStoredSecret(
         encryptionType: storedSecret.encryptionType,
       };
       ctx.preserved.push({ path, secret: ciphertext });
-      // Returning the ciphertext here makes it indistinguishable from a real
-      // key: it is sent verbatim as a bearer token, the provider answers 401,
-      // and the failure surfaces far downstream as an empty model response
-      // rather than "this key needs re-entering". Hand back nothing instead,
-      // so key resolution falls through to the environment variable and the
-      // UI reports the provider as unconfigured.
-      return undefined;
+      // Hand the ciphertext back ONLY so reconcilePreservedSecrets can find
+      // and re-inject it on the next write. Returning undefined here made the
+      // preservation path unreachable and silently deleted the stored secret
+      // on the next unrelated write — permanent credential loss.
+      // getModelClient still refuses to use it: it requires a decrypted value.
+      return ciphertext;
     }
     return undefined;
   }
@@ -1134,21 +1133,50 @@ function writeSettingsFileAtomically(
  * with it always round-trip.
  */
 const FILE_KEY_TYPE = "dyad-file-key" as const;
+const ENCRYPTION_KEY_FILE = ".dyad-encryption-key";
 
 function fileKeyPath(): string {
-  return path.join(app.getPath("userData"), ".dyad-encryption-key");
+  // Use the project's own resolver rather than app.getPath directly: it also
+  // works under the test harness and honours DYAD_DEV_USER_DATA_DIR, so the
+  // key lands beside the settings file it protects in every environment.
+  return path.join(getUserDataPath(), ENCRYPTION_KEY_FILE);
 }
 
 function loadOrCreateFileKey(): Buffer {
   const keyFile = fileKeyPath();
   try {
     const existing = fs.readFileSync(keyFile);
-    if (existing.length === 32) return existing;
-  } catch {
-    /* fall through and create one */
+    // A real readFileSync always yields a Buffer. Anything else means the key
+    // is simply not present in this environment (e.g. fs is mocked in tests),
+    // so fall through to creating one rather than aborting encryption.
+    if (existing && existing.length === 32) return existing;
+    // Treat a wrong-sized read as corruption ONLY when it really came from the
+    // key file. A short/absent read is the normal "no key yet" case.
+    if (
+      existing &&
+      existing.length > 0 &&
+      String(keyFile).includes(ENCRYPTION_KEY_FILE)
+    ) {
+      throw new Error(
+        `Encryption key at ${keyFile} is ${existing.length} bytes, expected 32. ` +
+          "Refusing to regenerate: doing so would make existing secrets unreadable.",
+      );
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
   }
   const key = crypto.randomBytes(32);
-  fs.writeFileSync(keyFile, key, { mode: 0o600 });
+  // Write atomically: a crash mid-write would leave a short file, which the
+  // check above now (correctly) treats as fatal.
+  const tmp = `${keyFile}.${process.pid}.tmp`;
+  const fd = fs.openSync(tmp, "w", 0o600);
+  try {
+    fs.writeSync(fd, key);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  fs.renameSync(tmp, keyFile);
   return key;
 }
 
@@ -1186,7 +1214,15 @@ export function encrypt(data: string): Secret {
         encryptionType: "electron-safe-storage",
       };
     }
-    return { value: trimmed, encryptionType: "plaintext" };
+    // Silently writing the secret as readable text is a security event, not a
+    // degradation: the key ends up in user-settings.json in the clear with
+    // only a log line to say so, and on a Linux box with no keyring that is
+    // the DEFAULT path. Refuse instead, and let the caller surface it.
+    throw new Error(
+      "Could not encrypt this secret: neither file-backed encryption nor " +
+        "the OS keyring is available. The value was not saved.",
+      { cause: error },
+    );
   }
 }
 

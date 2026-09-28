@@ -1,3 +1,4 @@
+import { spawnWithBadFdRetry } from "./spawn_retry";
 import { ChildProcess, spawn } from "node:child_process";
 import treeKill from "tree-kill";
 import log from "electron-log";
@@ -156,7 +157,7 @@ export function killProcess(process: ChildProcess): Promise<void> {
  */
 export function stopDockerContainer(containerName: string): Promise<void> {
   return new Promise<void>((resolve) => {
-    const stop = spawn("docker", ["stop", containerName], { stdio: "pipe" });
+    const stop = spawnWithBadFdRetry("docker", ["stop", containerName], { stdio: "pipe" });
     stop.on("close", () => resolve());
     stop.on("error", () => resolve());
   });
@@ -170,7 +171,7 @@ export function removeDockerVolumesForApp(appId: number): Promise<void> {
   return new Promise<void>((resolve) => {
     const pnpmVolume = `dyad-pnpm-${appId}`;
 
-    const rm = spawn("docker", ["volume", "rm", "-f", pnpmVolume], {
+    const rm = spawnWithBadFdRetry("docker", ["volume", "rm", "-f", pnpmVolume], {
       stdio: "pipe",
     });
     rm.on("close", () => resolve());
@@ -477,7 +478,7 @@ export function stopAllAppsSync(): void {
     } else if (appInfo.mode === "docker") {
       const containerName = appInfo.containerName || `dyad-app-${appId}`;
       // Fire-and-forget: spawn docker stop without awaiting
-      const stop = spawn("docker", ["stop", containerName], {
+      const stop = spawnWithBadFdRetry("docker", ["stop", containerName], {
         stdio: "ignore",
       });
       stop.on("error", (err) => {
