@@ -43,12 +43,19 @@ export async function startProxy(
     }
   })();
   if (targetPort !== undefined && targetPort === port) {
-    throw new DyadError(
-      `startProxy: targetOrigin port ${targetPort} is the proxy's own ` +
-        "port. The proxy cannot forward to itself; the app's port was " +
-        "mis-detected.",
-      DyadErrorKind.Validation,
+    // Report rather than throw. startProxy's rejection is not always awaited
+    // on this path, and throwing here surfaced as an unhandledRejection in the
+    // main process. Bailing out cleanly is also the right behaviour: a proxy
+    // pointed at itself can only ever 502, so not starting one is better than
+    // starting a broken one.
+    const message =
+      `startProxy: targetOrigin port ${targetPort} is the proxy's own port. ` +
+      "The proxy cannot forward to itself; the app's port was mis-detected.";
+    logger.error(message);
+    onError?.(
+      new DyadError(message, DyadErrorKind.Validation),
     );
+    return null;
   }
   const fallbackPortStart = getProxyFallbackPortStart();
   logger.info("Starting proxy on port", port);
