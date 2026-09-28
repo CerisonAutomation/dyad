@@ -6,7 +6,9 @@ import {
 
 export const SecretSchema = z.object({
   value: z.string(),
-  encryptionType: z.enum(["electron-safe-storage", "plaintext"]).optional(),
+  encryptionType: z
+    .enum(["electron-safe-storage", "dyad-file-key", "plaintext"])
+    .optional(),
 });
 export type Secret = z.infer<typeof SecretSchema>;
 
@@ -501,6 +503,9 @@ const BaseUserSettingsFields = {
   proModelUsage: z.enum(["subscription", "pro"]).optional(),
   // Applies only to requests routed through the ChatGPT subscription adapter.
   chatgptFastMode: z.boolean().optional(),
+  // Agent2 is the local, BYOK agent mode. `enableDyadPro` is the legacy name
+  // and is migrated to this on load.
+  enableAgent2: z.boolean().optional(),
   enableDyadPro: z.boolean().optional(),
   experiments: ExperimentsSchema.optional(),
   lastShownReleaseNotesVersion: z.string().optional(),
@@ -642,6 +647,15 @@ export function migrateStoredSettings(
   delete activeSettings.enableNativeGit;
   delete activeSettings.enableAutoFixProblems;
   delete activeSettings.thinkingBudget;
+  // Pro-era settings become Agent2 settings. Agent2 is the local BYOK agent
+  // mode, so the legacy Pro opt-in carries over verbatim.
+  if (activeSettings.enableAgent2 === undefined) {
+    const legacy = activeSettings.enableDyadPro;
+    activeSettings.enableAgent2 =
+      legacy ?? (activeSettings as { enableLocalPro?: boolean }).enableLocalPro;
+  }
+  delete activeSettings.enableDyadPro;
+  delete (activeSettings as { enableLocalPro?: boolean }).enableLocalPro;
   if (stored.agentToolConsents) {
     const agentToolConsents = { ...stored.agentToolConsents };
     if (
@@ -667,19 +681,19 @@ export function migrateStoredSettings(
 }
 
 // `enableLocalPro` unlocks the Pro feature gates without a Dyad cloud
-// credential. It is deliberately kept separate from hasDyadProKey: the model
-// client keys its engine override off hasDyadProKey (get_model_client.ts), so
+// credential. It is deliberately kept separate from hasEngineCredential: the model
+// client keys its engine override off hasEngineCredential (get_model_client.ts), so
 // leaving that false is what keeps inference on the user's own providers
 // instead of Dyad's hosted engine.
-export function isDyadProEnabled(settings: UserSettings): boolean {
+export function isAgent2Enabled(settings: UserSettings): boolean {
+  if (settings.enableAgent2 !== undefined) return settings.enableAgent2;
   return (
-    settings.enableDyadPro === true &&
-    (hasDyadProKey(settings) ||
-      (settings as { enableLocalPro?: boolean }).enableLocalPro === true)
+    settings.enableDyadPro === true ||
+    (settings as { enableLocalPro?: boolean }).enableLocalPro === true
   );
 }
 
-export function hasDyadProKey(settings: UserSettings): boolean {
+export function hasEngineCredential(settings: UserSettings): boolean {
   return !!settings.providerSettings?.auto?.apiKey?.value;
 }
 
@@ -709,7 +723,7 @@ export function getEffectiveDefaultChatMode(
   settings: UserSettings,
   envVars: Record<string, string | undefined>,
 ): ChatMode {
-  const isPro = isDyadProEnabled(settings);
+  const isPro = isAgent2Enabled(settings);
   const hasGoogleProviderSetup = isGoogleProviderSetup(settings, envVars);
   const hasNonGoogleProviderSetup = isNonGoogleProviderSetup(settings, envVars);
 
@@ -731,7 +745,7 @@ export function getEffectiveDefaultChatMode(
  */
 export function isBasicAgentMode(settings: UserSettings): boolean {
   return (
-    !isDyadProEnabled(settings) && settings.selectedChatMode === "local-agent"
+    !isAgent2Enabled(settings) && settings.selectedChatMode === "local-agent"
   );
 }
 
@@ -761,7 +775,7 @@ export function hasSupabaseCredentialsForOrganization(
 
 export function isTurboEditsV2Enabled(settings: UserSettings): boolean {
   return Boolean(
-    isDyadProEnabled(settings) &&
+    isAgent2Enabled(settings) &&
     settings.enableProLazyEditsMode === true &&
     settings.proLazyEditsMode === "v2",
   );

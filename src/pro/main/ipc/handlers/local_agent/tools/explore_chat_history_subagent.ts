@@ -29,9 +29,8 @@ import {
 
 const logger = log.scope("explore_chat_history_subagent");
 
-// Kept in one place so the explorer's model can change independently of
-// explore_code's. Both currently use the same Engine model.
-const SUBAGENT_MODEL = { provider: "openai", name: "gpt-5.6-luna" } as const;
+// Runs on the user's selected model, matching explore_code. A compiled-in
+// default would require a provider key the user may not have.
 // Max model turns. The chat-history corpus is small; benchmark runs
 // converged in well under this (mean 5 searches + 3 reads).
 const SUBAGENT_MAX_STEPS = 10;
@@ -62,26 +61,26 @@ export async function runExploreChatHistorySubagent({
     ctx.chatId,
     ctx.inferenceSettings,
   );
-  assertHistoryExplorerAvailable(storedSettings, ctx);
+  const historyModel = storedSettings.selectedModel;
   const selectedModel = await resolveModelSelection({
-    model: SUBAGENT_MODEL,
+    model: historyModel,
     preferredEffortLevel:
       storedSettings.modelEffortPreferences?.[
-        getModelPreferenceKey(SUBAGENT_MODEL)
+        getModelPreferenceKey(historyModel)
       ],
   });
   const settings = { ...storedSettings, selectedModel };
 
   const modelInfo = await getModelClient(
-    SUBAGENT_MODEL,
+    historyModel,
     settings,
     selectedModel,
   );
   const maxOutputTokens = Math.min(
-    (await getMaxTokens(SUBAGENT_MODEL)) ?? SUBAGENT_MAX_OUTPUT_TOKENS,
+    (await getMaxTokens(historyModel)) ?? SUBAGENT_MAX_OUTPUT_TOKENS,
     SUBAGENT_MAX_OUTPUT_TOKENS,
   );
-  const temperature = await getTemperature(SUBAGENT_MODEL);
+  const temperature = await getTemperature(historyModel);
 
   const registry = createHistoryObservationRegistry();
   const counts: RetrievalCounts = { searches: 0, reads: 0 };
@@ -199,25 +198,6 @@ function finalReport({
     registry,
     reason: "the sub-agent did not submit an accepted report",
   });
-}
-
-function assertHistoryExplorerAvailable(
-  settings: UserSettings,
-  ctx: AgentContext,
-): void {
-  // Toolset exclusion is not an execution-time security boundary — re-check.
-  if (!ctx.isDyadPro || !settings.enableDyadPro) {
-    throw new DyadError(
-      "explore_chat_history requires Dyad Pro",
-      DyadErrorKind.Precondition,
-    );
-  }
-  if (!settings.providerSettings?.auto?.apiKey) {
-    throw new DyadError(
-      "explore_chat_history requires a Dyad Pro auto provider API key",
-      DyadErrorKind.Precondition,
-    );
-  }
 }
 
 function formatProgress(counts: RetrievalCounts): string {

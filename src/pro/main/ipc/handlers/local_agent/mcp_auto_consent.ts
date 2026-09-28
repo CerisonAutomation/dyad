@@ -15,12 +15,6 @@ import {
 
 const logger = log.scope("mcp-auto-consent");
 
-// Fixed classifier model routed through the Dyad Pro engine gateway.
-const MCP_CONSENT_MODEL: LargeLanguageModel = {
-  name: "gpt-5.6-luna",
-  provider: "openai",
-};
-
 const CLASSIFIER_TIMEOUT_MS = 8000;
 
 export interface McpConsentDecision {
@@ -86,8 +80,12 @@ export async function classifyMcpToolConsent(
     }, CLASSIFIER_TIMEOUT_MS);
   });
   try {
+    // Classify with the user's own model. A compiled-in OpenAI model made
+    // auto-consent impossible for anyone without that key.
+    const classifierModel: LargeLanguageModel =
+      input.settings.selectedModel;
     const { modelClient } = await getModelClient(
-      MCP_CONSENT_MODEL,
+      classifierModel,
       input.settings,
     );
 

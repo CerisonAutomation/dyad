@@ -6,7 +6,7 @@ import {
   escapeXmlAttr,
   escapeXmlContent,
 } from "./types";
-import { engineFetch } from "./engine_fetch";
+import { localWebSearch } from "./local_web_search";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 
 const logger = log.scope("web_search");
@@ -39,168 +39,56 @@ NextJS 14 app router middleware auth
 </example>
 `;
 
-/**
- * Parse SSE events from a buffer and extract content deltas.
- * Returns the remaining unparsed buffer.
- * Throws an error if an SSE error event is received.
- */
-function parseSSEEvents(
-  buffer: string,
-  onContent: (content: string) => void,
-): string {
-  const lines = buffer.split("\n");
-  // Keep the last potentially incomplete line
-  const remaining = lines.pop() ?? "";
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || !trimmed.startsWith("data: ")) {
-      continue;
-    }
-
-    const data = trimmed.slice(6); // Remove "data: " prefix
-
-    // Check for stream end marker
-    if (data === "[DONE]") {
-      continue;
-    }
-
-    try {
-      const json = JSON.parse(data);
-
-      // Check for OpenAI-style SSE error: { error: { message: "...", type: "...", code: "..." } }
-      if (json.error) {
-        const errorMessage =
-          json.error.message || json.error.type || "Unknown SSE error";
-        throw new DyadError(
-          `Web search SSE error: ${errorMessage}`,
-          DyadErrorKind.External,
-        );
-      }
-
-      // OpenAI-style SSE format: { choices: [{ delta: { content: "..." } }] }
-      const content = json.choices?.[0]?.delta?.content;
-      if (content) {
-        onContent(content);
-      }
-    } catch (e) {
-      // Re-throw SSE errors
-      if (e instanceof Error && e.message.startsWith("Web search SSE error:")) {
-        throw e;
-      }
-      // Skip malformed JSON lines
-      logger.warn("Failed to parse SSE JSON:", data);
-    }
-  }
-
-  return remaining;
-}
-
-/**
- * Call the web search SSE endpoint and stream results
- */
-async function callWebSearchSSE(
-  query: string,
-  ctx: AgentContext,
-): Promise<string> {
-  ctx.onXmlStream(`<dyad-web-search query="${escapeXmlAttr(query)}">`);
-
-  const response = await engineFetch(ctx, "/tools/web-search", {
-    method: "POST",
-    headers: {
-      Accept: "text/event-stream",
-    },
-    body: JSON.stringify({ query }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Web search failed: ${response.status} ${response.statusText} - ${errorText}`,
-    );
-  }
-
-  if (!response.body) {
-    throw new DyadError(
-      "Web search response has no body",
-      DyadErrorKind.External,
-    );
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let accumulated = "";
-  let buffer = "";
-  let streamCompleted = false;
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        streamCompleted = true;
-        break;
-      }
-
-      buffer += decoder.decode(value, { stream: true });
-
-      // Parse SSE events and accumulate content
-      buffer = parseSSEEvents(buffer, (content) => {
-        accumulated += content;
-        // Stream intermediate results to UI with dyad-web-search prefix
-        ctx.onXmlStream(
-          `<dyad-web-search query="${escapeXmlAttr(query)}">${escapeXmlContent(accumulated)}`,
-        );
-      });
-    }
-
-    // Handle any remaining buffer content
-    if (buffer.trim()) {
-      parseSSEEvents(buffer + "\n", (content) => {
-        accumulated += content;
-      });
-    }
-  } finally {
-    if (!streamCompleted) {
-      await reader.cancel().catch((error) => {
-        logger.warn("Failed to cancel abandoned web search response:", error);
-      });
-    }
-    reader.releaseLock();
-  }
-
-  return accumulated;
-}
-
 export const webSearchTool: ToolDefinition<z.infer<typeof webSearchSchema>> = {
   name: "web_search",
   description: DESCRIPTION,
   inputSchema: webSearchSchema,
   defaultConsent: "ask",
-  usesEngineEndpoint: true,
 
-  // Requires Dyad Pro engine API
-  isEnabled: (ctx) => ctx.isDyadPro,
+  // Local implementation - no engine required
+  isEnabled: (_ctx: AgentContext) => true,
 
   getConsentPreview: (args) => `Search the web: "${args.query}"`,
 
   execute: async (args, ctx: AgentContext) => {
     logger.log(`Executing web search: ${args.query}`);
+    ctx.onXmlStream(`<dyad-web-search query="${escapeXmlAttr(args.query)}">`);
 
-    const result = await callWebSearchSSE(args.query, ctx);
+    try {
+      // Use local web search (DuckDuckGo + SearXNG)
+      const results = await localWebSearch(args.query, 10);
 
-    if (!result) {
+      if (results.length === 0) {
+        throw new DyadError(
+          "Web search returned no results",
+          DyadErrorKind.External,
+        );
+      }
+
+      // Format results as markdown
+      let resultText = `## Search Results for: ${args.query}\n\n`;
+      resultText += `Found ${results.length} results:\n\n`;
+
+      results.forEach((r, i) => {
+        resultText += `### ${i + 1}. ${r.title}\n`;
+        resultText += `URL: ${r.url}\n`;
+        resultText += `${r.snippet}\n`;
+        resultText += `*[via ${r.provider}]*\n\n`;
+      });
+
+      // Write final result to UI
+      ctx.onXmlComplete(
+        `<dyad-web-search query="${escapeXmlAttr(args.query)}">${escapeXmlContent(resultText)}</dyad-web-search>`,
+      );
+
+      logger.log(`Web search completed for query: ${args.query}`);
+      return resultText;
+    } catch (error) {
+      if (error instanceof DyadError) throw error;
       throw new DyadError(
-        "Web search returned no results",
+        `Web search failed: ${error instanceof Error ? error.message : String(error)}`,
         DyadErrorKind.External,
       );
     }
-
-    // Write final result to UI and DB with dyad-web-search wrapper
-    ctx.onXmlComplete(
-      `<dyad-web-search query="${escapeXmlAttr(args.query)}">${escapeXmlContent(result)}</dyad-web-search>`,
-    );
-
-    logger.log(`Web search completed for query: ${args.query}`);
-    return result;
   },
 };

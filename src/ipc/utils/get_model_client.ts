@@ -219,17 +219,13 @@ export async function getModelClient(
   }
   const allProviders = await getLanguageModelProviders();
 
-  const dyadApiKey = settings.enableDyadPro
-    ? getProviderApiKeyForRequest(
-        settings.providerSettings?.auto?.apiKey?.value,
-        "Dyad",
-      )
-    : undefined;
+  // Agent2 has no hosted engine and no cloud credential, so nothing can
+  // derive a Dyad API key. Pinned rather than derived so a stray
+  // DYAD_PRO_API_KEY in the environment cannot revive engine routing.
+  const dyadApiKey = undefined;
   const isLocalProvider = ["ollama", "lmstudio"].includes(model.provider);
-  const isDyadProEnabledForRequest = Boolean(
-    dyadApiKey && settings.enableDyadPro,
-  );
-  if (connection === "pro" && !isDyadProEnabledForRequest)
+  const isAgent2EnabledForRequest = false;
+  if (connection === "pro" && !isAgent2EnabledForRequest)
     throw new DyadError(
       "Enable Dyad Pro before using Pro credits.",
       DyadErrorKind.Auth,
@@ -238,7 +234,7 @@ export async function getModelClient(
   if (
     model.provider === "auto" &&
     model.name === AUTO_BALANCED_MODEL_NAME &&
-    !isDyadProEnabledForRequest
+    !isAgent2EnabledForRequest
   ) {
     throw new DyadError(
       "Auto (balanced) requires Dyad Pro. Switch to another model or enable Dyad Pro.",
@@ -265,7 +261,41 @@ export async function getModelClient(
 
   // Direct providers retain their transport while Engine bills reported usage.
   if (
-    isDyadProEnabledForRequest &&
+    isAgent2EnabledForRequest &&
+    (isLocalProvider || providerConfig.type === "custom")
+  ) {
+    const regular = getRegularModelClient(
+      model,
+      settings,
+      providerConfig,
+      true,
+    );
+    return {
+      ...regular,
+      modelClient: {
+        ...regular.modelClient,
+        model: wrapExternalModelBilling(
+          regular.modelClient.model,
+          {
+            connection: isLocalProvider ? "local" : "byok",
+            modelProvider: model.provider,
+          },
+          dyadApiKey!,
+          context?.externalModelAdmission,
+        ),
+      },
+      runtimeModel: model,
+      isEngineEnabled: false,
+    };
+  }
+
+  // Agent2 has no hosted engine: every turn uses the provider and model the
+  // user selected. The former Pro-override branch routed inference through
+  // Dyad's engine and is intentionally not reachable.
+
+  // Direct providers retain their transport while Engine bills reported usage.
+  if (
+    isAgent2EnabledForRequest &&
     (isLocalProvider || providerConfig.type === "custom")
   ) {
     const regular = getRegularModelClient(
@@ -294,7 +324,7 @@ export async function getModelClient(
   }
 
   // Handle Dyad Pro override
-  if (isDyadProEnabledForRequest && !isLocalProvider) {
+  if (isAgent2EnabledForRequest && !isLocalProvider) {
     const dyadEngineUrl = process.env.DYAD_ENGINE_URL;
     // Check if the selected provider supports Dyad Pro (has a gateway prefix) OR
     // we're using local engine.
@@ -404,7 +434,7 @@ export async function getModelClient(
         );
         if (
           resolvedModel.providerId === "openrouter" &&
-          !isDyadProEnabledForRequest &&
+          !isAgent2EnabledForRequest &&
           providerInfo
         ) {
           return {
@@ -763,6 +793,30 @@ function getRegularModelClient(
               ? model.name
               : `publishers/google/models/${model.name}`,
           ),
+          builtinProviderId: providerId,
+        },
+        backupModelClients: [],
+      };
+    }
+    case "kilocode": {
+      // Kilo rate-limits direct `:free` requests but serves the same models
+      // through `kilo-auto/free`, which retries and falls back. Measured on one
+      // key: poolside/laguna-s-2.1:free -> 429, kilo-auto/free -> 200 routing
+      // to that same model. Routing here rather than in the picker keeps the
+      // chat showing the model the user picked.
+      const requested = model.name;
+      const isFree = requested.endsWith(":free") || requested.endsWith("/free");
+      const upstreamModel =
+        isFree && requested !== "kilo-auto/free" ? "kilo-auto/free" : requested;
+      const provider = createOpenAICompatible({
+        name: "kilocode",
+        baseURL: "https://api.kilo.ai/api/gateway",
+        apiKey,
+        ...getModelClientFetchOption(),
+      });
+      return {
+        modelClient: {
+          model: provider(upstreamModel),
           builtinProviderId: providerId,
         },
         backupModelClients: [],

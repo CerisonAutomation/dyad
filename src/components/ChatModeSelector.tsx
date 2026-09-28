@@ -13,7 +13,7 @@ import {
 import { useChatMode } from "@/hooks/useChatMode";
 import { useFreeAgentQuota } from "@/hooks/useFreeAgentQuota";
 import type { ChatMode } from "@/lib/schemas";
-import { isDyadProEnabled } from "@/lib/schemas";
+import { isAgent2Enabled } from "@/lib/schemas";
 import { getChatModeDisplayName } from "@/lib/chatModeToast";
 import { cn } from "@/lib/utils";
 import { detectIsMac } from "@/hooks/useChatModeToggle";
@@ -38,7 +38,7 @@ export function ChatModeSelector() {
   const setHasManuallySelectedChatMode = useSetAtom(
     hasManuallySelectedChatModeAtom,
   );
-  const isProEnabled = settings ? isDyadProEnabled(settings) : false;
+  const isProEnabled = settings ? isAgent2Enabled(settings) : false;
   const { messagesRemaining, messagesLimit, isQuotaExceeded } =
     useFreeAgentQuota();
   const isDyadFreeSelected = isFreeProModel(selectedModel);

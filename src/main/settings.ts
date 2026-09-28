@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { getUserDataPath } from "../paths/paths";
@@ -834,7 +835,13 @@ function resolveStoredSecret(
         encryptionType: storedSecret.encryptionType,
       };
       ctx.preserved.push({ path, secret: ciphertext });
-      return ciphertext;
+      // Returning the ciphertext here makes it indistinguishable from a real
+      // key: it is sent verbatim as a bearer token, the provider answers 401,
+      // and the failure surfaces far downstream as an empty model response
+      // rather than "this key needs re-entering". Hand back nothing instead,
+      // so key resolution falls through to the environment variable and the
+      // UI reports the provider as unconfigured.
+      return undefined;
     }
     return undefined;
   }
@@ -1115,21 +1122,78 @@ function writeSettingsFileAtomically(
   }
 }
 
+/**
+ * File-backed secret encryption.
+ *
+ * Electron's `safeStorage` on macOS encrypts against a Keychain item
+ * ("Chromium Safe Storage" vs "dyad Safe Storage") whose identity can flip
+ * between Electron versions — Dyad's own Bug #3837. When that happens the app
+ * writes a key it can never read back: the provider shows "Not Setup", and any
+ * request sends garbage that fails as 401 far from the cause. A key file under
+ * the app's own support directory has no such moving part, so secrets written
+ * with it always round-trip.
+ */
+const FILE_KEY_TYPE = "dyad-file-key" as const;
+
+function fileKeyPath(): string {
+  return path.join(app.getPath("userData"), ".dyad-encryption-key");
+}
+
+function loadOrCreateFileKey(): Buffer {
+  const keyFile = fileKeyPath();
+  try {
+    const existing = fs.readFileSync(keyFile);
+    if (existing.length === 32) return existing;
+  } catch {
+    /* fall through and create one */
+  }
+  const key = crypto.randomBytes(32);
+  fs.writeFileSync(keyFile, key, { mode: 0o600 });
+  return key;
+}
+
+function encryptWithFileKey(plaintext: string): string {
+  const key = loadOrCreateFileKey();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const enc = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  return Buffer.concat([iv, cipher.getAuthTag(), enc]).toString("base64");
+}
+
+function decryptWithFileKey(payload: string): string {
+  const raw = Buffer.from(payload, "base64");
+  const key = loadOrCreateFileKey();
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, raw.subarray(0, 12));
+  decipher.setAuthTag(raw.subarray(12, 28));
+  return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString(
+    "utf8",
+  );
+}
+
 export function encrypt(data: string): Secret {
   const trimmed = data.trim();
-  if (safeStorage.isEncryptionAvailable() && !IS_TEST_BUILD) {
-    return {
-      value: safeStorage.encryptString(trimmed).toString("base64"),
-      encryptionType: "electron-safe-storage",
-    };
+  if (IS_TEST_BUILD) {
+    return { value: trimmed, encryptionType: "plaintext" };
   }
-  return {
-    value: trimmed,
-    encryptionType: "plaintext",
-  };
+  try {
+    // File-backed by default: safeStorage is the component that fails here.
+    return { value: encryptWithFileKey(trimmed), encryptionType: FILE_KEY_TYPE };
+  } catch (error) {
+    logger.warn("File-key encryption failed, falling back to safeStorage", error);
+    if (safeStorage.isEncryptionAvailable()) {
+      return {
+        value: safeStorage.encryptString(trimmed).toString("base64"),
+        encryptionType: "electron-safe-storage",
+      };
+    }
+    return { value: trimmed, encryptionType: "plaintext" };
+  }
 }
 
 export function decrypt(data: Secret): string {
+  if (data.encryptionType === FILE_KEY_TYPE) {
+    return decryptWithFileKey(data.value).trim();
+  }
   if (data.encryptionType === "electron-safe-storage") {
     return safeStorage.decryptString(Buffer.from(data.value, "base64")).trim();
   }

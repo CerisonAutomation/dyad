@@ -9,10 +9,10 @@ import {
   escapeXmlAttr,
   escapeXmlContent,
 } from "./types";
-import { engineFetch } from "./engine_fetch";
+import { localImageGeneration } from "./local_image_generation";
 import { DYAD_MEDIA_DIR_NAME } from "@/ipc/utils/media_path_utils";
-import { ImageGenerationApiResponseSchema } from "@/ipc/types/image_generation";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import { assertNotPrivateIp } from "./network_utils";
 
 const logger = log.scope("generate_image");
 
@@ -47,39 +47,8 @@ Write detailed, descriptive prompts. Be specific about:
 The tool returns the file path in .dyad/media. Use the copy_file tool to copy it to the appropriate location in the project (e.g., public/assets/) and reference that path in your code.
 `;
 
-async function callGenerateImage(
-  prompt: string,
-  ctx: Pick<AgentContext, "dyadRequestId" | "abortSignal">,
-): Promise<z.infer<typeof ImageGenerationApiResponseSchema>["data"][number]> {
-  const response = await engineFetch(ctx, "/images/generations", {
-    method: "POST",
-    body: JSON.stringify({
-      prompt,
-      model: "dyad/image-gen",
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Image generation failed: ${response.status} ${response.statusText} - ${errorText}`,
-    );
-  }
-
-  const data = ImageGenerationApiResponseSchema.parse(await response.json());
-
-  if (!data.data || data.data.length === 0) {
-    throw new DyadError(
-      "Image generation returned no results",
-      DyadErrorKind.External,
-    );
-  }
-
-  return data.data[0];
-}
-
 async function saveGeneratedImage(
-  imageData: z.infer<typeof ImageGenerationApiResponseSchema>["data"][number],
+  imageData: { url: string; provider: string },
   appPath: string,
 ): Promise<string> {
   const mediaDir = path.join(appPath, DYAD_MEDIA_DIR_NAME);
@@ -91,11 +60,18 @@ async function saveGeneratedImage(
   const filePath = path.join(mediaDir, fileName);
   const relativePath = path.join(DYAD_MEDIA_DIR_NAME, fileName);
 
-  if (imageData.b64_json) {
-    const buffer = Buffer.from(imageData.b64_json, "base64");
+  if (imageData.url.startsWith("data:")) {
+    // Handle data URL (placeholder image)
+    const base64Data = imageData.url.split(",")[1];
+    const buffer = Buffer.from(base64Data, "base64");
     await fs.writeFile(filePath, buffer);
-  } else if (imageData.url) {
-    const response = await fetch(imageData.url);
+  } else if (imageData.url.startsWith("http")) {
+    // Download from URL (Pollinations.ai)
+    // Validate URL doesn't target private IPs (SSRF protection)
+    assertNotPrivateIp(imageData.url);
+    const response = await fetch(imageData.url, {
+      signal: AbortSignal.timeout(30_000),
+    });
     if (!response.ok) {
       throw new DyadError(
         `Failed to download generated image: ${response.status}`,
@@ -122,9 +98,9 @@ export const generateImageTool: ToolDefinition<
   inputSchema: generateImageSchema,
   defaultConsent: "always",
   modifiesState: true,
-  usesEngineEndpoint: true,
 
-  isEnabled: (ctx) => ctx.isDyadPro,
+  // Local implementation - no engine required
+  isEnabled: (_ctx: AgentContext) => true,
 
   getConsentPreview: (args) => `Generate image: "${args.prompt}"`,
 
@@ -145,7 +121,12 @@ export const generateImageTool: ToolDefinition<
     );
 
     try {
-      const imageData = await callGenerateImage(args.prompt, ctx);
+      // Use local image generation (Pollinations.ai)
+      const imageData = await localImageGeneration({
+        prompt: args.prompt,
+        width: 1024,
+        height: 1024,
+      });
 
       const relativePath = await saveGeneratedImage(imageData, ctx.appPath);
 

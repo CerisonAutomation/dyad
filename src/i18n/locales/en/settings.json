@@ -123,10 +123,10 @@
     "errorLoadingSettings": "Error Loading Settings",
     "couldNotLoadProvider": "Could not load provider data: {{message}}",
     "couldNotLoadSettings": "Could not load configuration data: {{message}}",
-    "enableDyadPro": "Enable Dyad Pro",
-    "toggleDyadPro": "Toggle to enable Dyad Pro",
+    "enableDyadPro": "Enable Agent2",
+    "toggleDyadPro": "Toggle to enable Agent2",
     "apiKeyEmpty": "API Key cannot be empty.",
-    "errorTogglingPro": "Error toggling Dyad Pro: {{error}}",
+    "errorTogglingPro": "Error toggling Agent2: {{error}}",
     "failedSaveApiKey": "Failed to save API key.",
     "failedDeleteApiKey": "Failed to delete API key."
   },
@@ -305,6 +305,6 @@
     "updateProvider": "Update Provider",
     "failedCreate": "Failed to create custom provider"
   },
-  "manageDyadPro": "Manage Dyad Pro Subscription",
-  "setupDyadPro": "Setup Dyad Pro Subscription"
+  "manageDyadPro": "Agent2 settings Subscription",
+  "setupDyadPro": "Set up Agent2 Subscription"
 }

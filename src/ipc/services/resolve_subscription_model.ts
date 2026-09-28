@@ -1,7 +1,7 @@
 import { getLanguageModelProviders } from "../shared/language_model_helpers";
 import {
-  hasDyadProKey,
-  isDyadProEnabled,
+  hasEngineCredential,
+  isAgent2Enabled,
   type ModelSelection,
   type UserSettings,
 } from "@/lib/schemas";
@@ -20,13 +20,13 @@ export async function resolveSubscriptionModel(
   settings: UserSettings,
 ): Promise<ModelSelection> {
   const { connection: _legacyConnection, ...identity } = model;
-  const proEnabled = isDyadProEnabled(settings);
+  const proEnabled = isAgent2Enabled(settings);
   // Billing a turn as Pro credits needs a real Dyad cloud credential. Pro
   // features can be enabled without one, so gate the connection on the key and
   // leave it unset otherwise — the turn then falls through to the user's own
   // provider via the default model.
   const fallback =
-    proEnabled && hasDyadProKey(settings)
+    proEnabled && hasEngineCredential(settings)
       ? { ...identity, connection: "pro" as const }
       : identity;
   const subscriptionAuto = !proEnabled && isChatGPTAutoSelection(model);

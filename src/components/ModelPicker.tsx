@@ -1,5 +1,6 @@
-import { isDyadProEnabled, type LargeLanguageModel } from "@/lib/schemas";
+import { isAgent2Enabled, type LargeLanguageModel } from "@/lib/schemas";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,7 +12,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { usePostHog } from "posthog-js/react";
 import { useLocalModels } from "@/hooks/useLocalModels";
@@ -139,6 +140,51 @@ const PRICE_TIERS: Tier[] = [
   },
 ];
 
+/**
+ * Short badge text per provider. A model id alone is ambiguous — both
+ * OpenRouter and Kilo list e.g. `stealth/space-bunny-alpha` and dozens of
+ * `:free` models, so the picker must say which gateway a row actually uses.
+ */
+const PROVIDER_BADGE: Record<string, string> = {
+  openrouter: "OpenRouter",
+  kilocode: "Kilo",
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  google: "Google",
+  vertex: "Vertex",
+  auto: "Dyad",
+  ollama: "Ollama",
+  lmstudio: "LM Studio",
+};
+const providerBadge = (providerId: string) =>
+  PROVIDER_BADGE[providerId] ??
+  (providerId.startsWith("custom::")
+    ? providerId.replace("custom::", "")
+    : providerId);
+
+/**
+ * Kilo's gateway rate-limits direct `:free` model requests but serves the same
+ * models through its `kilo-auto/free` router, which retries and falls back.
+ * Measured on one key: `poolside/laguna-s-2.1:free` -> 429, while
+ * `kilo-auto/free` -> 200 routing to that same model. Routing direct free
+ * picks through the router is what makes them behave like the non-free models.
+ *
+ * The originally chosen id is carried along so the UI can keep showing what
+ * the user picked: Kilo answers with the ROUTED model id, and without this the
+ * label jumps to some unrelated free model, which looks like nothing happened.
+ */
+const KILO_FREE_ROUTER = "kilo-auto/free";
+const isKiloFreeModel = (apiName: string) =>
+  apiName.endsWith(":free") || apiName.endsWith("/free");
+
+export const routeKiloFreeModel = (model: LargeLanguageModel) => {
+  if (model.provider !== "kilocode") return model;
+  if (!isKiloFreeModel(model.name) || model.name === KILO_FREE_ROUTER) {
+    return model;
+  }
+  return { ...model, name: KILO_FREE_ROUTER };
+};
+
 const isFreeOpenRouterModelName = (apiName: string) =>
   apiName.endsWith(":free") || apiName.endsWith("/free");
 
@@ -186,13 +232,14 @@ export function ModelPicker() {
     chat && (chat.modelSelection || chat.messages.length > 0),
   );
   const performModelSelect = async ({
-    model,
+    model: requestedModel,
     catalogModel,
     effortLevel,
     rememberEffort = false,
     recentModels,
   }: ModelSelectParams & { recentModels: LargeLanguageModel[] }) => {
     if (!settings || (isChatRoute && chatId != null && chatLoading)) return;
+    const model = requestedModel;
     const modelSelection = createModelSelection({
       model,
       catalogModel,
@@ -238,13 +285,19 @@ export function ModelPicker() {
         "recentModels" in recentModelsUpdate
       ) {
         await updateSettings({
+          // Also promote the pick to the global default. Previously only the
+          // no-chat path wrote `selectedModel`, so once you were inside a chat
+          // the pick applied to that chat alone and every new chat started on
+          // the old model — the selection looked like it "didn't take".
+          // Persist what the user picked, not the router we call behind it.
+          selectedModel: requestedModel,
           ...preferenceUpdate,
           ...recentModelsUpdate,
         });
       }
     } else {
       await updateSettings({
-        selectedModel: model,
+        selectedModel: requestedModel,
         ...preferenceUpdate,
         ...recentModelsUpdate,
         ...(fallbackChatMode ? { selectedChatMode: fallbackChatMode } : {}),
@@ -260,6 +313,28 @@ export function ModelPicker() {
 
   const subscription = useSubscriptionAccount();
   const [open, setOpen] = useState(false);
+  // Catalog can hold hundreds of models across every provider, so the menu
+  // needs an explicit filter rather than making the user scroll subgroups.
+  const [modelSearch, setModelSearch] = useState("");
+  const [freeOnly, setFreeOnly] = useState(false);
+
+  const modelSearchTerm = modelSearch.trim().toLowerCase();
+  // The model new chats start on. The chat you are in can be pinned to a
+  // different model (chat.model_selection wins), so without this marker the
+  // two look identical and a changed default appears not to have applied.
+  const defaultModelRef = settings?.selectedModel;
+  const isGlobalDefault = (apiName: string, providerId: string) =>
+    defaultModelRef?.name === apiName && defaultModelRef?.provider === providerId;
+
+  const matchesModelFilter = (apiName: string) => {
+    if (modelSearchTerm && !apiName.toLowerCase().includes(modelSearchTerm)) {
+      return false;
+    }
+    if (freeOnly && !isFreeOpenRouterModelName(apiName)) {
+      return false;
+    }
+    return true;
+  };
   const [unlockTarget, setUnlockTarget] = useState<{
     providerId: string;
     model: LanguageModel;
@@ -269,7 +344,7 @@ export function ModelPicker() {
     setOpen(nextOpen);
     if (nextOpen) {
       posthog.capture("model-picker:open", {
-        isDyadPro: settings ? isDyadProEnabled(settings) : false,
+        isDyadPro: settings ? isAgent2Enabled(settings) : false,
       });
     }
   };
@@ -281,6 +356,43 @@ export function ModelPicker() {
     error: modelsByProvidersError,
   } = useLanguageModelsByProviders();
 
+  // Flat, cross-provider matches. Without this the search box would still
+  // require opening each provider submenu one at a time to see any result.
+  const searchResults = useMemo(() => {
+    if (modelSearchTerm.length < 2 && !freeOnly) return [];
+    const out: Array<{
+      providerId: string;
+      apiName: string;
+      displayName?: string;
+      catalogModel: LanguageModel;
+    }> = [];
+    const byProvider = (modelsByProviders ?? {}) as Record<
+      string,
+      LanguageModel[]
+    >;
+    for (const [providerId, models] of Object.entries(byProvider)) {
+      for (const model of models ?? []) {
+        if (freeOnly && !isFreeOpenRouterModelName(model.apiName)) continue;
+        if (
+          modelSearchTerm &&
+          !model.apiName.toLowerCase().includes(modelSearchTerm) &&
+          !(model.displayName ?? "")
+            .toLowerCase()
+            .includes(modelSearchTerm)
+        ) {
+          continue;
+        }
+        out.push({
+          providerId,
+          apiName: model.apiName,
+          displayName: model.displayName,
+          catalogModel: model,
+        });
+      }
+    }
+    return out.sort((a, b) => a.apiName.localeCompare(b.apiName)).slice(0, 40);
+  }, [modelsByProviders, modelSearchTerm, freeOnly]);
+
   const {
     data: providers,
     isLoading: providersLoading,
@@ -289,7 +401,7 @@ export function ModelPicker() {
   } = useLanguageModelProviders();
 
   const loading = modelsByProvidersLoading || providersLoading;
-  const dyadProEnabled = settings ? isDyadProEnabled(settings) : false;
+  const dyadProEnabled = settings ? isAgent2Enabled(settings) : false;
   // Ollama Models Hook
   const {
     models: ollamaModels,
@@ -467,12 +579,15 @@ export function ModelPicker() {
           ([providerId]) => providerId !== "auto",
         )
       : [];
-  const isVisibleCatalogModel = (providerId: string, model: LanguageModel) =>
-    !(
-      dyadProEnabled &&
-      providerId === "openrouter" &&
-      isFreeOpenRouterModelName(model.apiName)
-    );
+  // Free-tier models are always listed. They were previously hidden for
+  // "Pro" users, but that flag is now `isAgent2Enabled()`, which is true for
+  // everyone using the local setup — so the gate hid all 18 free OpenRouter
+  // models from the people who can actually reach them. It was also an upsell:
+  // the only way to see a free model was to buy the tier.
+  const isVisibleCatalogModel = (
+    _providerId: string,
+    _model: LanguageModel,
+  ) => true;
   const isOtherProvider = (providerId: string) => {
     const provider = providers?.find(
       (candidate) => candidate.id === providerId,
@@ -1047,8 +1162,10 @@ export function ModelPicker() {
     providerId: string,
     models: LanguageModel[],
   ) => {
-    const visibleModels = models.filter((model) =>
-      isVisibleCatalogModel(providerId, model),
+    const visibleModels = models.filter(
+      (model) =>
+        isVisibleCatalogModel(providerId, model) &&
+        matchesModelFilter(model.apiName),
     );
     if (visibleModels.length === 0) {
       return null;
@@ -1299,7 +1416,9 @@ export function ModelPicker() {
               </div>
             </div>
           ) : (
-            models.map((model) => renderLocalModelItem(providerId, model))
+            models
+              .filter((model) => matchesModelFilter(model.modelName))
+              .map((model) => renderLocalModelItem(providerId, model))
           )}
         </DropdownMenuSubContent>
       </DropdownMenuSub>
@@ -1341,6 +1460,102 @@ export function ModelPicker() {
           </span>
         </DropdownMenuTrigger>
         <DropdownMenuContent className={MODEL_MENU_WIDTH_CLASS} align="start">
+          <div
+            className="px-2 py-1.5 flex items-center gap-1.5"
+            onClick={(e) => e.stopPropagation()}
+            // A Radix menu owns the keyboard for item typeahead, so typed
+            // characters never reach an input inside it without this.
+            onKeyDown={(e) => e.stopPropagation()}
+            onKeyUp={(e) => e.stopPropagation()}
+          >
+            <Input
+              value={modelSearch}
+              onChange={(e) => setModelSearch(e.target.value)}
+              placeholder="Search models…"
+              aria-label="Search models"
+              className="h-7 text-xs"
+            />
+            <button
+              type="button"
+              onClick={() => setFreeOnly((v) => !v)}
+              aria-pressed={freeOnly}
+              title={freeOnly ? "Showing free models only" : "Show all models"}
+              className={
+                freeOnly
+                  ? "shrink-0 rounded-md border border-emerald-500/40 bg-emerald-500/15 px-2 h-7 text-xs font-medium text-emerald-700 dark:text-emerald-300"
+                  : "shrink-0 rounded-md border border-input px-2 h-7 text-xs font-medium text-muted-foreground hover:text-foreground"
+              }
+            >
+              Free
+            </button>
+            {modelSearch || freeOnly ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setModelSearch("");
+                  setFreeOnly(false);
+                }}
+                className="shrink-0 text-xs text-muted-foreground hover:text-foreground px-1"
+                aria-label="Clear model filter"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+          <DropdownMenuSeparator />
+          {searchResults.length > 0 && (
+            <>
+              <div
+                className="px-2 pt-1.5 pb-1 text-[10px] uppercase tracking-wider font-medium text-muted-foreground"
+                data-testid="model-search-results"
+              >
+                {freeOnly ? "Free models" : "Search results"} ({searchResults.length})
+                {defaultModelRef ? (
+                  <>
+                    {" · default: "}
+                    {defaultModelRef.name}
+                  </>
+                ) : null}
+              </div>
+              {searchResults.map((model) => (
+                <DropdownMenuItem
+                  key={`search-${model.providerId}-${model.apiName}`}
+                  onSelect={() => {
+                    void onModelSelect({
+                      model: { name: model.apiName, provider: model.providerId },
+                      catalogModel: model.catalogModel,
+                    });
+                    setOpen(false);
+                  }}
+                  className="flex items-center justify-between gap-2 cursor-pointer"
+                >
+                  <span className="truncate">{model.displayName ?? model.apiName}</span>
+                  <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                    <span
+                      className="rounded border border-border px-1 py-px text-[10px] font-medium text-muted-foreground"
+                      title={`Runs via ${providerBadge(model.providerId)}`}
+                    >
+                      {providerBadge(model.providerId)}
+                    </span>
+                    {isGlobalDefault(model.apiName, model.providerId) && (
+                      <span
+                        className="rounded border border-primary/40 bg-primary/10 px-1 py-px text-[10px] font-medium text-primary"
+                        title="New chats start on this model"
+                      >
+                        default
+                      </span>
+                    )}
+                    {isFreeOpenRouterModelName(model.apiName) && (
+                      <span className="text-[10px] uppercase font-medium text-emerald-600 dark:text-emerald-400">
+                        free
+                      </span>
+                    )}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+            </>
+          )}
           <SubscriptionModelMenu>
             <DropdownMenuSeparator />
             {/* Trial user upgrade banner */}

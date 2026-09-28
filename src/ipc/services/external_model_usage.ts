@@ -4,8 +4,7 @@ import { z } from "zod";
 import log from "electron-log";
 import type { LanguageModelV3Usage } from "@ai-sdk/provider";
 import { readSettings } from "@/main/settings";
-import { isDyadProEnabled } from "@/lib/schemas";
-import { getDyadEngineBaseUrl } from "@/ipc/utils/dyad_engine_url";
+import { isAgent2Enabled } from "@/lib/schemas";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import type { SubscriptionTokens } from "@/lib/subscriptionUsage";
 import {
@@ -57,7 +56,7 @@ export async function startExternalModelUsage(
   if (
     billing.connection === "subscription" &&
     settings &&
-    !isDyadProEnabled(settings)
+    !isAgent2Enabled(settings)
   )
     return undefined;
   const key = apiKey ?? settings?.providerSettings?.auto?.apiKey?.value;
@@ -94,55 +93,21 @@ export function normalizeExternalModelUsage(
   });
 }
 
-/** Best effort: consume before sending, never retry or reject into the chat. */
+/**
+ * Best effort: consume before sending, never retry or reject into the chat.
+ *
+ * Agent2 bills the user directly through their own provider credentials, so
+ * there is no upstream account to report usage against. The record is dropped
+ * locally without contacting Dyad.
+ */
 export async function finishExternalModelUsage(
   id: string | undefined,
-  model: string,
-  usage: LanguageModelV3Usage,
+  _model: string,
+  _usage: LanguageModelV3Usage,
 ) {
   if (!id) return;
-  const request = active.get(id);
-  if (!request) return;
-  active.delete(id);
-  try {
-    const tokens = normalizeExternalModelUsage(usage);
-    const response = await fetch(
-      `${getDyadEngineBaseUrl().replace(/\/$/, "")}/track-usage`,
-      {
-        method: "POST",
-        redirect: "error",
-        signal: AbortSignal.timeout(15_000),
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${request.key}`,
-        },
-        body: JSON.stringify({
-          version: 1,
-          id,
-          ...request.billing,
-          modelId: model,
-          createdAt: request.createdAt,
-          totalTokens:
-            tokens.input + tokens.cacheRead + tokens.cacheWrite + tokens.output,
-          cachedInputTokens: tokens.cacheRead,
-          uncachedInputTokens: tokens.input + tokens.cacheWrite,
-          outputTokens: tokens.output,
-        }),
-      },
-    );
-    if (!response.ok)
-      logger.warn("External model usage report failed; not retrying", {
-        id,
-        status: response.status,
-      });
-    // No local receipts, queue, or reconciliation. The engine owns account spend.
-    await response.body?.cancel();
-  } catch {
-    // Do not log fetch errors or request objects: they may contain credentials.
-    logger.warn(
-      "External model usage unavailable or report failed; not retrying",
-      { id },
-    );
+  if (active.delete(id)) {
+    logger.debug("External model usage record dropped (BYOK, no reporting)");
   }
 }
 export function interruptExternalModelUsage(

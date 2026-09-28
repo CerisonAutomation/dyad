@@ -23,11 +23,10 @@ import { useScrollAndNavigateTo } from "@/hooks/useScrollAndNavigateTo";
 import logo from "../../assets/logo.svg";
 // @ts-ignore
 import openrouterLogo from "../../assets/ai-logos/openrouter-logo.png";
-import { SetupDyadProButton } from "./ProBanner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSubscriptionAccount } from "@/hooks/useSubscriptionAccount";
 import { useSettings } from "@/hooks/useSettings";
-import { isDyadProEnabled } from "@/lib/schemas";
+import { isAgent2Enabled } from "@/lib/schemas";
 import { queryKeys } from "@/lib/queryKeys";
 import { ProviderIcon } from "./ProviderIcon";
 
@@ -44,7 +43,7 @@ export function SetupBanner({
   const client = useQueryClient();
   const subscription = useSubscriptionAccount();
   const { settings } = useSettings();
-  const hasPro = settings && isDyadProEnabled(settings);
+  const hasPro = settings && isAgent2Enabled(settings);
   const connection = useMutation({
     mutationFn: (cancel: boolean) =>
       cancel
@@ -245,7 +244,6 @@ export function SetupBanner({
         </div>
 
         <div className="mt-4 flex w-full flex-col items-center justify-around gap-2 text-xs sm:flex-row">
-          <SetupDyadProButton />
           <button
             type="button"
             onClick={() => {

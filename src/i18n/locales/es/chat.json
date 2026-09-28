@@ -254,7 +254,7 @@
   "total": "Total",
   "failedCountTokens": "Error al contar los tokens",
   "optimizeTokens": "Optimiza tus tokens con",
-  "dyadProSmartContext": "Contexto Inteligente de Dyad Pro",
+  "dyadProSmartContext": "Contexto Inteligente de Agent2",
   "attachFiles": "Adjuntar archivos",
   "themes": "Temas",
   "noTheme": "Sin Tema",
@@ -330,11 +330,11 @@
     "versionCount": "Versión {{count}}"
   },
   "errorBox": {
-    "accessWithDyadPro": "Acceder con Dyad Pro",
+    "accessWithDyadPro": "Acceder con Agent2",
     "orSwitchModel": "o cambia a otro modelo.",
-    "upgradeToDyadPro": "Actualizar a Dyad Pro",
+    "upgradeToDyadPro": "Actualizar a Agent2",
     "troubleshootingGuide": "Guía de solución de problemas",
-    "invalidProKey": "Parece que no tienes una clave válida de Dyad Pro.",
+    "invalidProKey": "Parece que no tienes una clave válida de Agent2.",
     "today": "hoy.",
     "creditsUsed": "Has usado todos tus créditos de IA de Dyad este mes.",
     "reloadOrUpgrade": "Recarga o actualiza tu suscripción",
@@ -343,7 +343,7 @@
   },
   "promo": {
     "tiredOfWaiting": "¿Cansado de esperar a la IA?",
-    "getDyadPro": "Consigue Dyad Pro",
+    "getDyadPro": "Consigue Agent2",
     "fasterEdits": "para ediciones más rápidas con Turbo Edits.",
     "saveOnCosts": "Ahorra hasta 3 veces en costos de IA con",
     "debuggingLoop": "¿Atrapado en un bucle de depuración? Prueba un modelo diferente.",

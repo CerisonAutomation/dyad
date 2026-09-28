@@ -75,7 +75,15 @@ export async function getMaxTokens(
   model: LargeLanguageModel,
 ): Promise<number | undefined> {
   const modelOption = await findLanguageModel(model);
-  return modelOption?.maxOutputTokens ?? undefined;
+  const declared = modelOption?.maxOutputTokens;
+  if (declared === undefined) return undefined;
+  // A model can declare an output ceiling equal to its entire context window
+  // (e.g. 1M output on a 1M context). Input and output must both fit within
+  // the limit, so any non-empty prompt then overflows. Reserve headroom for
+  // the prompt instead of trusting the declared ceiling.
+  const contextWindow = modelOption?.contextWindow;
+  if (!contextWindow || contextWindow <= 0) return declared;
+  return Math.min(declared, Math.max(1_000, contextWindow - 32_000));
 }
 
 export async function getTemperature(

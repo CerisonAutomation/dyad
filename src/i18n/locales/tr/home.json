@@ -73,10 +73,10 @@
   "deleteItemTitle": "{{itemType}} sil",
   "deleteItemConfirmation": "\"{{itemName}}\" öğesini silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.",
   "proBanner": {
-    "manageDyadPro": "Dyad Pro'yu Yönet",
-    "alreadyHavePro": "Dyad Pro'nuz var mı? Anahtarınızı ekleyin",
+    "manageDyadPro": "Agent2'yu Yönet",
+    "alreadyHavePro": "Agent2'nuz var mı? Anahtarınızı ekleyin",
     "accessLeadingModels": "Önde gelen AI modellerine tek planla erişin",
-    "getDyadPro": "Dyad Pro'yu Edinin",
+    "getDyadPro": "Agent2'yu Edinin",
     "upTo3xCheaper": "3 kata kadar daha ucuz",
     "byUsingSmartContext": "Akıllı Bağlam kullanarak"
   },
@@ -102,7 +102,7 @@
     "notSureWatchVideo": "Ne yapacağınızdan emin değil misiniz? Yukarıdaki Başlarken videosunu izleyin",
     "setupGeminiApiKey": "Google Gemini API Anahtarını Kur",
     "setupOpenRouterApiKey": "OpenRouter API Anahtarını Kur",
-    "setupDyadPro": "Dyad Pro'yu Kur",
+    "setupDyadPro": "Agent2'yu Kur",
     "accessAllModels": "Tüm AI modellerine tek planla erişin",
     "setupOtherProviders": "Diğer AI sağlayıcılarını kur",
     "openAiAnthropicMore": "OpenAI, Anthropic ve daha fazlası",
@@ -405,10 +405,7 @@
       "undo": "Geri Al",
       "redo": "Yinele",
       "addToChat": "Sohbete Ekle",
-      "closeAnnotator": "Açıklayıcıyı Kapat",
-      "proFeatureTitle": "Açıklayıcı bir Pro Özelliğidir",
-      "proFeatureDescription": "Dyad Pro ile ekran görüntülerine açıklama ekleme yeteneğinin kilidini açın ve iş akışınızı geliştirin.",
-      "getDyadPro": "Dyad Pro'yu Edinin"
+      "closeAnnotator": "Açıklayıcıyı Kapat"
     }
   },
   "integrations": {

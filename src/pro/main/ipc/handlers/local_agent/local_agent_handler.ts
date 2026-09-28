@@ -37,7 +37,7 @@ import { parseMcpToolKey, sanitizeMcpName } from "@/ipc/utils/mcp_tool_utils";
 import { sanitizeMcpToolResult } from "@/ipc/utils/mcp_result_sanitizer";
 
 import {
-  isDyadProEnabled,
+  isAgent2Enabled,
   isBasicAgentMode,
   type ModelSelection,
   type UserSettings,
@@ -756,7 +756,7 @@ export async function handleLocalAgentStream(
     !buildMode &&
     !readOnly &&
     !planModeOnly &&
-    !isDyadProEnabled(settings) &&
+    !isAgent2Enabled(settings) &&
     !isBasicAgentMode(settings)
   ) {
     const errorMessage =
@@ -1007,21 +1007,21 @@ export async function handleLocalAgentStream(
       appBlueprintQuestionnaireCompleted: hasCompletedAppBlueprintQuestionnaire(
         chat.messages,
       ),
-      isDyadPro: isDyadProEnabled(settings),
+      isDyadPro: isAgent2Enabled(settings),
       canUseExplorerSubagent:
         !buildMode &&
-        isDyadProEnabled(settings) &&
+        isAgent2Enabled(settings) &&
         settings.enableExplorerSubagent !== false &&
         settings.agentToolConsents?.spawn_agent !== "never",
       canUseImplementerSubagent:
         !buildMode &&
-        isDyadProEnabled(settings) &&
+        isAgent2Enabled(settings) &&
         isImplementerSubagentEnabled(settings) &&
         !readOnly &&
         !planModeOnly,
       canUseAdvancedSubagentTools:
         !buildMode &&
-        isDyadProEnabled(settings) &&
+        isAgent2Enabled(settings) &&
         settings.enableAdvancedSubagents === true,
       runTypeScriptForWholeProject:
         settings.runTypeScriptForWholeProject === true,
@@ -2341,7 +2341,7 @@ export async function handleLocalAgentStream(
       !buildMode &&
       workspaceChanged &&
       !hitStepLimit &&
-      isDyadProEnabled(settings) &&
+      isAgent2Enabled(settings) &&
       settings.enableAutoReview === true;
 
     // Send completion

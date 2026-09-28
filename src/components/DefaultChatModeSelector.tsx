@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { ChatMode } from "@/lib/schemas";
-import { isDyadProEnabled, getEffectiveDefaultChatMode } from "@/lib/schemas";
+import { isAgent2Enabled, getEffectiveDefaultChatMode } from "@/lib/schemas";
 import { useTranslation } from "react-i18next";
 import { useEffect } from "react";
 import {
@@ -40,7 +40,7 @@ export function DefaultChatModeSelector() {
     return null;
   }
 
-  const isProEnabled = isDyadProEnabled(settings);
+  const isProEnabled = isAgent2Enabled(settings);
   const isDyadFreeSelected = isFreeProModel(settings.selectedModel);
   const effectiveDefault = getEffectiveDefaultChatMode(settings, envVars);
 

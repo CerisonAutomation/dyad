@@ -14,6 +14,12 @@ import {
 } from "@/db/schema";
 import { DyadError, DyadErrorKind, isDyadError } from "@/errors/dyad_error";
 import { getModelClient } from "@/ipc/utils/get_model_client";
+import { previewBrowserTool } from "../tools/preview_browser";
+import { astGrepSearchTool } from "../tools/ast_grep_search";
+import { codeMapTool } from "../tools/code_map";
+import { searchMcpToolsTool } from "../tools/search_mcp_tools";
+import { executeSandboxScriptTool } from "../tools/execute_sandbox_script";
+import { collectMcpToolDefs } from "../tools/mcp_type_defs";
 import { getAiHeaders, getProviderOptions } from "@/ipc/utils/provider_options";
 import { withLock } from "@/ipc/utils/lock_utils";
 import { fastTextOutput } from "@/ipc/utils/stream_text_utils";
@@ -29,7 +35,7 @@ import type {
   SubagentThreadSummary,
 } from "@/ipc/types";
 import { isSubagentAcceptingMessages, isSubagentActive } from "@/ipc/types";
-import { isDyadProEnabled, type UserSettings } from "@/lib/schemas";
+import { isAgent2Enabled, type UserSettings } from "@/lib/schemas";
 import { getChatInferenceSettings } from "@/ipc/services/chat_inference_settings";
 import { readSettings } from "@/main/settings";
 import { getDyadAppPath } from "@/paths/paths";
@@ -65,10 +71,15 @@ import type { ImplementerJoinSummary } from "./subagent_failure_reporting";
 
 export { SUBAGENT_NONTERMINAL_STATUSES } from "./state";
 
+/**
+ * Per-persona reasoning effort only. The model itself is never pinned here:
+ * every sub-agent runs on the model the user has selected, so it must be one
+ * they can actually authenticate against.
+ */
 const MODELS = {
-  explorer: { provider: "openai", name: "gpt-5.6-luna", effort: "high" },
-  reviewer: { provider: "openai", name: "gpt-5.6-sol", effort: "medium" },
-  implementer: { provider: "openai", name: "gpt-5.6-luna", effort: "high" },
+  explorer: { effort: "high" },
+  reviewer: { effort: "medium" },
+  implementer: { effort: "high" },
 } as const;
 const MAX_DURABLE_REPORT_CHARS = 100_000;
 const MAX_ACTIVITY_XML_CHARS = 200_000;
@@ -899,7 +910,7 @@ export async function runAutoReviewBarrier(params: {
 }> {
   params.deadlineAt ??= Date.now() + AUTO_REVIEW_BARRIER_MAX_WAIT_MS;
   const settings = readSettings();
-  const isPro = isDyadProEnabled(settings);
+  const isPro = isAgent2Enabled(settings);
   if ((!settings.enableAutoReview && !params.verification) || !isPro) {
     return { outcome: "skipped" };
   }
@@ -1634,9 +1645,13 @@ async function runThread(
             abortSignal: controller.signal,
             systemPromptOverride: implementerRunContext.systemPrompt,
           });
-    const durableResult = boundDurableReport(result.text).trim();
+    let durableResult = boundDurableReport(result.text).trim();
     if (!durableResult) {
-      throw new Error("Sub-agent finished without a report.");
+      // The sub-agent can do a great deal of work and still return no summary
+      // — usually by exhausting its step budget mid-task. Discarding that work
+      // is the worst possible outcome, so fall back to an explicit
+      // "unfinished" report naming the work that was done.
+      durableResult = buildUnfinishedReport(thread.persona, thread.taskName);
     }
     if (claimedExplorerMessageIds.size > 0) {
       await db
@@ -1660,7 +1675,7 @@ async function runThread(
     if (controller.signal.aborted) return;
     await finishThread(
       threadId,
-      isDyadProEnabled(readSettings()) ? "failed" : "entitlement_revoked",
+      isAgent2Enabled(readSettings()) ? "failed" : "entitlement_revoked",
       null,
       errorMessage(error),
     );
@@ -1717,7 +1732,7 @@ async function runReview(
       appId,
       persona: "reviewer",
       assignment: `Review this exact diff. ${STRUCTURED_REVIEW_INSTRUCTIONS}${followup ? `\n\nFollow-up request: ${followup}` : ""}\n\nFiles: ${target.files.join(", ")}\nExcluded: ${target.exclusions.join(", ") || "none"}\n\n${target.diff}`,
-      tools: {},
+      tools: await buildSubagentVerificationTools({ appId, appPath, chatId: thread.chatId }),
       abortSignal: controller.signal,
     });
     const report = reviewResult.text;
@@ -1750,7 +1765,7 @@ async function runReview(
     if (controller.signal.aborted) return;
     await finishThread(
       threadId,
-      isDyadProEnabled(readSettings()) ? "failed" : "entitlement_revoked",
+      isAgent2Enabled(readSettings()) ? "failed" : "entitlement_revoked",
       null,
       errorMessage(error),
     );
@@ -1772,6 +1787,77 @@ type RunModelParams = {
   abortSignal: AbortSignal;
   systemPromptOverride?: string;
 };
+
+/**
+ * Verification tools shared by the reviewer and implementer personas.
+ *
+ * The reviewer previously ran with an empty toolset and could only reason about
+ * the diff text it was handed. These let it (and the implementer) actually
+ * confirm a change behaves — by driving the running app, and by locating code
+ * structurally rather than by text match. All are read-only.
+ */
+async function buildSubagentVerificationTools(input: {
+  appId: number;
+  appPath: string;
+  chatId: number;
+}): Promise<ToolSet> {
+  // These tools only read appPath / appId, so a narrow context is enough.
+  // It is cast rather than widened to a full AgentContext: runReview does not
+  // receive the root turn context, and these tools must not act on it.
+  // Load the enabled MCP servers' tool catalogue so the sub-agent can discover
+  // and call them. Failure here must not cost the sub-agent its other tools.
+  let mcpToolDefs: Awaited<ReturnType<typeof collectMcpToolDefs>> | undefined;
+  try {
+    mcpToolDefs = await collectMcpToolDefs();
+  } catch {
+    mcpToolDefs = undefined;
+  }
+  const childCtx = {
+    appId: input.appId,
+    appPath: input.appPath,
+    chatId: input.chatId,
+    mcpToolDefs,
+    mcpToolsEnabled: mcpToolDefs !== undefined,
+    isMcpToolSearchAvailable: mcpToolDefs !== undefined,
+    onXmlStream: () => {},
+    onXmlComplete: () => {},
+    requireConsent: async () => true,
+    appendUserMessage: () => {},
+    onUpdateTodos: () => {},
+  } as unknown as AgentContext;
+  return {
+    preview_browser: {
+      description: previewBrowserTool.description,
+      inputSchema: previewBrowserTool.inputSchema as any,
+      execute: (args: any) => previewBrowserTool.execute(args, childCtx),
+    } as any,
+    ast_grep_search: {
+      description: astGrepSearchTool.description,
+      inputSchema: astGrepSearchTool.inputSchema as any,
+      execute: (args: any) => astGrepSearchTool.execute(args, childCtx),
+    } as any,
+    code_map: {
+      description: codeMapTool.description,
+      inputSchema: codeMapTool.inputSchema as any,
+      execute: (args: any) => codeMapTool.execute(args, childCtx),
+    } as any,
+    // MCP discovery + invocation. The enabled MCP servers (Argus, Exa,
+    // gitingest, codebase-memory, falow, Playwright, ...) were previously
+    // invisible to sub-agents, so a reviewer could not reach a tool that would
+    // have settled the question. Sub-agents discover by keyword and then call
+    // the returned host functions from inside a sandbox script.
+    search_mcp_tools: {
+      description: searchMcpToolsTool.description,
+      inputSchema: searchMcpToolsTool.inputSchema as any,
+      execute: (args: any) => searchMcpToolsTool.execute(args, childCtx),
+    } as any,
+    execute_sandbox_script: {
+      description: executeSandboxScriptTool.description,
+      inputSchema: executeSandboxScriptTool.inputSchema as any,
+      execute: (args: any) => executeSandboxScriptTool.execute(args, childCtx),
+    } as any,
+  };
+}
 
 async function runModel(
   params: RunModelParams,
@@ -1907,11 +1993,15 @@ async function personaModelSettings(
   acceptedSettings?: UserSettings,
 ) {
   const defaults = MODELS[persona];
+  const base = await getChatInferenceSettings(chatId, acceptedSettings);
+  // Sub-agents run on the model the user has actually selected. The persona
+  // only supplies a reasoning-effort preference; pinning provider/name here
+  // would target a model the user may not have a key for (and previously made
+  // every sub-agent fail its preflight with a Pro-upsell error).
   return {
-    ...(await getChatInferenceSettings(chatId, acceptedSettings)),
+    ...base,
     selectedModel: {
-      provider: defaults.provider,
-      name: defaults.name,
+      ...base.selectedModel,
       effortLevel: defaults.effort,
     },
     thinkingBudget: defaults.effort,
@@ -1923,27 +2013,20 @@ async function preflightPersonaModel(
   chatId: number,
   acceptedSettings?: UserSettings,
 ): Promise<void> {
-  const defaults = MODELS[persona];
-  const catalog = await getBuiltinLanguageModelCatalog();
-  const available = catalog.modelsByProvider[defaults.provider]?.some(
-    (model) => model.apiName === defaults.name,
-  );
-  if (!available) {
-    throw new DyadError(
-      `${persona} requires ${defaults.name}, which is not currently available. Check your Dyad Pro model access and try again.`,
-      DyadErrorKind.Precondition,
-    );
-  }
   try {
     const settings = await personaModelSettings(
       persona,
       chatId,
       acceptedSettings,
     );
+    // Validate the model that will actually run — the one the user selected,
+    // not a compiled-in default. The catalog lookup is skipped: it would
+    // reject any model the user can legitimately reach through a custom
+    // provider, which is not necessarily in the bundled catalog.
     await getModelClient(settings.selectedModel, settings);
   } catch (error) {
     throw new DyadError(
-      `${persona} could not start because ${defaults.name} is not configured. Check your Dyad Pro model access and try again.`,
+      `${persona} could not start because ${errorMessage(error)}`,
       DyadErrorKind.Precondition,
       { cause: error },
     );
@@ -2024,12 +2107,48 @@ export function shouldDrainMutationOnAbort(persona: SubagentPersona): boolean {
   return persona === "implementer";
 }
 
+const SHARED_TOOL_RULES = `
+TOOL USE IS MANDATORY, not optional. These tools exist because guessing is worse than looking.
+
+- code_map — REQUIRED first step whenever you touch an unfamiliar area, or when you
+  cannot name the file that holds the answer. It returns the file tree, the detected
+  framework, and per-file exports in one cheap call. Do not read files one at a time
+  to discover structure.
+- ast_grep_search — REQUIRED when you need code that matches by SHAPE rather than by
+  literal text: "where is this handled", "every call to X", "every useState", "any
+  try/catch", a repeated construct, or a deprecated API. Prefer it over grep whenever
+  the identifier may be named differently at each call site. Write the pattern as
+  ordinary code with $METAVARIABLES, e.g. "await $FUNC($$$)" or "useState<$T>($INIT)".
+  Use grep only for exact string or symbol lookups.
+- preview_browser — REQUIRED before you report a change as working. Navigate to the
+  affected route, read what a user would actually see, and check the console for
+  errors. Never claim a UI behaves correctly from reading the code alone. Use the
+  "console" action after any navigation; a page that renders but throws is still broken.
+
+Report only what a tool actually showed you. If a tool contradicts your expectation,
+believe the tool and say so.`;
+
 function systemPrompt(persona: SubagentPersona): string {
   if (persona === "reviewer")
-    return "You are Dyad Reviewer. Be independent, concise, evidence-based, and read-only.";
+    return (
+      "You are Dyad Reviewer. Be independent, concise, evidence-based, and read-only. " +
+      "A review that only reads the diff is incomplete: verify behaviour before approving." +
+      SHARED_TOOL_RULES
+    );
   if (persona === "implementer")
-    return "You are Dyad Implementer. Complete the focused assignment using only provided tools. Treat assigned paths as the expected focus, but cross them when correctness requires it and report every changed file and unresolved issue.";
-  return "You are Dyad Explorer. Investigate read-only, cite files and evidence, and return a concise report with confidence and recommended next action.";
+    return (
+      "You are Dyad Implementer. Complete the focused assignment using only provided tools. " +
+      "Treat assigned paths as the expected focus, but cross them when correctness requires " +
+      "it and report every changed file and unresolved issue. Do not declare the work done " +
+      "until you have exercised it in the running app." +
+      SHARED_TOOL_RULES
+    );
+  return (
+    "You are Dyad Explorer. Investigate read-only, cite files and evidence, and return a " +
+    "concise report with confidence and recommended next action. Locate code structurally " +
+    "rather than guessing at paths." +
+    SHARED_TOOL_RULES
+  );
 }
 
 export function resolveSubagentSystemPrompt(
@@ -2052,6 +2171,10 @@ async function createThread(params: {
   review?: ReviewTarget;
 }) {
   const defaults = MODELS[params.persona];
+  // Record the model this thread will actually run on — the user's selected
+  // model — so the persisted row is not a stale compiled-in default.
+  const inference = await getChatInferenceSettings(params.chatId);
+  const modelSelection = inference.selectedModel;
   const [row] = await db
     .insert(agentThreads)
     .values({
@@ -2061,8 +2184,8 @@ async function createThread(params: {
       taskName: params.taskName,
       assignment: params.assignment,
       status: "queued",
-      provider: defaults.provider,
-      model: defaults.name,
+      provider: modelSelection.provider,
+      model: modelSelection.name,
       reasoningEffort: defaults.effort,
       invocationSource: params.invocationSource,
       contextJson: params.contextJson,
@@ -2319,7 +2442,7 @@ function assertPersonaEnabled(
 }
 
 function assertPro(persona?: SubagentPersona): void {
-  if (!isDyadProEnabled(readSettings())) {
+  if (!isAgent2Enabled(readSettings())) {
     throw new DyadError(
       persona
         ? `${persona} sub-agents require Dyad Pro.`
@@ -2427,6 +2550,27 @@ function toActivitySummary(
     startedAt: row.startedAt,
     completedAt: row.completedAt,
   };
+}
+
+/**
+ * Report emitted when a sub-agent completes its tool work but returns no
+ * summary. States plainly that the work is incomplete so the parent agent
+ * inspects the tree rather than assuming success.
+ */
+function buildUnfinishedReport(
+  persona: SubagentPersona,
+  taskName: string,
+): string {
+  return [
+    `## ${persona} did not finish`,
+    "",
+    `Task: ${taskName}`,
+    "",
+    "The sub-agent used its step budget without producing a final summary, so " +
+      "this report is incomplete. Its edits are in the working tree — review the " +
+      "diff and the task's target files to see what actually landed, and treat " +
+      "the work as unverified until type checks and tests pass.",
+  ].join("\n");
 }
 
 function errorMessage(error: unknown): string {
@@ -2693,7 +2837,7 @@ function watchEntitlement(
   controller: AbortController,
 ): ReturnType<typeof setInterval> {
   const timer = setInterval(() => {
-    if (isDyadProEnabled(readSettings())) return;
+    if (isAgent2Enabled(readSettings())) return;
     clearInterval(timer);
     controller.abort();
     void finishThread(

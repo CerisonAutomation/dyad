@@ -32,7 +32,7 @@ import { SONNET_4_6 } from "@/ipc/shared/language_model_constants";
 import {
   GPT_5_4,
   getEvalModel,
-  hasDyadProKey,
+  hasEngineCredential,
   type EvalProvider,
 } from "./helpers/get_eval_model";
 import {
@@ -245,7 +245,7 @@ describe("chat-history fixtures validate", () => {
 
 // ── Benchmark ──────────────────────────────────────────────────
 
-const canRun = hasDyadProKey() && scenarios.length > 0;
+const canRun = hasEngineCredential() && scenarios.length > 0;
 
 (canRun ? describe : describe.skip)("chat-history recall benchmark", () => {
   let world: SeededWorld;

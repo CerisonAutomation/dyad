@@ -1,75 +1,113 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { ProModeSelector } from "./ProModeSelector";
 const mocks = vi.hoisted(() => ({
-  connected: true,
-  usage: undefined as string | undefined,
+  settings: {} as Record<string, unknown>,
   update: vi.fn(),
 }));
 vi.mock("@/hooks/useSettings", () => ({
   useSettings: () => ({
-    settings: {
-      enableDyadPro: true,
-      proModelUsage: mocks.usage,
-      providerSettings: { auto: { apiKey: { value: "test-pro" } } },
-    },
+    settings: mocks.settings,
     updateSettings: mocks.update,
   }),
 }));
-vi.mock("@/hooks/useSubscriptionAccount", () => ({
-  useSubscriptionAccount: () => ({ data: { connected: mocks.connected } }),
-}));
-vi.mock("@/ipc/types", () => ({
-  ipc: { system: { openExternalUrl: vi.fn() } },
-}));
 beforeEach(() => {
-  mocks.connected = true;
-  mocks.usage = undefined;
+  mocks.settings = { enableAgent2: true };
   vi.clearAllMocks();
 });
-it("defaults to subscription when connected and writes a global preference", async () => {
+
+it("opens the Agent2 panel and shows Agent2 features", async () => {
   const user = userEvent.setup();
   render(<ProModeSelector />);
-  await user.click(screen.getByRole("button", { name: "Pro" }));
+
+  await user.click(screen.getByRole("button", { name: "Agent2" }));
+
+  expect(screen.getByText("Agent2 Mode")).toBeInTheDocument();
   expect(
-    screen.getByRole("button", { name: "ChatGPT Subscription" }),
-  ).toHaveAttribute("aria-pressed", "true");
-  await user.click(screen.getByRole("button", { name: "Pro credits" }));
-  expect(mocks.update).toHaveBeenCalledWith({ proModelUsage: "pro" });
-});
-it("disables subscription when disconnected", async () => {
-  mocks.connected = false;
-  const user = userEvent.setup();
-  render(<ProModeSelector />);
-  await user.click(screen.getByRole("button", { name: "Pro" }));
+    screen.getByRole("switch", { name: "Enable Agent2" }),
+  ).toBeChecked();
   expect(
-    screen.getByRole("button", { name: "ChatGPT Subscription" }),
-  ).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Pro credits" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+    screen.getByRole("button", { name: /Agent2 features/i }),
+  ).toBeInTheDocument();
 });
 
-it.each(["click", "keyboard"])(
-  "persists Pro credits from a disconnected subscription preference via %s",
-  async (method) => {
-    mocks.connected = false;
-    mocks.usage = "subscription";
-    const user = userEvent.setup();
-    render(<ProModeSelector />);
-    await user.click(screen.getByRole("button", { name: "Pro" }));
-    const credits = screen.getByRole("button", { name: "Pro credits" });
-    expect(credits).toHaveAttribute("aria-pressed", "true");
-    if (method === "click") await user.click(credits);
-    else {
-      credits.focus();
-      await user.keyboard("{Enter}");
-    }
-    expect(mocks.update).toHaveBeenCalledExactlyOnceWith({
-      proModelUsage: "pro",
-    });
-  },
-);
+it("reflects a disabled Agent2 toggle from settings", async () => {
+  mocks.settings = { enableAgent2: false };
+  const user = userEvent.setup();
+  render(<ProModeSelector />);
+
+  await user.click(screen.getByRole("button", { name: "Agent2" }));
+
+  expect(
+    screen.getByRole("switch", { name: "Enable Agent2" }),
+  ).not.toBeChecked();
+});
+
+it("persists the Agent2 toggle through settings", async () => {
+  const user = userEvent.setup();
+  render(<ProModeSelector />);
+
+  await user.click(screen.getByRole("button", { name: "Agent2" }));
+  await user.click(screen.getByRole("switch", { name: "Enable Agent2" }));
+
+  expect(mocks.update).toHaveBeenCalledWith({ enableAgent2: false });
+});
+
+it("exposes Web Access, Turbo Edits and Smart Context inside Agent2 features", async () => {
+  const user = userEvent.setup();
+  render(<ProModeSelector />);
+
+  await user.click(screen.getByRole("button", { name: "Agent2" }));
+  await user.click(screen.getByRole("button", { name: /Agent2 features/i }));
+
+  expect(screen.getByRole("switch", { name: "Web Access" })).toBeInTheDocument();
+  expect(screen.getByTestId("turbo-edits-selector")).toBeInTheDocument();
+  expect(screen.getByTestId("smart-context-selector")).toBeInTheDocument();
+});
+
+it("writes the Turbo Edits selection", async () => {
+  const user = userEvent.setup();
+  render(<ProModeSelector />);
+
+  await user.click(screen.getByRole("button", { name: "Agent2" }));
+  await user.click(screen.getByRole("button", { name: /Agent2 features/i }));
+  await user.click(screen.getByRole("button", { name: "Search & replace" }));
+
+  expect(mocks.update).toHaveBeenCalledWith({
+    enableProLazyEditsMode: true,
+    proLazyEditsMode: "v2",
+  });
+});
+
+it("writes the Smart Context selection", async () => {
+  const user = userEvent.setup();
+  render(<ProModeSelector />);
+
+  await user.click(screen.getByRole("button", { name: "Agent2" }));
+  await user.click(screen.getByRole("button", { name: /Agent2 features/i }));
+  await user.click(screen.getByRole("button", { name: "Balanced" }));
+
+  expect(mocks.update).toHaveBeenCalledWith({
+    enableProSmartFilesContextMode: true,
+    proSmartContextOption: "balanced",
+  });
+});
+
+it("turns an active feature off when its current option is selected", async () => {
+  mocks.settings = {
+    enableAgent2: true,
+    enableProLazyEditsMode: true,
+    proLazyEditsMode: "v2",
+  };
+  const user = userEvent.setup();
+  render(<ProModeSelector />);
+
+  await user.click(screen.getByRole("button", { name: "Agent2" }));
+  await user.click(screen.getByRole("button", { name: /Agent2 features/i }));
+  const turbo = within(screen.getByTestId("turbo-edits-selector"));
+  await user.click(turbo.getByRole("button", { name: "Off" }));
+
+  expect(mocks.update).toHaveBeenCalledWith({ enableProLazyEditsMode: false });
+});

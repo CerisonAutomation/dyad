@@ -1,4 +1,4 @@
-import { isDyadProEnabled } from "@/lib/schemas";
+import { isAgent2Enabled } from "@/lib/schemas";
 import { SETTING_IDS } from "@/lib/settingsSearchIndex";
 import { useSettings } from "@/hooks/useSettings";
 import { Label } from "@/components/ui/label";
@@ -48,7 +48,7 @@ export function AutoFixReviewIssuesSwitch({
   compact?: boolean;
 }) {
   const { settings, updateSettings } = useSettings();
-  if (!settings || !isDyadProEnabled(settings)) return null;
+  if (!settings || !isAgent2Enabled(settings)) return null;
 
   return (
     <div className={compact ? "flex items-center gap-2" : "space-y-1"}>
@@ -74,7 +74,7 @@ export function AutoFixReviewIssuesSwitch({
 
 export function SubagentSettings() {
   const { settings, updateSettings } = useSettings();
-  if (!settings || !isDyadProEnabled(settings)) return null;
+  if (!settings || !isAgent2Enabled(settings)) return null;
 
   return (
     <div className="mt-6 space-y-4 border-t pt-5">

@@ -193,6 +193,11 @@ const config: ForgeConfig = {
         schemes: ["dyad"],
       },
     ],
+    // Without this, electron-packager falls back to com.electron.<name> and
+    // macOS presents the build as "Electron" and routes dyad:// callbacks
+    // ambiguously. The real Dyad identity makes the bundle the canonical
+    // handler for the scheme.
+    appBundleId: process.env.DYAD_BUNDLE_ID ?? "sh.dyad.dyad",
     icon: "./assets/icon/logo",
 
     // Local builds have no Developer ID identity; skip signing rather than

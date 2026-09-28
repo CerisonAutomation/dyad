@@ -9,7 +9,6 @@ import { miscContracts } from "../types/misc";
 import { systemContracts } from "../types/system";
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   getDyadAppPath,
@@ -106,6 +105,7 @@ async function readScreenshotEntries(
 }
 
 import log from "electron-log";
+import { spawnWithBadFdRetry } from "@/ipc/utils/spawn_retry";
 import {
   deploySupabaseFunction,
   getSupabaseProjectName,
@@ -317,7 +317,7 @@ async function searchAppFilesWithRipgrep({
       ".",
     ];
 
-    const rg = spawn(getRgExecutablePath(), args, { cwd: appPath });
+    const rg = spawnWithBadFdRetry(getRgExecutablePath(), args, { cwd: appPath });
     let buffer = "";
 
     rg.stdout.on("data", (data) => {

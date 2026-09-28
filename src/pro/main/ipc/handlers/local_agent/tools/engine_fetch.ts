@@ -72,7 +72,16 @@ export async function engineFetch(
   const apiKey = settings.providerSettings?.auto?.apiKey?.value;
 
   if (!apiKey) {
-    throw new DyadError("Dyad Pro API key is required", DyadErrorKind.Auth);
+    // The hosted engine gateway is no longer part of this build. Say so
+    // plainly: the old "Dyad Pro API key is required" reads like a billing
+    // problem, and the tools built on this helper fail for that reason.
+    throw new DyadError(
+      "This action is provided by Dyad's hosted engine, which is not " +
+        "available in this build and requires a Dyad Pro API key. Use the " +
+        "local equivalents instead (grep/bm25 for code search, execute_sandbox_script " +
+        "or run_tests for verification).",
+      DyadErrorKind.Precondition,
+    );
   }
 
   const {

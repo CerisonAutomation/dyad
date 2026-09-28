@@ -61,10 +61,14 @@ import {
   buildExploreCodeSubagentSystemPrompt,
 } from "./explore_code_subagent_prompts";
 import { formatExploreProgressLog } from "./explore_code_subagent_progress";
+import { astGrepSearchTool } from "./ast_grep_search";
+import { codeMapTool } from "./code_map";
 
 const logger = log.scope("explore_code_subagent");
 
-const SUBAGENT_MODEL = { provider: "openai", name: "gpt-5.6-luna" } as const;
+// The explorer runs on whatever model the user selected. A compiled-in
+// default would target a provider they may not have a key for, which made
+// every explorer run fail preflight. Resolved from settings at call time.
 // Max model turns in the agent loop. Each step may issue several parallel tool
 // calls, so this is distinct from the read-only tool-call budget below.
 const SUBAGENT_MAX_STEPS = 12;
@@ -114,26 +118,22 @@ export async function runExploreCodeSubagent({
     ctx.chatId,
     ctx.inferenceSettings,
   );
-  assertDyadValueAvailable(storedSettings);
+  const explorerModel = storedSettings.selectedModel;
   const selectedModel = await resolveModelSelection({
-    model: SUBAGENT_MODEL,
+    model: explorerModel,
     preferredEffortLevel:
       storedSettings.modelEffortPreferences?.[
-        getModelPreferenceKey(SUBAGENT_MODEL)
+        getModelPreferenceKey(explorerModel)
       ],
   });
   const settings = { ...storedSettings, selectedModel };
 
-  const modelInfo = await getModelClient(
-    SUBAGENT_MODEL,
-    settings,
-    selectedModel,
-  );
+  const modelInfo = await getModelClient(explorerModel, settings, selectedModel);
   const maxOutputTokens = Math.min(
-    (await getMaxTokens(SUBAGENT_MODEL)) ?? SUBAGENT_MAX_OUTPUT_TOKENS,
+    (await getMaxTokens(explorerModel)) ?? SUBAGENT_MAX_OUTPUT_TOKENS,
     SUBAGENT_MAX_OUTPUT_TOKENS,
   );
-  const temperature = await getTemperature(SUBAGENT_MODEL);
+  const temperature = await getTemperature(explorerModel);
   const intent: ExploreIntent = args.intent ?? "locate";
   const observations: SubagentObservation[] = [];
   const candidateRegistry = createCandidateRegistry();
@@ -363,15 +363,6 @@ function renderFinalReport({
   });
 }
 
-function assertDyadValueAvailable(settings: UserSettings): void {
-  if (!settings.enableDyadPro || !settings.providerSettings?.auto?.apiKey) {
-    throw new DyadError(
-      "explore_code sub-agent requires Dyad Pro with an auto provider API key",
-      DyadErrorKind.Precondition,
-    );
-  }
-}
-
 function createReadOnlyToolBudget(): ReadOnlyToolBudget {
   let usedCalls = 0;
   return {
@@ -464,6 +455,28 @@ function buildExploreCodeSubagentTools({
       candidateRegistry,
       readOnlyToolBudget,
       onProgress,
+    }),
+    // Structural search complements grep: it finds a code SHAPE regardless of
+    // the names used, which is what "where is this handled" actually needs.
+    ast_grep_search: wrapSubagentTool({
+      tool: astGrepSearchTool,
+      ctx: childCtx,
+      observations,
+      candidateRegistry,
+      readOnlyToolBudget,
+      onProgress,
+      candidatesFromResult: () => [],
+    }),
+    // A cheap orientation digest, so the explorer can see the shape of an
+    // unfamiliar area before drilling into individual files.
+    code_map: wrapSubagentTool({
+      tool: codeMapTool,
+      ctx: childCtx,
+      observations,
+      candidateRegistry,
+      readOnlyToolBudget,
+      onProgress,
+      candidatesFromResult: () => [],
     }),
     submit_report: {
       description:

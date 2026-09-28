@@ -39,7 +39,10 @@ function getRemoteLanguageModelCatalogUrl() {
     return `http://localhost:${process.env.FAKE_LLM_PORT}/api/language-model-catalog`;
   }
 
-  return "https://api.dyad.sh/v1/language-model-catalog";
+  // Agent2 ships its own catalog and never calls Dyad's. The URL is baked in
+  // rather than passed through the environment so the app can be launched as
+  // a normal .app bundle (LaunchServices does not inherit shell env vars).
+  return "http://127.0.0.1:39471/llm-catalog.json";
 }
 
 export type { ThemeGenerationModelOption };
