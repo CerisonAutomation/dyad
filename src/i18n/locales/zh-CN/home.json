@@ -71,10 +71,10 @@
   "deleteItemTitle": "删除{{itemType}}",
   "deleteItemConfirmation": "确定要删除「{{itemName}}」吗？此操作无法撤销。",
   "proBanner": {
-    "manageDyadPro": "管理 Dyad Pro",
-    "alreadyHavePro": "已有 Dyad Pro？添加您的密钥",
+    "manageDyadPro": "管理 Agent2",
+    "alreadyHavePro": "已有 Agent2？添加您的密钥",
     "accessLeadingModels": "一个计划即可访问领先的 AI 模型",
-    "getDyadPro": "获取 Dyad Pro",
+    "getDyadPro": "获取 Agent2",
     "upTo3xCheaper": "便宜高达 3 倍",
     "byUsingSmartContext": "通过使用智能上下文"
   },
@@ -100,7 +100,7 @@
     "notSureWatchVideo": "不确定该怎么做？观看上方的入门视频",
     "setupGeminiApiKey": "设置 Google Gemini API 密钥",
     "setupOpenRouterApiKey": "设置 OpenRouter API 密钥",
-    "setupDyadPro": "设置 Dyad Pro",
+    "setupDyadPro": "设置 Agent2",
     "accessAllModels": "一个计划即可访问所有 AI 模型",
     "setupOtherProviders": "设置其他 AI 提供商",
     "openAiAnthropicMore": "OpenAI、Anthropic 等",
@@ -463,10 +463,7 @@
       "undo": "撤销",
       "redo": "重做",
       "addToChat": "添加到聊天",
-      "closeAnnotator": "关闭标注器",
-      "proFeatureTitle": "标注器是 Pro 功能",
-      "proFeatureDescription": "解锁截图标注功能，使用 Dyad Pro 提升您的工作流程。",
-      "getDyadPro": "获取 Dyad Pro"
+      "closeAnnotator": "关闭标注器"
     }
   },
   "integrations": {

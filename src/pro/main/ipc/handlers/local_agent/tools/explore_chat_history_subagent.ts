@@ -31,8 +31,13 @@ import {
 
 const logger = log.scope("explore_chat_history_subagent");
 
+<<<<<<< HEAD
 // Shared with the other latency-sensitive Dyad tasks through SMALL_MODEL_NAME.
 const SUBAGENT_MODEL = { provider: "openai", name: SMALL_MODEL_NAME } as const;
+=======
+// Runs on the user's selected model, matching explore_code. A compiled-in
+// default would require a provider key the user may not have.
+>>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
 // Max model turns. The chat-history corpus is small; benchmark runs
 // converged in well under this (mean 5 searches + 3 reads).
 const SUBAGENT_MAX_STEPS = 10;
@@ -63,6 +68,7 @@ export async function runExploreChatHistorySubagent({
     ctx.chatId,
     ctx.inferenceSettings,
   );
+<<<<<<< HEAD
   assertHistoryExplorerAvailable(storedSettings, ctx);
   const auxiliaryModel = SUBAGENT_MODEL;
   const selectedModel = await resolveModelSelection({
@@ -70,20 +76,39 @@ export async function runExploreChatHistorySubagent({
     preferredEffortLevel:
       storedSettings.modelEffortPreferences?.[
         getModelPreferenceKey(auxiliaryModel)
+=======
+  const historyModel = storedSettings.selectedModel;
+  const selectedModel = await resolveModelSelection({
+    model: historyModel,
+    preferredEffortLevel:
+      storedSettings.modelEffortPreferences?.[
+        getModelPreferenceKey(historyModel)
+>>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
       ],
   });
   const settings = { ...getAuxiliarySettings(storedSettings), selectedModel };
 
   const modelInfo = await getModelClient(
+<<<<<<< HEAD
     auxiliaryModel,
+=======
+    historyModel,
+>>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
     settings,
     selectedModel,
   );
   const maxOutputTokens = Math.min(
+<<<<<<< HEAD
     (await getMaxTokens(auxiliaryModel)) ?? SUBAGENT_MAX_OUTPUT_TOKENS,
     SUBAGENT_MAX_OUTPUT_TOKENS,
   );
   const temperature = await getTemperature(auxiliaryModel);
+=======
+    (await getMaxTokens(historyModel)) ?? SUBAGENT_MAX_OUTPUT_TOKENS,
+    SUBAGENT_MAX_OUTPUT_TOKENS,
+  );
+  const temperature = await getTemperature(historyModel);
+>>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
 
   const registry = createHistoryObservationRegistry();
   const counts: RetrievalCounts = { searches: 0, reads: 0 };
@@ -201,25 +226,6 @@ function finalReport({
     registry,
     reason: "the sub-agent did not submit an accepted report",
   });
-}
-
-function assertHistoryExplorerAvailable(
-  settings: UserSettings,
-  ctx: AgentContext,
-): void {
-  // Toolset exclusion is not an execution-time security boundary — re-check.
-  if (!ctx.isDyadPro || !settings.enableDyadPro) {
-    throw new DyadError(
-      "explore_chat_history requires Dyad Pro",
-      DyadErrorKind.Precondition,
-    );
-  }
-  if (!settings.providerSettings?.auto?.apiKey) {
-    throw new DyadError(
-      "explore_chat_history requires a Dyad Pro auto provider API key",
-      DyadErrorKind.Precondition,
-    );
-  }
 }
 
 function formatProgress(counts: RetrievalCounts): string {

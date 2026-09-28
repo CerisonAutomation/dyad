@@ -61,7 +61,9 @@
     "benchmark:code-explorer": "node benchmarks/code-explorer/run.mjs",
     "benchmark:code-explorer:suite": "node benchmarks/code-explorer/suite.mjs",
     "benchmark:code-explorer:smoke": "node benchmarks/code-explorer/suite.mjs --mode smoke",
-    "benchmark:code-explorer:full": "node benchmarks/code-explorer/suite.mjs --mode full"
+    "benchmark:code-explorer:full": "node benchmarks/code-explorer/suite.mjs --mode full",
+    "build:fast": "cross-env DYAD_REACT_COMPILER=false vite build --config vite.renderer.config.mts",
+    "package:fast": "cross-env DYAD_REACT_COMPILER=false electron-forge package"
   },
   "dependencies": {
     "@ai-sdk/amazon-bedrock": "^4.0.46",

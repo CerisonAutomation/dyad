@@ -5,7 +5,7 @@ import { createTypedHandler } from "./base";
 import { freeModelQuotaContracts } from "../types/free_model_quota";
 import { readSettings } from "@/main/settings";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
-import { isDyadProEnabled } from "@/lib/schemas";
+import { isAgent2Enabled } from "@/lib/schemas";
 import { getDyadEngineBaseUrl } from "../utils/dyad_engine_url";
 
 const logger = log.scope("free_model_quota_handlers");
@@ -28,7 +28,7 @@ export async function getFreeModelQuotaStatus() {
   const settings = readSettings();
   const apiKey = settings.providerSettings?.auto?.apiKey?.value;
 
-  if (!settings.enableDyadPro || !isDyadProEnabled(settings) || !apiKey) {
+  if (!settings.enableDyadPro || !isAgent2Enabled(settings) || !apiKey) {
     throw new DyadError(
       "Dyad Pro must be enabled to check free model quota.",
       DyadErrorKind.Auth,

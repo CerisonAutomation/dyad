@@ -1,18 +1,28 @@
 import { z } from "zod";
 import log from "electron-log";
 import { ToolDefinition, escapeXmlContent, AgentContext } from "./types";
-import { engineFetch } from "./engine_fetch";
-import {
-  getImageDimensionsFromDataUrl,
-  isImageTooLarge,
-  MAX_IMAGE_DIMENSION,
-} from "./image_utils";
+import { localWebFetch } from "./local_web_fetch";
+import { assertNotPrivateIp } from "./network_utils";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 
 const logger = log.scope("web_crawl");
 
+const MAX_PAGES = 8;
+const MAX_CONTENT_PER_PAGE = 12_000;
+const FETCH_TIMEOUT_MS = 15_000;
+const MAX_LINKS_PER_PAGE = 25;
+
 const webCrawlSchema = z.object({
   url: z.string().describe("URL to crawl"),
+  maxPages: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_PAGES)
+    .optional()
+    .describe(
+      `How many pages to follow from the start URL (default 1, max ${MAX_PAGES}).`,
+    ),
 });
 
 export const webCrawlResponseSchema = z.object({
@@ -23,192 +33,116 @@ export const webCrawlResponseSchema = z.object({
 });
 
 const DESCRIPTION = `
-You can crawl a website so you can clone it.
+Fetch a web page and, when asked, follow its links to gather content. Use this to read documentation or clone the structure of a site.
 
-### When You MUST Trigger a Crawl
-Trigger a crawl ONLY if BOTH conditions are true:
+### When to use
+- Reading multi-page documentation
+- Cloning the shape of a site
+- Gathering related content from a section
 
-1. The user's message shows intent to CLONE / COPY / REPLICATE / RECREATE / DUPLICATE / MIMIC a website.
-   - Keywords include: clone, copy, replicate, recreate, duplicate, mimic, build the same, make the same.
+### When NOT to use
+- You already know the exact URL — use \`web_fetch\`, which is faster
+- You want a search — use the Exa or MultiFetch plugin
 
-2. The user's message contains a URL or something that appears to be a domain name.
-   - e.g. "example.com", "https://example.com"
-   - Do not require 'http://' or 'https://'.
+Pages are fetched with the same protections as \`web_fetch\`, so private and
+internal addresses (localhost, link-local, RFC1918) are refused.
 `;
 
-const CLONE_INSTRUCTIONS_WITH_SCREENSHOT = `
+/** Extract absolute http(s) links from fetched content. */
+function extractLinks(content: string, baseUrl: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const pattern = /https?:\/\/[^\s"'<>)\]]+/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(content)) && out.length < MAX_LINKS_PER_PAGE) {
+    let resolved: string;
+    try {
+      resolved = new URL(match[0]).toString();
+    } catch {
+      continue;
+    }
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    out.push(resolved);
+  }
+  return out;
+}
 
-Replicate the website from the provided screenshot image and markdown.
-
-**Use the screenshot as your primary visual reference** to understand the layout, colors, typography, and overall design of the website. The screenshot shows exactly how the page should look.
-
-**IMPORTANT: Image Handling**
-- Do NOT use or reference real external image URLs.
-- Instead, create a file named "placeholder.svg" at "/public/assets/placeholder.svg".
-- The file must be included in the output as its own code block.
-- The SVG should be a simple neutral gray rectangle, like:
-  \`\`\`svg
-  <svg width="400" height="300" xmlns="http://www.w3.org/2000/svg">
-    <rect width="100%" height="100%" fill="#e2e2e2"/>
-  </svg>
-  \`\`\`
-
-**When generating code:**
-- Replace all \`<img src="...">\` with: \`<img src="/assets/placeholder.svg" alt="placeholder" />\`
-- If using Next.js Image component: \`<Image src="/assets/placeholder.svg" alt="placeholder" width={400} height={300} />\`
-
-Always include the placeholder.svg file in your output file tree.
-`;
-
-const CLONE_INSTRUCTIONS_WITHOUT_SCREENSHOT = `
-
-Replicate the website from the provided markdown snapshot.
-
-**Use the markdown snapshot below as your reference** to understand the page structure, content, and layout of the website.
-
-**IMPORTANT: Image Handling**
-- Do NOT use or reference real external image URLs.
-- Instead, create a file named "placeholder.svg" at "/public/assets/placeholder.svg".
-- The file must be included in the output as its own code block.
-- The SVG should be a simple neutral gray rectangle, like:
-  \`\`\`svg
-  <svg width="400" height="300" xmlns="http://www.w3.org/2000/svg">
-    <rect width="100%" height="100%" fill="#e2e2e2"/>
-  </svg>
-  \`\`\`
-
-**When generating code:**
-- Replace all \`<img src="...">\` with: \`<img src="/assets/placeholder.svg" alt="placeholder" />\`
-- If using Next.js Image component: \`<Image src="/assets/placeholder.svg" alt="placeholder" width={400} height={300} />\`
-
-Always include the placeholder.svg file in your output file tree.
-`;
-
-async function callWebCrawl(
-  url: string,
-  ctx: Pick<AgentContext, "dyadRequestId" | "abortSignal">,
+async function crawl(
+  startUrl: string,
+  maxPages: number,
 ): Promise<z.infer<typeof webCrawlResponseSchema>> {
-  const response = await engineFetch(ctx, "/tools/web-crawl", {
-    method: "POST",
-    body: JSON.stringify({ url }),
-  });
+  await assertNotPrivateIp(startUrl);
+  const root = new URL(startUrl);
+  const visited = new Set<string>();
+  const queue: string[] = [startUrl];
+  const sections: string[] = [];
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Web crawl failed: ${response.status} ${response.statusText} - ${errorText}`,
+  while (queue.length > 0 && visited.size < maxPages) {
+    const next = queue.shift()!;
+    if (visited.has(next)) continue;
+    visited.add(next);
+
+    let page;
+    try {
+      page = await localWebFetch(next, {
+        maxLength: MAX_CONTENT_PER_PAGE,
+        timeout: FETCH_TIMEOUT_MS,
+      });
+    } catch (error) {
+      logger.warn(`crawl skipped ${next}:`, (error as Error).message);
+      continue;
+    }
+    if (!page?.content) continue;
+
+    sections.push(
+      `## ${page.title || next}\nSource: ${next}\n\n${page.content}`,
+    );
+
+    if (visited.size < maxPages) {
+      for (const link of extractLinks(page.content, page.url || next)) {
+        // Stay on the starting host: a crawl that wanders off-site is usually
+        // an accident, and it multiplies the fetch cost.
+        try {
+          if (new URL(link).host !== root.host) continue;
+        } catch {
+          continue;
+        }
+        if (!visited.has(link)) queue.push(link);
+      }
+    }
+  }
+
+  if (sections.length === 0) {
+    throw new DyadError(
+      `Crawl of ${startUrl} returned no readable content.`,
+      DyadErrorKind.NotFound,
     );
   }
 
-  const data = webCrawlResponseSchema.parse(await response.json());
-  return data;
+  return { rootUrl: startUrl, markdown: sections.join("\n\n---\n\n") };
 }
 
-export const webCrawlTool: ToolDefinition<z.infer<typeof webCrawlSchema>> = {
+export const webCrawlTool: ToolDefinition = {
   name: "web_crawl",
   description: DESCRIPTION,
   inputSchema: webCrawlSchema,
-  defaultConsent: "ask",
-  usesEngineEndpoint: true,
-
-  // Requires Dyad Pro engine API
-  isEnabled: (ctx) => ctx.isDyadPro,
-
-  getConsentPreview: (args) => `Crawl URL: "${args.url}"`,
-
-  buildXml: (args, isComplete) => {
-    if (!args.url) return undefined;
-
-    let xml = `<dyad-web-crawl>${escapeXmlContent(args.url)}`;
-    if (isComplete) {
-      xml += "</dyad-web-crawl>";
-    }
-    return xml;
-  },
-
-  execute: async (args, ctx) => {
-    logger.log(`Executing web crawl: ${args.url}`);
-
-    const result = await callWebCrawl(args.url, ctx);
-
-    if (!result) {
-      throw new DyadError(
-        "Web crawl returned no results",
-        DyadErrorKind.External,
+  defaultConsent: "always",
+  modifiesState: false,
+  execute: async (args, ctx: AgentContext) => {
+    ctx.onXmlStream(`<dyad-web-crawl url="${escapeXmlContent(args.url)}">`);
+    try {
+      const result = await crawl(args.url, args.maxPages ?? 1);
+      ctx.onXmlComplete(`<dyad-web-crawl url="${escapeXmlContent(args.url)}">`);
+      return result.markdown ?? "";
+    } catch (error) {
+      const message = (error as Error).message;
+      ctx.onXmlComplete(
+        `<dyad-web-crawl url="${escapeXmlContent(args.url)}" error="${escapeXmlContent(message)}" />`,
       );
-    }
-
-    if (!result.markdown) {
-      throw new DyadError(
-        "No content available from web crawl",
-        DyadErrorKind.External,
-      );
-    }
-
-    if (!result.screenshot) {
-      throw new DyadError(
-        "No screenshot available from web crawl",
-        DyadErrorKind.External,
-      );
-    }
-    logger.log(`Web crawl completed for URL: ${args.url}`);
-
-    // Check image dimensions before sending to LLM
-    const imageDimensions = getImageDimensionsFromDataUrl(result.screenshot);
-    const imageExceedsSizeLimit =
-      imageDimensions && isImageTooLarge(imageDimensions);
-
-    if (imageExceedsSizeLimit) {
-      logger.warn(
-        `Screenshot dimensions (${imageDimensions.width}x${imageDimensions.height}) exceed max allowed size (${MAX_IMAGE_DIMENSION}px). Omitting image.`,
-      );
-    }
-
-    const includeScreenshot = !imageExceedsSizeLimit;
-    const instructions = includeScreenshot
-      ? CLONE_INSTRUCTIONS_WITH_SCREENSHOT
-      : CLONE_INSTRUCTIONS_WITHOUT_SCREENSHOT;
-
-    const messageContent: Parameters<typeof ctx.appendUserMessage>[0] = [
-      { type: "text", text: instructions },
-    ];
-
-    if (includeScreenshot) {
-      // Add the screenshot image
-      messageContent.push({ type: "image-url", url: result.screenshot });
-    } else {
-      // Add explanation instead of the image
-      messageContent.push({
-        type: "text",
-        text: `[Screenshot omitted: Image dimensions (${imageDimensions!.width}x${imageDimensions!.height}px) exceed the maximum allowed size of ${MAX_IMAGE_DIMENSION}px. Please rely on the markdown snapshot below to understand the page structure and content.]`,
+      throw new DyadError(`Web crawl failed: ${message}`, DyadErrorKind.External, {
+        cause: error,
       });
     }
-
-    messageContent.push({
-      type: "text",
-      text: formatSnippet("Markdown snapshot:", result.markdown, "markdown"),
-    });
-
-    ctx.appendUserMessage(messageContent);
-
-    return "Web crawl completed.";
   },
 };
-
-const MAX_TEXT_SNIPPET_LENGTH = 16_000;
-
-// Format a code snippet with a label and language, truncating if necessary.
-// Sanitizes triple backticks in content to prevent code block breakout.
-export function formatSnippet(
-  label: string,
-  value: string,
-  lang: string,
-): string {
-  const sanitized = truncateText(value).replace(/```/g, "` ` `");
-  return `${label}:\n\`\`\`${lang}\n${sanitized}\n\`\`\``;
-}
-
-function truncateText(value: string): string {
-  if (value.length <= MAX_TEXT_SNIPPET_LENGTH) return value;
-  return `${value.slice(0, MAX_TEXT_SNIPPET_LENGTH)}\n<!-- truncated -->`;
-}

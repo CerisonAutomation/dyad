@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ipc } from "@/ipc/types";
 import {
   type UserSettings,
-  isDyadProEnabled,
+  isAgent2Enabled,
 } from "@/lib/schemas";
 import {
   getInitialLoadTelemetryProperties,
@@ -192,6 +192,6 @@ function processSettingsForTelemetry(settings: UserSettings) {
   }
   window.localStorage.setItem(
     DYAD_PRO_STATUS_KEY,
-    isDyadProEnabled(settings) ? "true" : "false",
+    isAgent2Enabled(settings) ? "true" : "false",
   );
 }

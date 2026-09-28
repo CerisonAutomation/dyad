@@ -36,7 +36,7 @@ import {
 } from "@/ipc/utils/model_effort";
 import { extractMentionedAppsCodebasesFromPrompt } from "../utils/mention_apps";
 import {
-  isDyadProEnabled,
+  isAgent2Enabled,
   isBasicAgentMode,
   isLocalAgentBackedMode,
   isTurboEditsV2Enabled,
@@ -128,7 +128,7 @@ export function registerTokenCountHandlers() {
         hasSupabaseProject: !!chat.app?.supabaseProjectId,
         implementerAvailable:
           selectedChatMode === "local-agent" &&
-          isDyadProEnabled(settings) &&
+          isAgent2Enabled(settings) &&
           isImplementerSubagentEnabled(settings),
         testingEnabled: !!chat.app?.testingEnabled,
         enableAppBlueprint,
@@ -192,8 +192,12 @@ export function registerTokenCountHandlers() {
         systemPrompt += "\n\n" + SUPABASE_NOT_AVAILABLE_SYSTEM_PROMPT;
       }
 
+<<<<<<< HEAD
       const isDyadPro = isDyadProEnabled(settings);
       const freeModelMode = isFreeProModel(selectedModel);
+=======
+      const isDyadPro = isAgent2Enabled(settings);
+>>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
       const mcpToolDefs =
         selectedChatMode === "local-agent" ? getCachedMcpToolDefs() : [];
       // Cached only: an estimate must never wait on the catalog network

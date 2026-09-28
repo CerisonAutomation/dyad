@@ -204,6 +204,42 @@ export function getGitProcessEnvironment(
   return setupEnvironment(getSanitizedGitEnv(callerEnv));
 }
 
+/**
+ * macOS closes an app's file descriptors while it is suspended in the
+ * background, and the first child process spawned after the app wakes fails
+ * with EBADF. Retry briefly for that one code — it is the signature of the
+ * resume race, not a real fault in the git invocation. Every git call in the
+ * app funnels through here, so this is the single place the retry belongs.
+ */
+const EBADF_RETRIES = 3;
+// Measured: 150/300ms exhausted all three attempts in ~900ms, which is
+// shorter than the app takes to finish resuming. Give it real headroom.
+const EBADF_BACKOFF_MS = [400, 1200, 3000];
+
+async function execWithBadFdRetry(
+  args: string[],
+  path: string,
+  options: Parameters<typeof exec>[2],
+) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= EBADF_RETRIES; attempt++) {
+    try {
+      return await exec(args, path, options);
+    } catch (error) {
+      lastError = error;
+      const code = (error as NodeJS.ErrnoException)?.code;
+      if (code !== "EBADF" || attempt === EBADF_RETRIES) throw error;
+      log.warn(
+        `git spawn hit EBADF; retry ${attempt + 1}/${EBADF_RETRIES}`,
+      );
+      await new Promise((resolve) =>
+        setTimeout(resolve, EBADF_BACKOFF_MS[attempt] ?? 3000),
+      );
+    }
+  }
+  throw lastError;
+}
+
 export async function execGit(
   args: string[],
   path: string,
@@ -211,10 +247,7 @@ export async function execGit(
 ): Promise<IGitStringResult> {
   const env = getSanitizedGitEnv(options?.env);
   try {
-    return await exec(args, path, {
-      ...options,
-      env,
-    });
+    return await execWithBadFdRetry(args, path, { ...options, env });
   } catch (error) {
     if (error instanceof ExecError && error.code === "ENOENT") {
       try {

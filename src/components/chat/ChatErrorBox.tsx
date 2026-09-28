@@ -26,13 +26,13 @@ import { Button } from "@/components/ui/button";
 export function ChatErrorBox({
   onDismiss,
   error,
-  isDyadProEnabled,
+  isAgent2Enabled,
   onStartNewChat,
   onSwitchToBuildMode,
 }: {
   onDismiss: () => void;
   error: string;
-  isDyadProEnabled: boolean;
+  isAgent2Enabled: boolean;
   onStartNewChat?: () => void;
   onSwitchToBuildMode?: () => void;
 }) {
@@ -97,7 +97,7 @@ export function ChatErrorBox({
   // show the upgrade to Dyad Pro link in that case because they are
   // already on the Dyad Pro plan.
   if (
-    !isDyadProEnabled &&
+    !isAgent2Enabled &&
     (error.includes("Resource has been exhausted") ||
       error.includes("https://ai.google.dev/gemini-api/docs/rate-limits") ||
       error.includes("Provider returned error"))
@@ -121,7 +121,7 @@ export function ChatErrorBox({
     );
   }
 
-  if (isDyadProEnabled && error.includes("ExceededBudget:")) {
+  if (isAgent2Enabled && error.includes("ExceededBudget:")) {
     return (
       <BillingNotice
         onDismiss={onDismiss}
@@ -219,7 +219,7 @@ export function ChatErrorBox({
         <ErrorMarkdown>{error}</ErrorMarkdown>
       </div>
       <div className="mt-2 space-y-2 space-x-2">
-        {!isDyadProEnabled &&
+        {!isAgent2Enabled &&
           error.includes(AI_STREAMING_ERROR_MESSAGE_PREFIX) &&
           !error.includes("TypeError: terminated") && (
             <ExternalLink
@@ -229,7 +229,7 @@ export function ChatErrorBox({
               Upgrade to Dyad Pro
             </ExternalLink>
           )}
-        {isDyadProEnabled && onStartNewChat && (
+        {isAgent2Enabled && onStartNewChat && (
           <Tooltip>
             <TooltipTrigger
               onClick={onStartNewChat}

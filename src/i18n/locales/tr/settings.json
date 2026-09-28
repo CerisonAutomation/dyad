@@ -123,10 +123,10 @@
     "errorLoadingSettings": "Ayarlar Yüklenirken Hata",
     "couldNotLoadProvider": "Sağlayıcı verileri yüklenemedi: {{message}}",
     "couldNotLoadSettings": "Yapılandırma verileri yüklenemedi: {{message}}",
-    "enableDyadPro": "Dyad Pro'yu Etkinleştir",
-    "toggleDyadPro": "Dyad Pro'yu etkinleştirmek için aç/kapat",
+    "enableDyadPro": "Agent2'yu Etkinleştir",
+    "toggleDyadPro": "Agent2'yu etkinleştirmek için aç/kapat",
     "apiKeyEmpty": "API Anahtarı boş olamaz.",
-    "errorTogglingPro": "Dyad Pro değiştirilirken hata: {{error}}",
+    "errorTogglingPro": "Agent2 değiştirilirken hata: {{error}}",
     "failedSaveApiKey": "API anahtarı kaydedilemedi.",
     "failedDeleteApiKey": "API anahtarı silinemedi."
   },
@@ -305,6 +305,6 @@
     "updateProvider": "Sağlayıcıyı Güncelle",
     "failedCreate": "Özel sağlayıcı oluşturulamadı"
   },
-  "manageDyadPro": "Dyad Pro Aboneliğini Yönet",
-  "setupDyadPro": "Dyad Pro Aboneliğini Kur"
+  "manageDyadPro": "Agent2 Aboneliğini Yönet",
+  "setupDyadPro": "Agent2 Aboneliğini Kur"
 }

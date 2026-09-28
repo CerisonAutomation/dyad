@@ -4,8 +4,7 @@ import { z } from "zod";
 import log from "electron-log";
 import type { LanguageModelV3Usage } from "@ai-sdk/provider";
 import { readSettings } from "@/main/settings";
-import { isDyadProEnabled } from "@/lib/schemas";
-import { getDyadEngineBaseUrl } from "@/ipc/utils/dyad_engine_url";
+import { isAgent2Enabled } from "@/lib/schemas";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import type { SubscriptionTokens } from "@/lib/subscriptionUsage";
 import {
@@ -57,7 +56,7 @@ export async function startExternalModelUsage(
   if (
     billing.connection === "subscription" &&
     settings &&
-    !isDyadProEnabled(settings)
+    !isAgent2Enabled(settings)
   )
     return undefined;
   const key = apiKey ?? settings?.providerSettings?.auto?.apiKey?.value;
@@ -94,11 +93,17 @@ export function normalizeExternalModelUsage(
   });
 }
 
-/** Best effort: consume before sending, never retry or reject into the chat. */
+/**
+ * Best effort: consume before sending, never retry or reject into the chat.
+ *
+ * Agent2 bills the user directly through their own provider credentials, so
+ * there is no upstream account to report usage against. The record is dropped
+ * locally without contacting Dyad.
+ */
 export async function finishExternalModelUsage(
   id: string | undefined,
-  model: string,
-  usage: LanguageModelV3Usage,
+  _model: string,
+  _usage: LanguageModelV3Usage,
 ) {
   return finishExternalModelUsageBatch(id, [{ model, usage }]);
 }
@@ -109,6 +114,7 @@ export async function finishExternalModelUsageBatch(
   models: { model: string; usage: LanguageModelV3Usage }[],
 ) {
   if (!id) return;
+<<<<<<< HEAD
   const request = active.get(id);
   if (!request) return;
   active.delete(id);
@@ -160,6 +166,11 @@ export async function finishExternalModelUsageBatch(
       }
     }),
   );
+=======
+  if (active.delete(id)) {
+    logger.debug("External model usage record dropped (BYOK, no reporting)");
+  }
+>>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
 }
 export function interruptExternalModelUsage(
   id: string | undefined,

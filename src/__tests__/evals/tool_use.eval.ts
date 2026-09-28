@@ -22,7 +22,7 @@ import {
 import {
   GPT_5_4,
   getEvalModel,
-  hasDyadProKey,
+  hasEngineCredential,
   type EvalProvider,
 } from "./helpers/get_eval_model";
 import {
@@ -1073,7 +1073,7 @@ if (!SUITE_FILTER_RAW || !MODEL_FILTER_RAW) {
 
     for (const suite of ACTIVE_SUITES) {
       for (const { provider, modelName, label, temperature } of MODELS) {
-        describe.skipIf(!hasDyadProKey())(
+        describe.skipIf(!hasEngineCredential())(
           `${suite.displayName} — ${label}`,
           () => {
             for (const c of suite.cases ?? CASES) {

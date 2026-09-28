@@ -16,12 +16,12 @@ import {
   DialogFooter,
 } from "./ui/dialog";
 import { Button } from "./ui/button";
-import { isDyadProEnabled } from "@/lib/schemas";
+import { isAgent2Enabled } from "@/lib/schemas";
 
 /** Mounted once, so closing the picker does not interrupt sign-in completion. */
 export function SubscriptionConnectionStatus() {
   const { settings } = useSettings();
-  const hasPro = settings && isDyadProEnabled(settings);
+  const hasPro = settings && isAgent2Enabled(settings);
   const status = useSubscriptionAccount();
   const resumeFirstPrompt = useFirstPromptProviderResume();
   const [resumeRequested, setResumeRequested] = useState(false);
@@ -165,14 +165,14 @@ export function SubscriptionLimitBanner() {
     >
       You've reached a ChatGPT subscription usage limit. Wait for your limit to
       reset or upgrade your ChatGPT subscription tier.
-      {!isDyadProEnabled(settings) && (
+      {!isAgent2Enabled(settings) && (
         <>
           {" "}
           You can also disconnect ChatGPT in the Subscription menu to use your
           OpenAI API key.
         </>
       )}
-      {isDyadProEnabled(settings) && (
+      {isAgent2Enabled(settings) && (
         <>
           {" "}
           You can also select <strong>Pro credits</strong> under{" "}

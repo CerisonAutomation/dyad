@@ -12,7 +12,6 @@ import { providerSettingsRoute } from "@/routes/settings/providers/$provider";
 import { cn } from "@/lib/utils";
 import { useDeepLink } from "@/contexts/DeepLinkContext";
 import { useEffect, useState } from "react";
-import { DyadProSuccessDialog } from "@/components/DyadProSuccessDialog";
 import { useTheme } from "@/contexts/ThemeContext";
 import { ipc } from "@/ipc/types";
 import { useSystemPlatform } from "@/hooks/useSystemPlatform";
@@ -84,7 +83,7 @@ export const TitleBar = () => {
   };
 
   const isDyadPro = !!settings?.providerSettings?.auto?.apiKey?.value;
-  const isDyadProEnabled = Boolean(settings?.enableDyadPro);
+  const isAgent2Enabled = Boolean(settings?.enableDyadPro);
 
   return (
     <>
@@ -138,7 +137,7 @@ export const TitleBar = () => {
             </TooltipTrigger>
             <TooltipContent>{displayText}</TooltipContent>
           </Tooltip>
-          {isDyadPro && <DyadProButton isDyadProEnabled={isDyadProEnabled} />}
+          {isDyadPro && <DyadProButton isAgent2Enabled={isAgent2Enabled} />}
         </div>
 
         <div className="flex-1 min-w-0 overflow-hidden self-end">
@@ -149,10 +148,6 @@ export const TitleBar = () => {
       </div>
 
       <SubscriptionConnectionStatus />
-      <DyadProSuccessDialog
-        isOpen={isSuccessDialogOpen}
-        onClose={() => setIsSuccessDialogOpen(false)}
-      />
     </>
   );
 };
@@ -238,9 +233,9 @@ function WindowsControls() {
 }
 
 export function DyadProButton({
-  isDyadProEnabled,
+  isAgent2Enabled,
 }: {
-  isDyadProEnabled: boolean;
+  isAgent2Enabled: boolean;
 }) {
   const { navigate } = useRouter();
   const { userBudget } = useUserBudgetInfo();
@@ -256,17 +251,17 @@ export function DyadProButton({
       variant="outline"
       className={cn(
         "hidden @2xl:block ml-1 no-app-region-drag h-7 text-xs px-2 pt-1 pb-1",
-        isDyadProEnabled &&
+        isAgent2Enabled &&
           "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-900 dark:hover:bg-indigo-900/40",
       )}
       size="sm"
     >
-      {isDyadProEnabled
+      {isAgent2Enabled
         ? userBudget?.isTrial
           ? "Pro Trial"
           : "Pro"
         : "Pro (off)"}
-      {userBudget && isDyadProEnabled && (
+      {userBudget && isAgent2Enabled && (
         <AICreditStatus userBudget={userBudget} />
       )}
     </Button>

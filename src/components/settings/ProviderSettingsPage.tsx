@@ -32,7 +32,7 @@ import {
   UserSettings,
   AzureProviderSetting,
   VertexProviderSetting,
-  hasDyadProKey,
+  hasEngineCredential,
 } from "@/lib/schemas";
 import { DyadErrorKind } from "@/errors/dyad_error";
 import {
@@ -243,7 +243,7 @@ export function ProviderSettingsPage({ provider }: ProviderSettingsPageProps) {
 
       const isFirstProviderSetup = !isAnyProviderSetup();
       // Check if this is the first time user is setting up Dyad Pro
-      const isNewDyadProSetup = isDyad && settings && !hasDyadProKey(settings);
+      const isNewDyadProSetup = isDyad && settings && !hasEngineCredential(settings);
 
       const settingsUpdate: Partial<UserSettings> = {
         providerSettings: {

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import log from "electron-log";
 import { ToolDefinition, escapeXmlContent, AgentContext } from "./types";
-import { engineFetch } from "./engine_fetch";
+import { localWebFetch } from "./local_web_fetch";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 
 const logger = log.scope("web_fetch");
@@ -14,13 +14,14 @@ function validateHttpUrl(url: string): void {
     throw new DyadError(`Invalid URL: ${url}`, DyadErrorKind.Validation);
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error(
+    throw new DyadError(
       `Unsupported URL scheme "${parsed.protocol}" — only http and https are allowed`,
+      DyadErrorKind.Validation,
     );
   }
 }
 
-const MAX_CONTENT_LENGTH = 80_000;
+const MAX_CONTENT_LENGTH = 500_000;
 
 function truncateContent(value: string): string {
   if (value.length <= MAX_CONTENT_LENGTH) return value;
@@ -29,17 +30,6 @@ function truncateContent(value: string): string {
 
 const webFetchSchema = z.object({
   url: z.string().describe("URL to fetch content from"),
-});
-
-const webFetchResponseSchema = z.object({
-  rootUrl: z.string(),
-  markdown: z.string().optional(),
-  pages: z.array(
-    z.object({
-      url: z.string(),
-      markdown: z.string(),
-    }),
-  ),
 });
 
 const DESCRIPTION = `Fetch and read the content of a web page as markdown given its URL.
@@ -61,41 +51,19 @@ Examples:
 - The user needs to **search the web** for information without a specific URL → use \`web_search\` instead
 `;
 
-async function callWebFetch(
-  url: string,
-  ctx: Pick<AgentContext, "dyadRequestId" | "abortSignal">,
-): Promise<z.infer<typeof webFetchResponseSchema>> {
-  const response = await engineFetch(ctx, "/tools/web-crawl", {
-    method: "POST",
-    body: JSON.stringify({ url, markdownOnly: true }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Web fetch failed: ${response.status} ${response.statusText} - ${errorText}`,
-    );
-  }
-
-  const data = webFetchResponseSchema.parse(await response.json());
-  return data;
-}
-
 export const webFetchTool: ToolDefinition<z.infer<typeof webFetchSchema>> = {
   name: "web_fetch",
   description: DESCRIPTION,
   inputSchema: webFetchSchema,
   defaultConsent: "always",
-  usesEngineEndpoint: true,
 
-  // Requires Dyad Pro engine API
-  isEnabled: (ctx) => ctx.isDyadPro,
+  // Local implementation - no engine required
+  isEnabled: (_ctx: AgentContext) => true,
 
   getConsentPreview: (args) => `Fetch URL: "${args.url}"`,
 
   buildXml: (args, isComplete) => {
     if (!args.url) return undefined;
-    // When complete, return undefined so execute's onXmlComplete provides the final XML
     if (isComplete) return undefined;
     return `<dyad-web-fetch>${escapeXmlContent(args.url)}`;
   },
@@ -103,41 +71,32 @@ export const webFetchTool: ToolDefinition<z.infer<typeof webFetchSchema>> = {
   execute: async (args, ctx) => {
     logger.log(`Executing web fetch: ${args.url}`);
 
-    validateHttpUrl(args.url);
-
     ctx.onXmlStream(`<dyad-web-fetch>${escapeXmlContent(args.url)}`);
 
     try {
-      const result = await callWebFetch(args.url, ctx);
+      validateHttpUrl(args.url);
+      // Use local web fetch
+      const result = await localWebFetch(args.url, {
+        maxLength: MAX_CONTENT_LENGTH,
+        timeout: 15000,
+      });
 
-      if (!result) {
+      if (!result || !result.content) {
         throw new DyadError(
-          "Web fetch returned no results",
+          "Web fetch returned no content",
           DyadErrorKind.NotFound,
         );
       }
 
-      // Combine markdown from all pages
-      const allContent = result.pages
-        .map((page) => `## ${page.url}\n\n${page.markdown}`)
-        .join("\n\n---\n\n");
+      const content = `# ${result.title}\n\nURL: ${result.url}\nStatus: ${result.statusCode}\n\n---\n\n${result.content}`;
 
-      if (!allContent) {
-        throw new DyadError(
-          "No content available from web fetch",
-          DyadErrorKind.NotFound,
-        );
-      }
-
-      logger.log(
-        `Web fetch completed for URL: ${args.url} (${result.pages.length} pages)`,
-      );
+      logger.log(`Web fetch completed for URL: ${args.url}`);
 
       ctx.onXmlComplete(
         `<dyad-web-fetch>${escapeXmlContent(args.url)}</dyad-web-fetch>`,
       );
 
-      return truncateContent(allContent);
+      return truncateContent(content);
     } catch (error) {
       ctx.onXmlComplete(
         `<dyad-web-fetch>${escapeXmlContent(args.url)}</dyad-web-fetch>`,

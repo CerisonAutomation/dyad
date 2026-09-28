@@ -255,7 +255,7 @@
   "total": "Toplam",
   "failedCountTokens": "Token sayılamadı",
   "optimizeTokens": "Tokenlarınızı şununla optimize edin:",
-  "dyadProSmartContext": "Dyad Pro'nun Akıllı Bağlamı",
+  "dyadProSmartContext": "Agent2'nun Akıllı Bağlamı",
   "attachFiles": "Dosya ekle",
   "themes": "Temalar",
   "noTheme": "Tema Yok",
@@ -331,11 +331,11 @@
     "versionCount": "Sürüm {{count}}"
   },
   "errorBox": {
-    "accessWithDyadPro": "Dyad Pro ile erişin",
+    "accessWithDyadPro": "Agent2 ile erişin",
     "orSwitchModel": "veya başka bir modele geçin.",
-    "upgradeToDyadPro": "Dyad Pro'ya Yükselt",
+    "upgradeToDyadPro": "Agent2'ya Yükselt",
     "troubleshootingGuide": "Sorun giderme kılavuzu",
-    "invalidProKey": "Geçerli bir Dyad Pro anahtarınız yok gibi görünüyor.",
+    "invalidProKey": "Geçerli bir Agent2 anahtarınız yok gibi görünüyor.",
     "today": "bugün.",
     "creditsUsed": "Bu ay tüm Dyad AI kredilerinizi kullandınız.",
     "reloadOrUpgrade": "Aboneliğinizi yenileyin veya yükseltin",
@@ -344,7 +344,7 @@
   },
   "promo": {
     "tiredOfWaiting": "AI'yı beklemekten yoruldunuz mu?",
-    "getDyadPro": "Dyad Pro'yu Edinin",
+    "getDyadPro": "Agent2'yu Edinin",
     "fasterEdits": "Turbo Edits ile daha hızlı düzenlemeler için.",
     "saveOnCosts": "AI maliyetlerinden 3 kata kadar tasarruf edin:",
     "debuggingLoop": "Hata ayıklama döngüsünde mi takıldınız? Farklı bir model deneyin.",

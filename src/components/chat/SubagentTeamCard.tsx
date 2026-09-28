@@ -27,7 +27,7 @@ import {
   type SubagentThreadSummary,
 } from "@/ipc/types";
 import { queryKeys } from "@/lib/queryKeys";
-import { isDyadProEnabled } from "@/lib/schemas";
+import { isAgent2Enabled } from "@/lib/schemas";
 import { showError } from "@/lib/toast";
 import { setPendingReviewContinuation } from "@/hooks/subagentReviewContinuation";
 
@@ -58,7 +58,7 @@ export function SubagentTeamCard({
     new Set(),
   );
   const [now, setNow] = useState(Date.now());
-  const isPro = settings ? isDyadProEnabled(settings) : false;
+  const isPro = settings ? isAgent2Enabled(settings) : false;
   const showReviewButton = showReviewAction && !!settings?.enableReviewButton;
   const query = useQuery({
     queryKey,

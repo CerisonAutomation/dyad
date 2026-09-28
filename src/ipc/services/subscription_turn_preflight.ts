@@ -1,5 +1,5 @@
 import {
-  isDyadProEnabled,
+  isAgent2Enabled,
   type ModelSelection,
   type UserSettings,
 } from "@/lib/schemas";
@@ -66,7 +66,7 @@ export async function preflightSubscriptionTurn(
     await getCodexSubscriptionCredentials();
   let externalModelAdmission: ExternalModelAdmission | undefined;
   if (
-    isDyadProEnabled(settings) &&
+    isAgent2Enabled(settings) &&
     selections.some(
       (selection) =>
         (selection.connection === "subscription" &&

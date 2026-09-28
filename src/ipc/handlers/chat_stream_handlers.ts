@@ -162,7 +162,7 @@ import {
 } from "../utils/media_path_utils";
 import {
   isBasicAgentMode,
-  isDyadProEnabled,
+  isAgent2Enabled,
   isLocalAgentBackedMode,
   isTurboEditsV2Enabled,
 } from "@/lib/schemas";
@@ -2197,7 +2197,7 @@ ${componentSnippet}
         // persona is disabled. Code-index readiness is independent now that
         // spawn_agent replaces the old explore_code tool.
         const codeExplorerAvailable =
-          isDyadProEnabled(settings) &&
+          isAgent2Enabled(settings) &&
           settings.enableExplorerSubagent !== false &&
           settings.agentToolConsents?.["spawn_agent"] !== "never";
         // Mirrors explore_chat_history's toolset inclusion (Pro, and not
@@ -2205,11 +2205,11 @@ ${componentSnippet}
         // that isn't in the toolset. Consent is read from settings directly
         // because this module must not import the pro tool registry.
         const historyExplorerAvailable =
-          isDyadProEnabled(settings) &&
+          isAgent2Enabled(settings) &&
           settings.agentToolConsents?.["explore_chat_history"] !== "never";
         const implementerAvailable =
           selectedChatMode === "local-agent" &&
-          isDyadProEnabled(settings) &&
+          isAgent2Enabled(settings) &&
           isImplementerSubagentEnabled(settings);
         const restartAppToolAvailable =
           settings.agentToolConsents?.["restart_app"] !== "never";
