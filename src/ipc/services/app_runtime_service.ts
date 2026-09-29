@@ -934,9 +934,15 @@ async function selfHealDeniedPnpmBuilds({
   }
 
   if (removeNodeModules) {
+    // pnpm's store is a deep tree of symlinks, and a dev server or pnpm itself
+    // may still be writing into it. fs.rm only retries on ENOTEMPTY, EBUSY,
+    // ENFILE, EMFILE and EPERM when maxRetries is set - with the default of 0 a
+    // concurrent write surfaces as a raw ENOTEMPTY and the self-heal aborts.
     await fs.promises.rm(path.join(appPath, "node_modules"), {
       recursive: true,
       force: true,
+      maxRetries: 10,
+      retryDelay: 200,
     });
   }
 
@@ -2023,9 +2029,15 @@ export const appRuntimeService = new AppRuntimeService({
   clearLogs,
   readRuntimeMode: () => readSettings().runtimeMode2 ?? "host",
   removeNodeModules: async (appPath) => {
+    // pnpm's store is a deep tree of symlinks, and a dev server or pnpm itself
+    // may still be writing into it. fs.rm only retries on ENOTEMPTY, EBUSY,
+    // ENFILE, EMFILE and EPERM when maxRetries is set - with the default of 0 a
+    // concurrent write surfaces as a raw ENOTEMPTY and the self-heal aborts.
     await fs.promises.rm(path.join(appPath, "node_modules"), {
       recursive: true,
       force: true,
+      maxRetries: 10,
+      retryDelay: 200,
     });
   },
   removeDockerVolumes: removeDockerVolumesForApp,
