@@ -165,34 +165,126 @@ function createDyadEngineAliasModel({
 
 const logger = log.scope("getModelClient");
 /**
- * Wraps a fetch so an OpenAI-compatible chat completion that carries its
- * output only in `reasoning` / `reasoning_content` still yields content.
- * Returns the original fetch untouched when there is nothing to do.
+ * Kilo's gateway can return a completion whose `content` is null with the
+ * whole reply in `reasoning`, typically with finish_reason "length" because
+ * the model spent the whole budget thinking. The standard OpenAI-compatible
+ * reader only inspects `content`, so such a turn arrives as the opaque
+ * "Provider returned an empty response".
+ *
+ * This wraps fetch and folds reasoning back into content. Dyad streams
+ * (streamText), so the SSE path is the one that matters: each `data:` chunk is
+ * rewritten as it passes. Non-streaming JSON is handled too, for any call that
+ * does not stream.
  */
 function withReasoningAsContent(baseFetch?: typeof fetch) {
   if (!baseFetch) return undefined;
+
   return async (input: RequestInfo | URL, init?: RequestInit) => {
     const response = await baseFetch(input, init);
     const contentType = response.headers.get("content-type") ?? "";
-    // Only non-streaming JSON is safe to rewrite; a stream cannot be buffered
-    // without changing its semantics.
-    if (!contentType.includes("application/json")) return response;
-    let payload: any;
-    try {
-      payload = await response.clone().json();
-    } catch {
-      return response;
+
+    const applyReasoning = (payload: any): boolean => {
+      const choice = payload?.choices?.[0];
+      if (!choice) return false;
+      // Streaming chunks carry `delta`; a final chunk may carry `message`.
+      const target = choice.delta ?? choice.message;
+      if (!target || (target.content !== null && target.content !== undefined)) {
+        return false;
+      }
+      const fallback = target.reasoning ?? target.reasoning_content;
+      if (typeof fallback !== "string" || !fallback) return false;
+      target.content = fallback;
+      return true;
+    };
+
+    if (contentType.includes("text/event-stream")) {
+      // The upstream can return a stream whose only output is reasoning, which
+      // the OpenAI-compatible reader reports as an empty response. We have seen
+      // this come back as content:null / finish_reason:length, but not on every
+      // call, so log the real shape whenever a turn yields no content at all
+      // rather than guessing at the cause.
+      let sawAnyContent = false;
+      const originalBody = response.body;
+      if (originalBody && process.env.DYAD_LOG_EMPTY_MODEL_RESPONSE === "1") {
+        const tap = originalBody.pipeThrough(
+          new TransformStream<Uint8Array, Uint8Array>({
+            transform(chunk, controller) {
+              const text = new TextDecoder().decode(chunk, { stream: true });
+              if (text.includes('"content":"') || text.includes('"content": "')) {
+                sawAnyContent = true;
+              }
+              controller.enqueue(chunk);
+            },
+          }),
+        );
+        return new Response(tap, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+        });
+      }
+      const body = response.body;
+      if (!body) return response;
+      const encoder = new TextEncoder();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      const stream = body.pipeThrough(
+        new TransformStream<Uint8Array, Uint8Array>({
+          transform(chunk, controller) {
+            buffer += decoder.decode(chunk, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
+            for (const line of lines) {
+              if (!line.startsWith("data:") || line.includes("[DONE]")) {
+                controller.enqueue(encoder.encode(line + "\n"));
+                continue;
+              }
+              const json = line.slice(line.indexOf("data:") + 5).trim();
+              if (!json) {
+                controller.enqueue(encoder.encode(line + "\n"));
+                continue;
+              }
+              try {
+                const payload = JSON.parse(json);
+                applyReasoning(payload);
+                controller.enqueue(
+                  encoder.encode("data: " + JSON.stringify(payload) + "\n"),
+                );
+              } catch {
+                controller.enqueue(encoder.encode(line + "\n"));
+              }
+            }
+          },
+          flush(controller) {
+            if (buffer) controller.enqueue(encoder.encode(buffer));
+          },
+        }),
+      );
+
+      return new Response(stream, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
     }
-    const choice = payload?.choices?.[0];
-    if (!choice || choice.message?.content) return response;
-    const fallback = choice.message?.reasoning ?? choice.message?.reasoning_content;
-    if (typeof fallback !== "string" || !fallback) return response;
-    choice.message.content = fallback;
-    return new Response(JSON.stringify(payload), {
-      status: response.status,
-      statusText: response.statusText,
-      headers: response.headers,
-    });
+
+    if (contentType.includes("application/json")) {
+      let payload: any;
+      try {
+        payload = await response.clone().json();
+      } catch {
+        return response;
+      }
+      if (!applyReasoning(payload)) return response;
+      return new Response(JSON.stringify(payload), {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+    }
+
+    return response;
   };
 }
 
