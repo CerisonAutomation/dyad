@@ -357,41 +357,94 @@ export function ModelPicker() {
   } = useLanguageModelsByProviders();
 
   // Flat, cross-provider matches. Without this the search box would still
-  // require opening each provider submenu one at a time to see any result.
+  // Grouped by provider and ordered by usefulness, not by raw id. A flat
+  // alphabetical list made Kilo and OpenRouter entries interleave, so the same
+  // model name appeared twice with only a small badge to tell them apart.
   const searchResults = useMemo(() => {
     if (modelSearchTerm.length < 2 && !freeOnly) return [];
-    const out: Array<{
-      providerId: string;
-      apiName: string;
-      displayName?: string;
-      catalogModel: LanguageModel;
-    }> = [];
     const byProvider = (modelsByProviders ?? {}) as Record<
       string,
       LanguageModel[]
     >;
+    const defaultKey = defaultModelRef
+      ? `${defaultModelRef.provider}:${defaultModelRef.name}`
+      : null;
+    const recentKeys = new Set(
+      (settings?.recentModels ?? []).map((m) => `${m.provider}:${m.name}`),
+    );
+    // Recent order carries the user's own priority, so index it.
+    const recentRank = new Map<string, number>();
+    (settings?.recentModels ?? []).forEach((m, i) =>
+      recentRank.set(`${m.provider}:${m.name}`, i),
+    );
+
+    interface Hit {
+      providerId: string;
+      apiName: string;
+      displayName?: string;
+      catalogModel: LanguageModel;
+      isFree: boolean;
+      isDefault: boolean;
+      rank: number;
+    }
+
+    const groups = new Map<string, Hit[]>();
     for (const [providerId, models] of Object.entries(byProvider)) {
       for (const model of models ?? []) {
-        if (freeOnly && !isFreeModelName(model.apiName)) continue;
+        const isFree = isFreeModelName(model.apiName);
+        if (freeOnly && !isFree) continue;
         if (
           modelSearchTerm &&
           !model.apiName.toLowerCase().includes(modelSearchTerm) &&
-          !(model.displayName ?? "")
-            .toLowerCase()
-            .includes(modelSearchTerm)
+          !(model.displayName ?? "").toLowerCase().includes(modelSearchTerm)
         ) {
           continue;
         }
-        out.push({
+        const key = `${providerId}:${model.apiName}`;
+        const isDefault = key === defaultKey;
+        const recent = recentRank.get(key);
+        // Default first, then anything recently used, then free models, then
+        // alphabetical. A plain localeCompare buried the default.
+        const rank =
+          (isDefault ? 0 : 1000) + (recent !== undefined ? recent : 500);
+        const hit: Hit = {
           providerId,
           apiName: model.apiName,
           displayName: model.displayName,
           catalogModel: model,
-        });
+          isFree,
+          isDefault,
+          rank,
+        };
+        const bucket = groups.get(providerId) ?? [];
+        bucket.push(hit);
+        groups.set(providerId, bucket);
       }
     }
-    return out.sort((a, b) => a.apiName.localeCompare(b.apiName)).slice(0, 40);
-  }, [modelsByProviders, modelSearchTerm, freeOnly]);
+
+    // Providers in a fixed, meaningful order, then each group sorted by rank.
+    const providerOrder = ["kilocode", "openrouter", "openai", "anthropic", "google"];
+    const providerIds = [...groups.keys()].sort((a, b) => {
+      const ia = providerOrder.indexOf(a);
+      const ib = providerOrder.indexOf(b);
+      if (ia !== -1 && ib !== -1) return ia - ib;
+      if (ia !== -1) return -1;
+      if (ib !== -1) return 1;
+      return a.localeCompare(b);
+    });
+
+    const out: Hit[] = [];
+    for (const providerId of providerIds) {
+      out.push(
+        ...(groups.get(providerId) ?? []).sort((a, b) =>
+          a.rank !== b.rank
+            ? a.rank - b.rank
+            : a.apiName.localeCompare(b.apiName),
+        ),
+      );
+    }
+    return out.slice(0, 60);
+  }, [modelsByProviders, modelSearchTerm, freeOnly, defaultModelRef, settings]);
 
   const {
     data: providers,
@@ -1517,41 +1570,64 @@ export function ModelPicker() {
                   </>
                 ) : null}
               </div>
-              {searchResults.map((model) => (
-                <DropdownMenuItem
-                  key={`search-${model.providerId}-${model.apiName}`}
-                  onSelect={() =>
-                    handleCloudModelSelect(
-                      model.providerId,
-                      model.catalogModel,
-                    )
-                  }
-                  className="flex items-center justify-between gap-2 cursor-pointer"
-                >
-                  <span className="truncate">{model.displayName ?? model.apiName}</span>
-                  <span className="ml-auto flex shrink-0 items-center gap-1.5">
-                    <span
-                      className="rounded border border-border px-1 py-px text-[10px] font-medium text-muted-foreground"
-                      title={`Runs via ${providerBadge(model.providerId)}`}
-                    >
-                      {providerBadge(model.providerId)}
-                    </span>
-                    {isGlobalDefault(model.apiName, model.providerId) && (
-                      <span
-                        className="rounded border border-primary/40 bg-primary/10 px-1 py-px text-[10px] font-medium text-primary"
-                        title="New chats start on this model"
+              {(() => {
+                // Render a header whenever the provider changes, so it is
+                // obvious which gateway a block of models runs through.
+                const out: ReactNode[] = [];
+                let lastProvider: string | null = null;
+                searchResults.forEach((model, i) => {
+                  if (model.providerId !== lastProvider) {
+                    lastProvider = model.providerId;
+                    out.push(
+                      <div
+                        key={`h-${model.providerId}`}
+                        className="mt-2 mb-1 flex items-center gap-2 px-2 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground first:mt-0"
                       >
-                        default
+                        <span>{providerBadge(model.providerId)}</span>
+                        <span className="h-px flex-1 bg-border" />
+                        <span className="font-normal normal-case">
+                          {searchResults.filter(
+                            (m) => m.providerId === model.providerId,
+                          ).length}{" "}
+                          models
+                        </span>
+                      </div>,
+                    );
+                  }
+                  out.push(
+                    <DropdownMenuItem
+                      key={`search-${model.providerId}-${model.apiName}`}
+                      onSelect={() =>
+                        handleCloudModelSelect(
+                          model.providerId,
+                          model.catalogModel,
+                        )
+                      }
+                      className="flex items-center justify-between gap-2 cursor-pointer"
+                    >
+                      <span className="truncate">
+                        {model.displayName ?? model.apiName}
+                        {model.isDefault && (
+                          <span className="ml-1.5 rounded border border-primary/40 bg-primary/10 px-1 py-px text-[9px] uppercase font-medium text-primary align-middle">
+                            default
+                          </span>
+                        )}
                       </span>
-                    )}
-                    {isFreeModelName(model.apiName) && (
-                      <span className="text-[10px] uppercase font-medium text-emerald-600 dark:text-emerald-400">
-                        free
+                      <span className="flex shrink-0 items-center gap-1.5">
+                        {model.isFree && (
+                          <span className="text-[10px] uppercase font-medium text-emerald-600 dark:text-emerald-400">
+                            free
+                          </span>
+                        )}
+                        <span className="rounded border border-border px-1 py-px text-[10px] font-medium text-muted-foreground">
+                          {providerBadge(model.providerId)}
+                        </span>
                       </span>
-                    )}
-                  </span>
-                </DropdownMenuItem>
-              ))}
+                    </DropdownMenuItem>,
+                  );
+                });
+                return out;
+              })()}
               <DropdownMenuSeparator />
             </>
           )}

@@ -164,6 +164,38 @@ function createDyadEngineAliasModel({
 }
 
 const logger = log.scope("getModelClient");
+/**
+ * Wraps a fetch so an OpenAI-compatible chat completion that carries its
+ * output only in `reasoning` / `reasoning_content` still yields content.
+ * Returns the original fetch untouched when there is nothing to do.
+ */
+function withReasoningAsContent(baseFetch?: typeof fetch) {
+  if (!baseFetch) return undefined;
+  return async (input: RequestInfo | URL, init?: RequestInit) => {
+    const response = await baseFetch(input, init);
+    const contentType = response.headers.get("content-type") ?? "";
+    // Only non-streaming JSON is safe to rewrite; a stream cannot be buffered
+    // without changing its semantics.
+    if (!contentType.includes("application/json")) return response;
+    let payload: any;
+    try {
+      payload = await response.clone().json();
+    } catch {
+      return response;
+    }
+    const choice = payload?.choices?.[0];
+    if (!choice || choice.message?.content) return response;
+    const fallback = choice.message?.reasoning ?? choice.message?.reasoning_content;
+    if (typeof fallback !== "string" || !fallback) return response;
+    choice.message.content = fallback;
+    return new Response(JSON.stringify(payload), {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  };
+}
+
 export async function getModelClient(
   selectedModel: LargeLanguageModel,
   settings: UserSettings,
@@ -782,6 +814,13 @@ function getRegularModelClient(
         name: "kilocode",
         baseURL: "https://api.kilo.ai/api/gateway",
         apiKey,
+        // Kilo's gateway intermittently returns a completion whose `content`
+        // is null with the whole reply in `reasoning` and finish_reason
+        // "length" (the model spent the entire budget thinking). The standard
+        // OpenAI-compatible reader only looks at `content`, so the turn
+        // surfaced as the opaque "Provider returned an empty response". Fold
+        // the reasoning back into content so the agent still gets text.
+        fetch: withReasoningAsContent(getModelClientFetchOption().fetch),
         ...getModelClientFetchOption(),
       });
       return {
