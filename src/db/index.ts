@@ -1,3 +1,4 @@
+import { IS_TEST_BUILD } from "@/ipc/utils/test_utils";
 // db.ts
 import {
   type BetterSQLite3Database,
@@ -102,11 +103,27 @@ export function closeDatabase(): void {
  * so unit tests can point handlers at an in-memory database (see
  * `src/testing/test_db.ts`). Pass null to clear the override.
  */
+/**
+ * Test-only override for the module-level database handle.
+ *
+ * Throws outside tests for the same reason setModelClientFetchForTesting does:
+ * a setter that silently accepts a global swap in a packaged build is
+ * indistinguishable from a real override, and the resulting failure looks like
+ * a data bug rather than a wiring mistake. That exact shape - production
+ * silently taking the test path - has already shipped once in this codebase,
+ * when a fetch wrapper was fed only by a test override and returned undefined
+ * in every real build.
+ */
 export function setDatabaseForTesting(
   database:
     | (BetterSQLite3Database<typeof schema> & { $client: Database.Database })
     | null,
 ): void {
+  if (!process.env.VITEST && !IS_TEST_BUILD) {
+    throw new Error(
+      "setDatabaseForTesting is test-only (requires vitest or an E2E test build)",
+    );
+  }
   _db = database;
 }
 
