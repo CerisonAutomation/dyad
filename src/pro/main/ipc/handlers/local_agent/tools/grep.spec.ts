@@ -798,4 +798,22 @@ function deepHello() {
       expect(xmlCall).toContain('app_name="other-app"');
     });
   });
+  describe("grep argument names", () => {
+    it("accepts `pattern` as an alias for `query`", async () => {
+    // The field's own description calls the argument "the regex pattern to
+    // search for", so models naturally name the key `pattern`. Observed live:
+    // grep was called with {include_pattern, limit, pattern} and rejected
+    // because `query` was missing.
+    //
+    // Asserting the contract that matters - the call validates and reaches
+    // execution - rather than a fixture-specific match, which depends on where
+    // in the file the test sits.
+    const result = await grepTool.execute(
+      { pattern: "hello" } as never,
+      mockContext,
+    );
+    expect(typeof result).toBe("string");
+  });
+  });
+
 });

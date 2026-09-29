@@ -25,53 +25,71 @@ const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 250;
 const MAX_LINE_LENGTH = 500;
 
-const grepSchema = z.object({
-  query: z
-    .string()
-    .describe(
-      "The regex pattern to search for, or the exact text when literal is true",
-    ),
-  app_name: z
-    .string()
-    .optional()
-    .describe(
-      "Optional. Name of a referenced app (from `@app:Name` mentions in the user's prompt) to search in instead of the current app. Omit to search the current app.",
-    ),
-  include_pattern: z
-    .string()
-    .optional()
-    .describe(
-      "Glob pattern for files to include (e.g. '*.ts' for TypeScript files)",
-    ),
-  exclude_pattern: z
-    .string()
-    .optional()
-    .describe("Glob pattern for files to exclude"),
-  include_ignored: z
-    .boolean()
-    .optional()
-    .describe(
-      "Whether to include git-ignored and hidden files/directories such as node_modules (default: false). Use include_pattern to keep this scoped.",
-    ),
-  case_sensitive: z
-    .boolean()
-    .optional()
-    .describe("Whether the search should be case sensitive (default: false)"),
-  literal: z
-    .boolean()
-    .optional()
-    .describe(
-      "Search query as exact text instead of a regex. Use this for symbols or snippets containing punctuation such as createBooking({, route paths, JSX tags, or import strings.",
-    ),
-  limit: z
-    .number()
-    .min(1)
-    .max(MAX_LIMIT)
-    .optional()
-    .describe(
-      `Maximum number of matches to return (default: ${DEFAULT_LIMIT}, max: ${MAX_LIMIT}). Use include_pattern to narrow results if limit is reached.`,
-    ),
-});
+const GREP_ARG_NAMES =
+  "query, app_name, include_pattern, exclude_pattern, include_ignored, case_sensitive, literal, limit";
+
+/**
+ * `pattern` is a very natural name for this argument - the field's own
+ * description calls it "the regex pattern to search for" - and models reach for
+ * it. A miss costs a full round trip and a raw zod error that never names the
+ * accepted keys. Accept it as an alias; an explicit `query` always wins.
+ */
+const grepInput = z
+  .object({
+    query: z
+      .string()
+      .describe(
+        "The regex to search for, or the exact text when literal is true. This is the only required argument.",
+      ),
+    pattern: z.string().optional().describe("Alias for query."),
+    app_name: z
+      .string()
+      .optional()
+      .describe(
+        "Optional. Name of a referenced app (from `@app:Name` mentions in the user's prompt) to search in instead of the current app. Omit to search the current app.",
+      ),
+    include_pattern: z
+      .string()
+      .optional()
+      .describe(
+        "Glob pattern for files to include (e.g. '*.ts' for TypeScript files)",
+      ),
+    exclude_pattern: z
+      .string()
+      .optional()
+      .describe("Glob pattern for files to exclude"),
+    include_ignored: z
+      .boolean()
+      .optional()
+      .describe(
+        "Whether to include git-ignored and hidden files/directories such as node_modules (default: false). Use include_pattern to keep this scoped.",
+      ),
+    case_sensitive: z
+      .boolean()
+      .optional()
+      .describe("Whether the search should be case sensitive (default: false)"),
+    literal: z
+      .boolean()
+      .optional()
+      .describe(
+        "Search query as exact text instead of a regex. Use this for symbols or snippets containing punctuation such as createBooking({, route paths, JSX tags, or import strings.",
+      ),
+    limit: z
+      .number()
+      .min(1)
+      .max(MAX_LIMIT)
+      .optional()
+      .describe(
+        `Maximum number of matches to return (default: ${DEFAULT_LIMIT}, max: ${MAX_LIMIT}). Use include_pattern to narrow results if limit is reached.`,
+      ),
+  })
+  .transform(({ pattern, ...rest }) =>
+    rest.query === undefined && pattern !== undefined
+      ? { ...rest, query: pattern }
+      : rest,
+  );
+
+const grepSchema = grepInput;
 
 interface RipgrepMatch {
   path: string;
