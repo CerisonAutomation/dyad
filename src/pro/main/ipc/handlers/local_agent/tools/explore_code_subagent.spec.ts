@@ -18,6 +18,7 @@ import { submitReportSchema } from "./explore_code_subagent_report";
 vi.mock("electron-log", () => ({
   default: {
     scope: () => ({
+      debug: vi.fn(),
       warn: vi.fn(),
     }),
   },

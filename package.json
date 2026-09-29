@@ -222,12 +222,5 @@
   "engines": {
     "node": ">=24 <26"
   },
-  "allowScripts": {
-    "dyad-keychain-reader": true,
-    "better-sqlite3": true,
-    "node-pty": true,
-    "mustardscript": true,
-    "esbuild": true
-  },
   "productName": "dyad"
 }

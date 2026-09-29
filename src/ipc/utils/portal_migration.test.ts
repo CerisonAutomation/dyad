@@ -6,6 +6,7 @@ import { runPortalMigrationCommand } from "./portal_migration";
 
 const { logger, runBufferedProcessMock } = vi.hoisted(() => ({
   logger: {
+    debug: vi.fn(),
     info: vi.fn(),
     warn: vi.fn(),
     error: vi.fn(),

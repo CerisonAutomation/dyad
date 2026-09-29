@@ -19,6 +19,7 @@ vi.mock("child_process", () => ({
 vi.mock("electron-log", () => ({
   default: {
     scope: () => ({
+      debug: vi.fn(),
       warn: vi.fn(),
     }),
   },

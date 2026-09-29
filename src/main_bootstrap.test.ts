@@ -33,7 +33,7 @@ vi.mock("electron", () => ({
 
 vi.mock("electron-log", () => ({
   default: {
-    scope: () => ({ error: mocks.logError }),
+    scope: () => ({ error: mocks.logError, debug: vi.fn() }),
     transports: {
       file: {
         getFile: () => ({ path: mocks.logFilePath }),

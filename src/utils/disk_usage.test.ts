@@ -4,7 +4,7 @@ import { getDiskUsageMB } from "@/utils/disk_usage";
 
 const { errorLog } = vi.hoisted(() => ({ errorLog: vi.fn() }));
 vi.mock("electron-log", () => ({
-  default: { scope: () => ({ error: errorLog }) },
+  default: { scope: () => ({ error: errorLog, debug: vi.fn() }) },
 }));
 
 vi.mock("node:fs", () => ({

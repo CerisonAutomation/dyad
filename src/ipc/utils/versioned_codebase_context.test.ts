@@ -18,6 +18,7 @@ vi.mock("@/ipc/utils/git_utils", () => ({
 vi.mock("electron-log", () => ({
   default: {
     scope: () => ({
+      debug: vi.fn(),
       warn: vi.fn(),
       error: vi.fn(),
     }),

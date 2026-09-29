@@ -19,7 +19,7 @@ vi.mock("@/ipc/utils/git_utils", () => ({
   isGitPathClean: vi.fn(),
 }));
 vi.mock("electron-log", () => ({
-  default: { scope: () => ({ warn: vi.fn(), info: vi.fn(), error: vi.fn() }) },
+  default: { scope: () => ({ warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
 
 const getProjectApiKeysMock = vi.mocked(getProjectApiKeys);

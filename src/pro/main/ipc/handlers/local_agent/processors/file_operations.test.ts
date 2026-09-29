@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("electron-log", () => ({
   default: {
     scope: () => ({
+      debug: vi.fn(),
       error: vi.fn(),
       warn: vi.fn(),
     }),

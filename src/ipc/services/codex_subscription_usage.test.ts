@@ -20,7 +20,7 @@ vi.mock("@/main/settings", () => ({
   }),
 }));
 vi.mock("electron-log", () => ({
-  default: { scope: () => ({ warn: mocks.warn }) },
+  default: { scope: () => ({ warn: mocks.warn, debug: vi.fn() }) },
 }));
 import {
   startSubscriptionUsage,

@@ -9,7 +9,7 @@ const dbMocks = vi.hoisted(() => {
 });
 
 vi.mock("electron-log", () => ({
-  default: { scope: () => ({ log: vi.fn(), warn: vi.fn() }) },
+  default: { scope: () => ({ log: vi.fn(), warn: vi.fn(), debug: vi.fn() }) },
 }));
 
 vi.mock("@/db", () => ({ db: { select: dbMocks.select } }));

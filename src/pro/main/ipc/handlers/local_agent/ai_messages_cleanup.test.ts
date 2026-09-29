@@ -18,6 +18,7 @@ const schemaMocks = vi.hoisted(() => {
 const logMocks = vi.hoisted(() => {
   return {
     log: vi.fn(),
+    debug: vi.fn(),
     warn: vi.fn(),
   };
 });

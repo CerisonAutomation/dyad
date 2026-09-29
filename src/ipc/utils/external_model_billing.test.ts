@@ -13,7 +13,7 @@ vi.mock("@/main/settings", () => ({
   },
 }));
 vi.mock("electron-log", () => ({
-  default: { scope: () => ({ warn: vi.fn() }) },
+  default: { scope: () => ({ warn: vi.fn(), debug: vi.fn() }) },
 }));
 const usage = {
   inputTokens: { total: 100, noCache: 70, cacheRead: 20, cacheWrite: 10 },
