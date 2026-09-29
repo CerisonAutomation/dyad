@@ -164,23 +164,48 @@ function createDyadEngineAliasModel({
 }
 
 const logger = log.scope("getModelClient");
+
+// Read lazily rather than at module load: the env var is a diagnostic toggle
+// and reading it per-call keeps it testable and honours a late env change.
+const logEmptyModelResponses = () =>
+  process.env.DYAD_LOG_EMPTY_MODEL_RESPONSE === "1";
+
 /**
- * Kilo's gateway can return a completion whose `content` is null with the
- * whole reply in `reasoning`, typically with finish_reason "length" because
- * the model spent the whole budget thinking. The standard OpenAI-compatible
- * reader only inspects `content`, so such a turn arrives as the opaque
- * "Provider returned an empty response".
+ * Two different upstream failures collapse into the same opaque
+ * "Provider returned an empty response":
  *
- * This wraps fetch and folds reasoning back into content. Dyad streams
- * (streamText), so the SSE path is the one that matters: each `data:` chunk is
- * rewritten as it passes. Non-streaming JSON is handled too, for any call that
- * does not stream.
+ *  1. Reasoning-only completion - HTTP 200, `content:null`, the whole reply in
+ *     `reasoning`, usually `finish_reason:"length"` because the model spent its
+ *     entire budget thinking. The stock OpenAI-compatible reader only inspects
+ *     `content`, so the turn reads as empty.
+ *  2. Rejected request - a non-2xx (context length, rate limit, auth) where no
+ *     completion is produced at all, so there is no usage either.
+ *
+ * This folds reasoning back into content for (1) on both the streaming and
+ * non-streaming paths, and makes (2) legible by logging the real status and
+ * body instead of letting it masquerade as an empty completion.
  */
-function withReasoningAsContent(baseFetch?: typeof fetch) {
+export function withReasoningAsContent(baseFetch?: typeof fetch) {
   if (!baseFetch) return undefined;
 
   return async (input: RequestInfo | URL, init?: RequestInit) => {
     const response = await baseFetch(input, init);
+
+    if (!response.ok) {
+      if (logEmptyModelResponses()) {
+        // Clone so the caller still gets an unread body.
+        const detail = await response
+          .clone()
+          .text()
+          .then((t) => t.slice(0, 800))
+          .catch(() => "<unreadable>");
+        logger.error(
+          `Model request rejected: ${response.status} ${response.statusText} body=${detail}`,
+        );
+      }
+      return response;
+    }
+
     const contentType = response.headers.get("content-type") ?? "";
 
     const applyReasoning = (payload: any): boolean => {
@@ -198,36 +223,21 @@ function withReasoningAsContent(baseFetch?: typeof fetch) {
     };
 
     if (contentType.includes("text/event-stream")) {
-      // The upstream can return a stream whose only output is reasoning, which
-      // the OpenAI-compatible reader reports as an empty response. We have seen
-      // this come back as content:null / finish_reason:length, but not on every
-      // call, so log the real shape whenever a turn yields no content at all
-      // rather than guessing at the cause.
-      let sawAnyContent = false;
-      const originalBody = response.body;
-      if (originalBody && process.env.DYAD_LOG_EMPTY_MODEL_RESPONSE === "1") {
-        const tap = originalBody.pipeThrough(
-          new TransformStream<Uint8Array, Uint8Array>({
-            transform(chunk, controller) {
-              const text = new TextDecoder().decode(chunk, { stream: true });
-              if (text.includes('"content":"') || text.includes('"content": "')) {
-                sawAnyContent = true;
-              }
-              controller.enqueue(chunk);
-            },
-          }),
-        );
-        return new Response(tap, {
-          status: response.status,
-          statusText: response.statusText,
-          headers: response.headers,
-        });
-      }
       const body = response.body;
       if (!body) return response;
       const encoder = new TextEncoder();
       const decoder = new TextDecoder();
       let buffer = "";
+
+      // Diagnostics ride along with the fold in the SAME transform. An earlier
+      // version returned early to tap the stream, which silently disabled the
+      // fold whenever the diagnostic was on - the fix turned itself off.
+      let sawContent = false;
+      let sawReasoning = false;
+      let foldedChunks = 0;
+      let chunkCount = 0;
+      let finishReason: unknown;
+      const shapes: string[] = [];
 
       const stream = body.pipeThrough(
         new TransformStream<Uint8Array, Uint8Array>({
@@ -247,7 +257,24 @@ function withReasoningAsContent(baseFetch?: typeof fetch) {
               }
               try {
                 const payload = JSON.parse(json);
-                applyReasoning(payload);
+                chunkCount += 1;
+                const choice = payload?.choices?.[0];
+                const target = choice?.delta ?? choice?.message;
+                if (typeof target?.content === "string" && target.content) {
+                  sawContent = true;
+                }
+                if (
+                  typeof (target?.reasoning ?? target?.reasoning_content) ===
+                    "string" &&
+                  (target.reasoning ?? target.reasoning_content)
+                ) {
+                  sawReasoning = true;
+                }
+                if (choice?.finish_reason) finishReason = choice.finish_reason;
+                if (logEmptyModelResponses() && shapes.length < 12) {
+                  shapes.push(json.slice(0, 240));
+                }
+                if (applyReasoning(payload)) foldedChunks += 1;
                 controller.enqueue(
                   encoder.encode("data: " + JSON.stringify(payload) + "\n"),
                 );
@@ -258,6 +285,19 @@ function withReasoningAsContent(baseFetch?: typeof fetch) {
           },
           flush(controller) {
             if (buffer) controller.enqueue(encoder.encode(buffer));
+            if (logEmptyModelResponses() && !sawContent) {
+              logger.error(
+                "Stream produced no content",
+                JSON.stringify({
+                  status: response.status,
+                  chunkCount,
+                  foldedChunks,
+                  sawReasoning,
+                  finishReason,
+                  shapes,
+                }),
+              );
+            }
           },
         }),
       );
@@ -803,6 +843,7 @@ function getRegularModelClient(
     case "openai": {
       const provider = createOpenAI({
         apiKey,
+        fetch: withReasoningAsContent(getModelClientFetchOption().fetch),
         ...getModelClientFetchOption(),
       });
       return {
@@ -829,6 +870,7 @@ function getRegularModelClient(
     case "xai": {
       const provider = createXai({
         apiKey,
+        fetch: withReasoningAsContent(getModelClientFetchOption().fetch),
         ...getModelClientFetchOption(),
       });
       return {
@@ -929,6 +971,7 @@ function getRegularModelClient(
         baseURL: "https://openrouter.ai/api/v1",
         apiKey,
         headers: getOpenRouterAppAttributionHeaders(),
+        fetch: withReasoningAsContent(getModelClientFetchOption().fetch),
         ...getModelClientFetchOption(),
       });
       return {

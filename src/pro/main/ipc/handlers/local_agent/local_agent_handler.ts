@@ -216,6 +216,17 @@ const RETRYABLE_STREAM_ERROR_PATTERNS = [
   "econnreset",
   "epipe",
   "etimedout",
+  // Gateways (Kilo, OpenRouter, and others) intermittently return a completed
+  // turn whose content is empty - either because the upstream model emitted only
+  // reasoning and hit its output cap, or because the gateway dropped the
+  // response. The message text comes from the provider, not from this app, and it
+  // arrives with no usable token usage, so nothing downstream can tell it apart
+  // from a hard failure. It is transient: the same request normally succeeds on
+  // a retry, so the agent must not stop on it.
+  "empty response",
+  "returned an empty",
+  "empty_response",
+  "no content",
 ];
 
 // ============================================================================
@@ -2553,7 +2564,7 @@ function isTerminatedStreamError(error: unknown): boolean {
   return false;
 }
 
-function isRetryableProviderStreamError(error: unknown): boolean {
+export function isRetryableProviderStreamError(error: unknown): boolean {
   const normalized = unwrapStreamError(error);
   if (!isRecord(normalized)) {
     return false;
