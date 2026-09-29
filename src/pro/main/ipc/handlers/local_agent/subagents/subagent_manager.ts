@@ -1737,7 +1737,43 @@ async function runReview(
       abortSignal: controller.signal,
     });
     const report = reviewResult.text;
-    const parsed = parseReviewResult(report, target.files);
+    let parsed = parseReviewResult(report, target.files);
+    // A reviewer whose output could not be parsed has not actually reviewed
+    // anything, and recording it as "partial" ends the review with nothing
+    // usable. Give it exactly one more attempt with the failure attached, then
+    // accept whatever comes back. Bounded on purpose: a reviewer that cannot
+    // produce parseable JSON twice is not going to on a third try, and retrying
+    // without a bound is what wedged the queue in the first place.
+    if (parsed.parseError) {
+      logger.warn(
+        `Reviewer output for thread ${threadId} was unparseable (${parsed.parseError}); retrying once`,
+      );
+      const retry = await runModel({
+        threadId,
+        chatId: thread.chatId,
+        appId,
+        persona: "reviewer",
+        assignment:
+          `Your previous reply could not be parsed as JSON and was discarded.\n` +
+          `Parse error: ${parsed.parseError}\n\n` +
+          `Re-review the same diff. Reply with a single raw JSON object and no ` +
+          `prose, no code fence, and nothing before or after it.\n\n` +
+          `${STRUCTURED_REVIEW_INSTRUCTIONS}\n\nFiles: ${target.files.join(", ")}\n` +
+          `Excluded: ${target.exclusions.join(", ") || "none"}\n\n${target.diff}`,
+        tools: await buildSubagentVerificationTools({
+          appId,
+          appPath,
+          chatId: thread.chatId,
+        }),
+        abortSignal: controller.signal,
+      });
+      const retryParsed = parseReviewResult(retry.text, target.files);
+      // Only take the retry when it actually parsed; otherwise keep the
+      // original output so the thread still shows what was really said.
+      if (!retryParsed.parseError) {
+        parsed = retryParsed;
+      }
+    }
     const { target: currentTarget } = await buildCoordinatedReviewTarget({
       chatId: thread.chatId,
       baseCommit: target.baseCommit,

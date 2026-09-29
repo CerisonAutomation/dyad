@@ -54,7 +54,9 @@ export function parseReviewResult(
   reviewedFiles: readonly string[],
 ): ParsedReviewResult {
   try {
-    const parsedJson: unknown = JSON.parse(stripJsonFence(rawOutput));
+    const parsedJson: unknown = JSON.parse(
+      extractReviewJson(stripJsonFence(rawOutput)),
+    );
     const parsed = reviewerOutputSchema.parse(parsedJson);
     const allowedPaths = new Set(reviewedFiles);
     const invalidPath = parsed.findings.find(
@@ -98,4 +100,84 @@ function stripJsonFence(value: string): string {
   const trimmed = value.trim();
   const match = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
   return match?.[1] ?? trimmed;
+}
+
+/**
+ * Recovers the review payload from model output.
+ *
+ * The reviewer is asked for JSON only, but it routinely narrates anyway - a
+ * preamble, a sentence after the answer, a fence with trailing prose. The old
+ * extractor was anchored to ^```...```$, so anything around the fence discarded
+ * the whole result and the review was recorded as "partial" with no findings.
+ * With 40 of 81 reviewer threads in that state, that one assumption was the
+ * largest single cause of reviews failing.
+ *
+ * Scans for the first balanced object, tracking string state so a brace inside
+ * a title or summary cannot end the scan early. Returns the input unchanged
+ * when nothing parses, leaving the caller's error path in charge of reporting
+ * what went wrong.
+ */
+export function extractReviewJson(raw: string): string {
+  const trimmed = raw.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidates = [fenced?.[1], trimmed].filter(
+    (c): c is string => typeof c === "string",
+  );
+
+  // Prefer a candidate that is already a complete object.
+  for (const candidate of candidates) {
+    const direct = candidate.trim();
+    if (direct.startsWith("{") && isBalancedJson(direct)) return direct;
+  }
+  // Otherwise recover the first balanced object embedded in the prose.
+  for (const candidate of candidates) {
+    const found = firstBalancedObject(candidate);
+    if (found) return found;
+  }
+
+  return raw;
+}
+
+function isBalancedJson(text: string): boolean {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function firstBalancedObject(text: string): string | null {
+  const start = text.indexOf("{");
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        const slice = text.slice(start, i + 1);
+        return isBalancedJson(slice) ? slice : null;
+      }
+    }
+  }
+  return null;
 }
