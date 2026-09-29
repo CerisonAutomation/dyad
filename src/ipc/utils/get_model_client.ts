@@ -239,6 +239,7 @@ export function withReasoningAsContent(baseFetch?: typeof fetch) {
       // version returned early to tap the stream, which silently disabled the
       // fold whenever the diagnostic was on - the fix turned itself off.
       let sawContent = false;
+      let sawToolCalls = false;
       let sawReasoning = false;
       let foldedChunks = 0;
       let chunkCount = 0;
@@ -269,6 +270,16 @@ export function withReasoningAsContent(baseFetch?: typeof fetch) {
                 if (typeof target?.content === "string" && target.content) {
                   sawContent = true;
                 }
+                // A tool-calling turn legitimately carries no text at all: the
+                // deltas are {content: null, tool_calls: [...]}. Counting only
+                // text flagged every one of those as an empty response, which is
+                // the normal shape of a working agent step, not a failure.
+                if (
+                  Array.isArray(target?.tool_calls) &&
+                  target.tool_calls.length > 0
+                ) {
+                  sawToolCalls = true;
+                }
                 if (
                   typeof (target?.reasoning ?? target?.reasoning_content) ===
                     "string" &&
@@ -291,7 +302,7 @@ export function withReasoningAsContent(baseFetch?: typeof fetch) {
           },
           flush(controller) {
             if (buffer) controller.enqueue(encoder.encode(buffer));
-            if (logEmptyModelResponses() && !sawContent) {
+            if (logEmptyModelResponses() && !sawContent && !sawToolCalls) {
               logger.error(
                 "Stream produced no content",
                 JSON.stringify({
@@ -299,6 +310,7 @@ export function withReasoningAsContent(baseFetch?: typeof fetch) {
                   chunkCount,
                   foldedChunks,
                   sawReasoning,
+                  sawToolCalls,
                   finishReason,
                   shapes,
                 }),

@@ -127,3 +127,31 @@ describe("withReasoningAsContent", () => {
     }
   });
 });
+
+describe("withReasoningAsContent diagnostics", () => {
+  test("does not report a tool-calling turn as an empty response", async () => {
+    // Observed live: a working agent step streams {content: null, tool_calls: [...]}
+    // and finishes with finish_reason "tool_calls". That is a valid completion
+    // with no text, and flagging it as an empty response cried wolf on every
+    // single tool call the agent made.
+    process.env.DYAD_LOG_EMPTY_MODEL_RESPONSE = "1";
+    const base = async () =>
+      sseResponse([
+        JSON.stringify({
+          choices: [{ delta: { content: null, role: "assistant", tool_calls: [{ index: 0 }] } }],
+        }),
+        JSON.stringify({ choices: [{ delta: {}, finish_reason: "tool_calls" }] }),
+      ]);
+    const wrapped = withReasoningAsContent(base as unknown as typeof fetch)!;
+    const errors: string[] = [];
+    const originalError = console.error;
+    console.error = (...args: unknown[]) => errors.push(args.join(" "));
+    try {
+      await drain(await wrapped("https://example.test/v1"));
+    } finally {
+      console.error = originalError;
+      delete process.env.DYAD_LOG_EMPTY_MODEL_RESPONSE;
+    }
+    expect(errors.join("\n")).not.toContain("Stream produced no content");
+  });
+});
