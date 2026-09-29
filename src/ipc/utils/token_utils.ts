@@ -77,13 +77,20 @@ export async function getMaxTokens(
   const modelOption = await findLanguageModel(model);
   const declared = modelOption?.maxOutputTokens;
   if (declared === undefined) return undefined;
-  // A model can declare an output ceiling equal to its entire context window
-  // (e.g. 1M output on a 1M context). Input and output must both fit within
-  // the limit, so any non-empty prompt then overflows. Reserve headroom for
-  // the prompt instead of trusting the declared ceiling.
+  // `maxOutputTokens` in the catalog is the model's *ceiling*, not a sensible
+  // reservation. Some models declare an output limit close to their whole
+  // context window - stealth/space-bunny-alpha declares 524,288 output on a
+  // 1,000,000 context. Sending that as the reservation makes the provider reject
+  // the turn before the model runs, because input and output must both fit: a
+  // 644k prompt plus a 524k reservation is 1.17M against a 1M limit.
+  //
+  // Cap the reservation to a fraction of the context window instead. Input and
+  // output then both fit with room to spare, and a turn that genuinely needs a
+  // large completion still gets a large one - it just cannot claim the whole
+  // window. Models whose declared ceiling is already modest are unaffected.
   const contextWindow = modelOption?.contextWindow;
   if (!contextWindow || contextWindow <= 0) return declared;
-  return Math.min(declared, Math.max(1_000, contextWindow - 32_000));
+  return Math.min(declared, Math.max(1_000, Math.floor(contextWindow * 0.25)));
 }
 
 export async function getTemperature(

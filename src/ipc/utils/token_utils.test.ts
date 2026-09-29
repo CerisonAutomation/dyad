@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  getMaxTokens,
   getCompactionThreshold,
   getTemperature,
   estimateToolResultTokens,
@@ -175,5 +176,49 @@ describe("shouldTriggerCompaction", () => {
     expect(shouldTriggerCompaction(175_000, 200_000, "openai")).toBe(true);
     expect(shouldTriggerCompaction(174_999, 200_000, "openai")).toBe(false);
     expect(shouldTriggerCompaction(175_000, 200_000, "google")).toBe(true);
+  });
+});
+
+describe("getMaxTokens reserves a usable output budget", () => {
+  // Regression: stealth/space-bunny-alpha declares max_completion_tokens
+  // 524,288 on a 1,000,000 context. Sending that as the reservation makes the
+  // provider reject the turn before the model runs, because input and output
+  // must both fit - a 644k prompt plus a 524k reservation is 1.17M against 1M.
+  it("does not reserve a model's whole output ceiling on a large context", async () => {
+    mockFindLanguageModel.mockResolvedValue({
+      maxOutputTokens: 524_288,
+      contextWindow: 1_000_000,
+    } as never);
+
+    const reserved = await getMaxTokens({
+      name: "stealth/space-bunny-alpha",
+      provider: "kilocode",
+    } as never);
+
+    // A realistic agent prompt plus the reservation must fit the window.
+    const promptTokens = 644_000;
+    expect(reserved).toBeDefined();
+    expect(promptTokens + (reserved as number)).toBeLessThan(1_000_000);
+  });
+
+  it("leaves ordinary models with their declared ceiling", async () => {
+    // kilo-auto/free: 32,768 output on a 256,000 context. Must be untouched.
+    mockFindLanguageModel.mockResolvedValue({
+      maxOutputTokens: 32_768,
+      contextWindow: 256_000,
+    } as never);
+
+    expect(
+      await getMaxTokens({ name: "kilo-auto/free", provider: "kilocode" } as never),
+    ).toBe(32_768);
+  });
+
+  it("never returns a reservation below a usable floor", async () => {
+    mockFindLanguageModel.mockResolvedValue({
+      maxOutputTokens: 8_192,
+      contextWindow: 4_000,
+    } as never);
+    const reserved = await getMaxTokens({ name: "tiny", provider: "x" } as never);
+    expect(reserved).toBeGreaterThanOrEqual(1_000);
   });
 });
