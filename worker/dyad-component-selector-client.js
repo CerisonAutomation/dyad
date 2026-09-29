@@ -762,8 +762,23 @@
         }
         // Only warn if we never found tagged elements
         if (!document.body.querySelector("[data-dyad-id]")) {
+          // The `data-dyad-id` attributes are written at BUILD time by
+          // @dyad-sh/react-vite-component-tagger, which the scaffold wires into
+          // vite.config.ts. Nothing sets them at runtime, so an app that was not
+          // built through the Vite tagger (Next.js/webpack, or a plain production
+          // build) can never satisfy the check above - waiting longer will not
+          // help, and silently disabling the button just looks broken.
+          const isViteDevServer = Boolean(
+            window.__vite_plugin_react_preamble_installed__,
+          );
           console.warn(
-            "Dyad component selector not initialized because no DOM elements were tagged",
+            "Dyad component selector not initialized: no [data-dyad-id] elements were found after " +
+              INIT_TIMEOUT_MS +
+              "ms. These attributes are added at build time by " +
+              "@dyad-sh/react-vite-component-tagger, so this app was not built with it" +
+              (isViteDevServer
+                ? "."
+                : " (no Vite dev server detected — this looks like a non-Vite or production build)."),
           );
         }
       }, INIT_TIMEOUT_MS);
