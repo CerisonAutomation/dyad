@@ -71,12 +71,40 @@ function isRuntimeDependency(
 }
 
 // Based on https://github.com/electron/forge/blob/6b2d547a7216c30fde1e1fddd1118eee5d872945/packages/plugin/vite/src/VitePlugin.ts#L124
+/**
+ * Dev-only packages that must never reach the packaged app.
+ *
+ * The packager copies node_modules wholesale and only afterwards prunes unused
+ * files in `afterCopy`, so every excluded byte is still written to disk and
+ * read back. node_modules is 1.8 GB while the shipped app is 311 MB, and that
+ * copy-then-prune is the overwhelming majority of `npm run package` time.
+ * Denying them here is what actually removes the work.
+ */
+const devOnlyPackages = new Set<string>([
+  ...Object.keys(
+    (require("./package.json") as {
+      devDependencies?: Record<string, string>;
+    }).devDependencies ?? {},
+  ),
+  // Package-manager and tooling trees that are never imported at runtime.
+  ".pnpm",
+  ".cache",
+  ".bin",
+]);
+
 const ignore = (file: string) => {
   if (!file) return false;
   // `file` always starts with `/`
   // @see - https://github.com/electron/packager/blob/v18.1.3/src/copy-filter.ts#L89-L93
   if (file === "/node_modules") {
     return false;
+  }
+  // Dev-only trees: excluded before the copy, not pruned after it.
+  if (file.startsWith("/node_modules/")) {
+    const rest = file.slice("/node_modules/".length);
+    const top = rest.split("/")[0];
+    if (devOnlyPackages.has(top)) return true;
+    if (top.startsWith(".")) return true;
   }
   if (file.startsWith("/drizzle")) {
     return false;
