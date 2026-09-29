@@ -27,9 +27,9 @@
     "dev": "cross-env NODE_ENV=development npm start",
     "dev:engine": "cross-env DYAD_ENGINE_URL=http://localhost:8080/v1 npm start",
     "staging:engine": "cross-env DYAD_ENGINE_URL=https://staging---dyad-llm-engine-kq7pivehnq-uc.a.run.app/v1 npm start",
-    "package": "node scripts/check-build-env.mjs && npm run rebuild:keychain-reader && npm run clean && electron-forge package",
-    "make": "node scripts/check-build-env.mjs && npm run rebuild:keychain-reader && npm run clean && electron-forge make",
-    "publish": "node scripts/check-build-env.mjs && npm run rebuild:keychain-reader && npm run clean && electron-forge publish",
+    "package": "node scripts/check-build-env.mjs && node scripts/check-runtime-deps.mjs && npm run rebuild:keychain-reader && npm run clean && electron-forge package",
+    "make": "node scripts/check-build-env.mjs && node scripts/check-runtime-deps.mjs && npm run rebuild:keychain-reader && npm run clean && electron-forge make",
+    "publish": "node scripts/check-build-env.mjs && node scripts/check-runtime-deps.mjs && npm run rebuild:keychain-reader && npm run clean && electron-forge publish",
     "rebuild:keychain-reader": "node scripts/rebuild-keychain-reader.mjs",
     "verify-release": "node scripts/verify-release-assets.js",
     "ts": "npm run ts:main && npm run ts:workers",
@@ -63,7 +63,8 @@
     "benchmark:code-explorer:smoke": "node benchmarks/code-explorer/suite.mjs --mode smoke",
     "benchmark:code-explorer:full": "node benchmarks/code-explorer/suite.mjs --mode full",
     "build:fast": "cross-env DYAD_REACT_COMPILER=false vite build --config vite.renderer.config.mts",
-    "package:fast": "npm run rebuild:keychain-reader && cross-env DYAD_REACT_COMPILER=false electron-forge package"
+    "package:fast": "npm run rebuild:keychain-reader && cross-env DYAD_REACT_COMPILER=false electron-forge package",
+    "check:runtime-deps": "node scripts/check-runtime-deps.mjs"
   },
   "dependencies": {
     "@ai-sdk/amazon-bedrock": "^4.0.46",
