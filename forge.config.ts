@@ -167,6 +167,15 @@ const ignore = (file: string) => {
   if (file === "/node_modules/ws" || file.startsWith("/node_modules/ws/")) {
     return false;
   }
+  // The preview browser driver requires playwright at runtime, and this function
+  // ignores everything under node_modules that is not listed here. Without these
+  // entries the feature works in development and is silently absent from the
+  // packaged app.
+  for (const pkg of ["playwright", "playwright-core", "chromium-bidi", "fsevents"]) {
+    if (file === `/node_modules/${pkg}` || file.startsWith(`/node_modules/${pkg}/`)) {
+      return false;
+    }
+  }
   if (file.startsWith("/.vite")) {
     return false;
   }

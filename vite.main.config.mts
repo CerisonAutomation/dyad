@@ -43,6 +43,15 @@ export default defineConfig(({ forgeConfigSelf }) => ({
         "mustardscript",
         "pg",
         "ws",
+        // Playwright resolves files with deep relative paths (e.g.
+        // require.resolve("../../../package.json") for its own version).
+        // Bundling rewrites those to be relative to .vite/build/, which escapes
+        // the asar and throws "Cannot find module '../../../package.json'" the
+        // moment the preview browser loads. It ships as a real dependency, so
+        // require it from node_modules and keep its directory layout intact.
+        "playwright",
+        "playwright-core",
+        "chromium-bidi",
       ],
     },
   },

@@ -110,7 +110,7 @@
     css(hoverLabel, { background: "#7f22fe" });
     while (hoverLabel.firstChild) hoverLabel.removeChild(hoverLabel.firstChild);
     const name = el.dataset.dyadName || "<unknown>";
-    const file = (el.dataset.dyadId || "").split(":")[0];
+    const file = fileForElement(el);
     const nameEl = document.createElement("div");
     nameEl.textContent = name;
     hoverLabel.appendChild(nameEl);
@@ -345,7 +345,7 @@
 
     // Add component name and file
     const name = el.dataset.dyadName || "<unknown>";
-    const file = (el.dataset.dyadId || "").split(":")[0];
+    const file = fileForElement(el);
     const nameEl = document.createElement("div");
     nameEl.textContent = name;
     label.appendChild(nameEl);
@@ -667,6 +667,33 @@
   window.addEventListener("resize", updateAllOverlayPositions);
   window.addEventListener("scroll", updateAllOverlayPositions, true);
 
+  // The selector uses data-dyad-id for two different jobs: as an opaque handle
+  // for finding an element again, and - by splitting on ":" - as the source
+  // file to open. Only the second job needs a build-time transform, and the
+  // tagger that provides it is a Vite plugin. Gating on that transform meant an
+  // app built any other way (Next.js/webpack) lost the whole feature even
+  // though identity works fine at runtime.
+  //
+  // So: prefer real tags, and when none arrive, assign runtime ids. Every part
+  // of the selector treats the id as opaque, so selection, hover, highlight and
+  // re-finding all keep working; only the file lookup degrades, and this prefix
+  // marks exactly which ids were synthesised rather than built.
+  const RUNTIME_ID_PREFIX = "__dyad_rt__:";
+  const RUNTIME_TAG_MAX_ELEMENTS = 2000;
+  const RUNTIME_TAG_MIN_AREA = 16; // px^2; skip spacer nodes and hairlines
+
+  function isRuntimeId(id) {
+    return typeof id === "string" && id.startsWith(RUNTIME_ID_PREFIX);
+  }
+
+  // A synthesised id has no file behind it, so splitting it would show the raw
+  // prefix in the hover label as though it were a source path.
+  function fileForElement(el) {
+    const id = el.dataset.dyadId || "";
+    if (isRuntimeId(id)) return "";
+    return id.split(":")[0];
+  }
+
   function initializeComponentSelector() {
     if (!document.body) {
       console.error(
@@ -681,8 +708,37 @@
     //
     // see: https://github.com/dyad-sh/dyad/issues/2231
     const INIT_TIMEOUT_MS = 60_000; // Wait up to 60 seconds for tagged elements
+    const RUNTIME_FALLBACK_MS = 1_500; // Then tag the DOM ourselves
     let observer = null;
     let timeoutId = null;
+    let fallbackId = null;
+
+    // Tag the live DOM so the selector has something stable to point at. Only
+    // used when the build-time tagger never produced anything.
+    function assignRuntimeIds() {
+      if (document.body.querySelector("[data-dyad-id]")) return true;
+      const all = document.body.querySelectorAll("*");
+      let count = 0;
+      for (const el of all) {
+        if (count >= RUNTIME_TAG_MAX_ELEMENTS) break;
+        if (el.closest("script,style,noscript,template")) continue;
+        const rect = el.getBoundingClientRect();
+        if (rect.width * rect.height < RUNTIME_TAG_MIN_AREA) continue;
+        el.setAttribute("data-dyad-id", `${RUNTIME_ID_PREFIX}${count}`);
+        el.setAttribute("data-dyad-name", el.tagName.toLowerCase());
+        count += 1;
+      }
+      return count > 0;
+    }
+
+    function announceReady() {
+      window.parent.postMessage(
+        {
+          type: "dyad-component-selector-initialized",
+        },
+        "*",
+      );
+    }
 
     function checkForTaggedElements() {
       if (document.body.querySelector("[data-dyad-id]")) {
@@ -695,13 +751,12 @@
           clearTimeout(timeoutId);
           timeoutId = null;
         }
+        if (fallbackId) {
+          clearTimeout(fallbackId);
+          fallbackId = null;
+        }
 
-        window.parent.postMessage(
-          {
-            type: "dyad-component-selector-initialized",
-          },
-          "*",
-        );
+        announceReady();
         console.debug("Dyad component selector initialized");
         return true;
       }
@@ -713,6 +768,29 @@
       if (checkForTaggedElements()) {
         return;
       }
+
+      // No build-time tags so far. Rather than leaving the feature dead for the
+      // full INIT_TIMEOUT_MS and then reporting failure, tag the DOM ourselves
+      // after a short grace period. Real tags still win if they turn up later,
+      // because checkForTaggedElements() fires first and clears this timer.
+      fallbackId = setTimeout(() => {
+        if (observer) {
+          observer.disconnect();
+          observer = null;
+        }
+        if (checkForTaggedElements()) {
+          return;
+        }
+        if (assignRuntimeIds()) {
+          announceReady();
+          console.debug(
+            "Dyad component selector initialized with runtime ids: this app " +
+              "was not built with @dyad-sh/react-vite-component-tagger (it is " +
+              "not a Vite app), so a selected component will not resolve to a " +
+              "source file.",
+          );
+        }
+      }, RUNTIME_FALLBACK_MS);
 
       // If not found, set up MutationObserver to watch for tagged elements
       console.debug(
@@ -772,13 +850,10 @@
             window.__vite_plugin_react_preamble_installed__,
           );
           console.warn(
-            "Dyad component selector not initialized: no [data-dyad-id] elements were found after " +
+            "Dyad component selector not initialized: no [data-dyad-id] " +
+              "elements were found after " +
               INIT_TIMEOUT_MS +
-              "ms. These attributes are added at build time by " +
-              "@dyad-sh/react-vite-component-tagger, so this app was not built with it" +
-              (isViteDevServer
-                ? "."
-                : " (no Vite dev server detected — this looks like a non-Vite or production build)."),
+              "ms, and runtime tagging produced nothing either.",
           );
         }
       }, INIT_TIMEOUT_MS);
