@@ -101,4 +101,29 @@ describe("withReasoningAsContent", () => {
     expect(response.status).toBe(400);
     expect(await drain(response)).toContain("context length exceeded");
   });
+
+  test("wraps the global fetch when no override is supplied", async () => {
+    // Regression: the production call site passes getTestFetchOption().fetch,
+    // which is undefined outside tests. Returning undefined here made the fold
+    // and the diagnostic dead code in a real build while every unit test - which
+    // passes an explicit stub - stayed green.
+    const originalFetch = globalThis.fetch;
+    const calls: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      calls.push(String(input));
+      return sseResponse(REASONING_ONLY_CHUNKS);
+    }) as typeof fetch;
+
+    try {
+      delete process.env.DYAD_LOG_EMPTY_MODEL_RESPONSE;
+      const wrapped = withReasoningAsContent(undefined);
+      expect(typeof wrapped).toBe("function");
+
+      const text = await drain(await wrapped!("https://example.test/v1"));
+      expect(calls).toEqual(["https://example.test/v1"]);
+      expect(text).toContain('"content":"thinking hard"');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

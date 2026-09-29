@@ -42,6 +42,18 @@ describe("isRetryableProviderStreamError", () => {
     }
   });
 
+  test("matches when the SDK delivers a bare string rather than an Error", () => {
+    // Regression: the AI SDK hands some stream failures over as a plain string.
+    // getErrorMessage renders those with no "Name: " prefix, and the classifier
+    // used to return false for anything that was not a record - so every
+    // bare-string failure was treated as fatal and the agent stopped.
+    expect(isRetryableProviderStreamError(EMPTY_RESPONSE)).toBe(true);
+    expect(isRetryableProviderStreamError("ECONNRESET")).toBe(true);
+    expect(isRetryableProviderStreamError("tool call arguments invalid")).toBe(
+      false,
+    );
+  });
+
   test("does not retry an ordinary model failure", () => {
     expect(
       isRetryableProviderStreamError(new Error("Tool call arguments invalid")),

@@ -2567,7 +2567,18 @@ function isTerminatedStreamError(error: unknown): boolean {
 export function isRetryableProviderStreamError(error: unknown): boolean {
   const normalized = unwrapStreamError(error);
   if (!isRecord(normalized)) {
-    return false;
+    // The AI SDK can hand a stream failure over as a bare string rather than an
+    // Error - getErrorMessage renders those without a "Name: " prefix, which is
+    // how this showed up in the logs. A string carries no statusCode or code, so
+    // bailing out here classified every one of them as non-retryable and let the
+    // agent stop. Match on the text instead.
+    const text =
+      typeof normalized === "string"
+        ? normalized.toLowerCase()
+        : getErrorMessage(normalized).toLowerCase();
+    return RETRYABLE_STREAM_ERROR_PATTERNS.some((pattern) =>
+      text.includes(pattern),
+    );
   }
 
   const statusCode =

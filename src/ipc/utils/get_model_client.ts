@@ -186,10 +186,16 @@ const logEmptyModelResponses = () =>
  * body instead of letting it masquerade as an empty completion.
  */
 export function withReasoningAsContent(baseFetch?: typeof fetch) {
-  if (!baseFetch) return undefined;
+  // Fall back to the global fetch. The only caller passes
+  // getModelClientFetchOption().fetch, which is the test override and is
+  // undefined in a real build - so returning undefined here disabled the whole
+  // fold and diagnostic in production while unit tests, which always pass a
+  // stub, kept passing.
+  const base = baseFetch ?? globalThis.fetch;
+  if (typeof base !== "function") return undefined;
 
   return async (input: RequestInfo | URL, init?: RequestInit) => {
-    const response = await baseFetch(input, init);
+    const response = await base(input, init);
 
     if (!response.ok) {
       if (logEmptyModelResponses()) {
