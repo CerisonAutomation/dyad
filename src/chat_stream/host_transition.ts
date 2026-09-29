@@ -782,6 +782,11 @@ export function transitionChatStreamHost(
         return ignore(state, "invalid-host-event");
       }
       if (event.outcome === "waiting") {
+        // The review ran out of budget without reaching a verdict. That is a
+        // failure of the safety net, not a reason to stop the user's work: the
+        // previous behaviour set resumeQueueOnRelease to false and emitted no
+        // resume command, so a stuck reviewer held every queued prompt paused
+        // indefinitely. Release the queue and say what happened.
         return {
           kind: "applied",
           state: {
@@ -790,12 +795,10 @@ export function transitionChatStreamHost(
             reviewBarrier: {
               phase: "idle",
               threadId: null,
-              resumeQueueOnRelease: false,
+              resumeQueueOnRelease: true,
             },
           },
-          commands: state.reviewBarrier.resumeQueueOnRelease
-            ? [{ type: "resume-after-review" }]
-            : [],
+          commands: [{ type: "resume-after-review" }],
         };
       }
       if (event.outcome === "verification_failed") {

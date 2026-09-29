@@ -1553,3 +1553,48 @@ describe("transitionChatStreamHost", () => {
     });
   });
 });
+
+describe("review barrier timeout must not hold the queue", () => {
+  it("resumes queued prompts when the review produced no verdict", () => {
+    // Regression: a review that timed out set resumeQueueOnRelease:false and
+    // emitted no resume command, so the user's queued prompts stayed paused
+    // indefinitely. The review is an advisory safety net, not a gate - when it
+    // cannot finish, the work must continue.
+    const state = {
+      ...initialChatStreamHostState(),
+      reviewBarrier: {
+        phase: "reviewing" as const,
+        threadId: "thread-1",
+        resumeQueueOnRelease: false,
+      },
+    };
+
+    const result = transitionChatStreamHost(state, {
+      type: "REVIEW_BARRIER_RESULT",
+      outcome: "waiting",
+      threadId: "thread-1",
+    } as never);
+
+    expect(result.state.reviewBarrier.phase).toBe("idle");
+    expect(result.state.reviewBarrier.threadId).toBeNull();
+    expect(result.state.reviewBarrier.resumeQueueOnRelease).toBe(true);
+    expect(result.commands).toContainEqual({ type: "resume-after-review" });
+  });
+
+  it("still releases cleanly when the queue was already set to resume", () => {
+    const state = {
+      ...initialChatStreamHostState(),
+      reviewBarrier: {
+        phase: "reviewing" as const,
+        threadId: "thread-1",
+        resumeQueueOnRelease: true,
+      },
+    };
+    const result = transitionChatStreamHost(state, {
+      type: "REVIEW_BARRIER_RESULT",
+      outcome: "waiting",
+      threadId: "thread-1",
+    } as never);
+    expect(result.commands).toContainEqual({ type: "resume-after-review" });
+  });
+});
