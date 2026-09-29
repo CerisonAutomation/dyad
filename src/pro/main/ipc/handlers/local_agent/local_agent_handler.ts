@@ -198,7 +198,22 @@ export function shouldStopAfterAppBlueprintWrite(
 
 const MAX_TERMINATED_STREAM_RETRIES = 3;
 const MAX_ERROR_RESPONSE_BODY_DEPTH = 5;
-const STREAM_RETRY_BASE_DELAY_MS = 400;
+// Gateway 502s arrive in correlated bursts, not as independent per-request
+// failures: measured 11 upstream errors against 79 turns, of which 3
+// exhausted the budget - far above the ~0.2% three independent
+// failures would predict. All three retries previously landed inside a
+// 2.4s window, i.e. inside the same upstream outage. Spreading the
+// retries out gives the provider time to recover between attempts.
+const STREAM_RETRY_BASE_DELAY_MS = 2_000;
+
+/**
+ * Exponential backoff: 2s, 4s, 8s - the three attempts span ~14s rather than
+ * 2.4s. A gateway outage is not over in a second, and retrying inside it just
+ * burns the budget.
+ */
+function streamRetryDelayMs(attempt: number): number {
+  return STREAM_RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+}
 const STREAM_CONTINUE_MESSAGE =
   "[System] Your previous response stream was interrupted by a transient network error. Continue from exactly where you left off and do not repeat text that has already been sent.";
 const TOOL_ERROR_STATUS_MAX_CHARS = 4_000;
@@ -1892,7 +1907,7 @@ export async function handleLocalAgentStream(
               terminatedRetryCount += 1;
               needsContinuationInstruction = true;
               const retryDelayMs =
-                STREAM_RETRY_BASE_DELAY_MS * terminatedRetryCount;
+                streamRetryDelayMs(terminatedRetryCount);
               sendTelemetryEvent("local_agent:terminated_stream_retry", {
                 chatId: req.chatId,
                 dyadRequestId,
@@ -1942,7 +1957,7 @@ export async function handleLocalAgentStream(
               terminatedRetryCount += 1;
               needsContinuationInstruction = true;
               const retryDelayMs =
-                STREAM_RETRY_BASE_DELAY_MS * terminatedRetryCount;
+                streamRetryDelayMs(terminatedRetryCount);
               sendTelemetryEvent("local_agent:terminated_stream_retry", {
                 chatId: req.chatId,
                 dyadRequestId,
