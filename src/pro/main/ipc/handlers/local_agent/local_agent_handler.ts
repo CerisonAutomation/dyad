@@ -196,8 +196,15 @@ export function shouldStopAfterAppBlueprintWrite(
   return ctx.appBlueprintWrittenThisTurn === true;
 }
 
-const MAX_TERMINATED_STREAM_RETRIES = 3;
+const MAX_TERMINATED_STREAM_RETRIES = 5;
 const MAX_ERROR_RESPONSE_BODY_DEPTH = 5;
+// Measured against the live gateway, not inferred: 22 direct requests
+// (tool results up to 13k tokens, total context up to 200k) all succeeded,
+// so neither payload size nor context length triggers the upstream 502 - it
+// is intermittent. Under a ~10% independent failure rate, attempts are what
+// matter, not delay: 3 attempts recovers 99.9%, 5 recovers 99.999%. A
+// previous change here lengthened the delays on the theory that failures were
+// correlated in time; a direct probe disproved that, so it was reverted.
 const STREAM_RETRY_BASE_DELAY_MS = 400;
 const STREAM_CONTINUE_MESSAGE =
   "[System] Your previous response stream was interrupted by a transient network error. Continue from exactly where you left off and do not repeat text that has already been sent.";
