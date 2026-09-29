@@ -92,12 +92,45 @@ function isAttachmentHostCallPath(path: string | undefined): boolean {
   );
 }
 
+/**
+ * Names the actual failure instead of assuming a syntax error.
+ *
+ * A ReferenceError - the common case, when a script calls something the
+ * sandbox does not expose - was reported as "This script contains unsupported
+ * syntax", which sent the model looking for a parser problem that did not
+ * exist. The original error was appended below it, but the headline set the
+ * wrong frame.
+ */
 function buildSandboxFailureMessage(params: {
   script: string;
   errorMessage: string;
 }): string {
+  const headline = (() => {
+    const message = params.errorMessage ?? "";
+    if (/\b(\w+) is not defined\b/.test(message)) {
+      const name = /\b(\w+) is not defined\b/.exec(message)![1];
+      return (
+        `\`${name}\` is not defined in the sandbox. The script runtime only exposes ` +
+        `read_file, list_files, file_stats${HAS_WRITE_FILE ? ", write_file" : ""} and ` +
+        `MCP tools - there is no console, no print, and no text(). Return the value ` +
+        `you want as the final expression of the script instead.`
+      );
+    }
+    if (/is not a function/.test(message)) {
+      return (
+        "That call is not a function in the sandbox. Only the documented sandbox " +
+        "tools are callable; returning a value as the final expression is how " +
+        "output is produced."
+      );
+    }
+    if (/\bawait\b.*only valid|SyntaxError|Unexpected token|Unexpected identifier/i.test(message)) {
+      return "This script contains unsupported syntax.";
+    }
+    return "This script failed to run.";
+  })();
+
   return [
-    "This script contains unsupported syntax.",
+    headline,
     "",
     "Script:",
     params.script,
@@ -106,6 +139,8 @@ function buildSandboxFailureMessage(params: {
     params.errorMessage,
   ].join("\n");
 }
+
+const HAS_WRITE_FILE = true;
 
 function buildScriptXml(params: {
   args: ExecuteSandboxScriptArgs;
