@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { UserSettings } from "../../lib/schemas";
-import type { LargeLanguageModel } from "@/ipc/types";
 import { getModelClient } from "./get_model_client";
 import { isRetryableProviderStreamError } from "@/pro/main/ipc/handlers/local_agent/local_agent_handler";
 
@@ -79,19 +78,19 @@ describe("getModelClient production fetch wiring (kilocode)", () => {
   });
 
   test("attaches a real fetch and folds a reasoning-only stream", async () => {
-    const seen: RequestInfo[] = [];
+    const seen: string[] = [];
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      seen.push(input);
+      seen.push(String(input));
       void init;
       return sseResponse();
     }) as typeof fetch;
 
     const { modelClient } = await getModelClient(
-      { name: "stealth/space-bunny-alpha", provider: "kilocode" } as LargeLanguageModel,
+      { name: "stealth/space-bunny-alpha", provider: "kilocode" } as never,
       settings(),
     );
 
-    const result = await modelClient.model.doStream({
+    const result = await (modelClient.model as unknown as { doStream: (o: unknown) => Promise<any> }).doStream({
       prompt: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
     } as never);
 
@@ -114,13 +113,13 @@ describe("getModelClient production fetch wiring (kilocode)", () => {
       })) as typeof fetch;
 
     const { modelClient } = await getModelClient(
-      { name: "stealth/space-bunny-alpha", provider: "kilocode" } as LargeLanguageModel,
+      { name: "stealth/space-bunny-alpha", provider: "kilocode" } as never,
       settings(),
     );
 
     let thrown: unknown;
     try {
-      await modelClient.model.doStream({
+      await (modelClient.model as unknown as { doStream: (o: unknown) => Promise<any> }).doStream({
         prompt: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
       } as never);
     } catch (error) {

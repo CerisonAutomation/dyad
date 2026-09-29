@@ -8,7 +8,9 @@ import { getDyadAppPath } from "../../paths/paths";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import {
   isComponentTaggerUpgradeNeeded,
+  isNextComponentTaggerUpgradeNeeded,
   applyComponentTagger,
+  applyNextComponentTagger,
   simpleSpawnWithDeniedPnpmBuildSelfHeal,
 } from "../utils/app_upgrade_utils";
 import fs from "node:fs";
@@ -34,6 +36,14 @@ function getAvailableUpgrades(): Omit<AppUpgrade, "isNeeded">[] {
       title: "Enable select component to edit",
       description:
         "Installs the Dyad component tagger Vite plugin and its dependencies.",
+      manualUpgradeUrl: "https://dyad.sh/docs/upgrades/select-component",
+    },
+    {
+      id: "next-component-tagger",
+      title: "Enable select component to edit (Next.js)",
+      description:
+        "Installs the Dyad component tagger as a webpack loader so selecting a " +
+        "component resolves to its source file.",
       manualUpgradeUrl: "https://dyad.sh/docs/upgrades/select-component",
     },
     {
@@ -195,6 +205,8 @@ export function registerAppUpgradeHandlers() {
         let isNeeded = false;
         if (upgrade.id === "component-tagger") {
           isNeeded = isComponentTaggerUpgradeNeeded(appPath);
+        } else if (upgrade.id === "next-component-tagger") {
+          isNeeded = isNextComponentTaggerUpgradeNeeded(appPath);
         } else if (upgrade.id === "capacitor") {
           isNeeded = isCapacitorUpgradeNeeded(appPath);
         } else if (upgrade.id === "pnpm-version-migration") {
@@ -222,6 +234,8 @@ export function registerAppUpgradeHandlers() {
 
       if (upgradeId === "component-tagger") {
         await applyComponentTagger(appPath);
+      } else if (upgradeId === "next-component-tagger") {
+        await applyNextComponentTagger(appPath);
       } else if (upgradeId === "capacitor") {
         await applyCapacitor({ appName: app.name, appPath });
       } else if (upgradeId === "pnpm-version-migration") {

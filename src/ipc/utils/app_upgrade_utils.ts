@@ -1,6 +1,12 @@
 import log from "electron-log";
 import fs from "node:fs";
 import path from "node:path";
+import {
+  isNextComponentTaggerUpgradeNeeded,
+  applyNextComponentTaggerUpgrade,
+  TAGGER_PACKAGE as NEXT_TAGGER_PACKAGE,
+  TAGGER_VERSION as NEXT_TAGGER_VERSION,
+} from "./next_config_patcher";
 import { gitAddAll, gitCommit } from "./git_utils";
 import { simpleSpawn } from "./simpleSpawn";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
@@ -277,3 +283,80 @@ export async function applyComponentTagger(
     );
   }
 }
+
+/**
+ * Installs the Next.js component tagger as a webpack loader and wires it into
+ * next.config.
+ *
+ * A Next.js app is built by webpack, so the Vite plugin that powers "select
+ * component" in Vite apps has no effect there. @dyad-sh/nextjs-webpack-component-tagger
+ * already exists for exactly this and ships in this repo's packages/, but nothing
+ * referenced it - so selecting a component in a Next.js app could highlight the
+ * element but never resolved to a source file.
+ */
+export async function applyNextComponentTagger(
+  appPath: string,
+  options: { installDependencies?: boolean } = {},
+) {
+  const { installDependencies = true } = options;
+  const packageJsonPath = path.join(appPath, "package.json");
+  const { configPath } = await applyNextComponentTaggerUpgrade(appPath);
+
+  const rollback = async () => {
+    try {
+      const backup = `${configPath}.dyad-backup`;
+      if (fs.existsSync(backup)) {
+        await fs.promises.copyFile(backup, configPath);
+        await fs.promises.unlink(backup);
+      }
+    } catch (rollbackErr) {
+      logger.error("Failed to rollback next.config changes", rollbackErr);
+    }
+  };
+
+  if (installDependencies) {
+    try {
+      await simpleSpawnWithDeniedPnpmBuildSelfHeal({
+        command: `pnpm ${PNPM_PM_ON_FAIL_IGNORE_ARG} add --ignore-workspace-root-check -D ${NEXT_TAGGER_PACKAGE}`,
+        cwd: appPath,
+        successMessage: "next component-tagger installed successfully with pnpm",
+        errorPrefix: "Failed to install dependency via pnpm",
+      });
+    } catch (pnpmErr) {
+      logger.info("pnpm install failed, falling back to npm", pnpmErr);
+      try {
+        await simpleSpawn({
+          command: `npm install --save-dev --legacy-peer-deps ${NEXT_TAGGER_PACKAGE}`,
+          cwd: appPath,
+          successMessage: "next component-tagger installed successfully with npm",
+          errorPrefix: "Failed to install dependency via npm",
+        });
+      } catch (npmErr) {
+        logger.warn(
+          "Failed to install the Next.js component tagger with pnpm or npm.",
+          npmErr,
+        );
+        await rollback();
+        throw new DyadError(
+          "Failed to install the Next.js component tagger dependency",
+          DyadErrorKind.Internal,
+        );
+      }
+    }
+  } else {
+    const packageJson = JSON.parse(
+      await fs.promises.readFile(packageJsonPath, "utf-8"),
+    );
+    packageJson.devDependencies ??= {};
+    packageJson.devDependencies[NEXT_TAGGER_PACKAGE] = NEXT_TAGGER_VERSION;
+    await fs.promises.writeFile(
+      packageJsonPath,
+      `${JSON.stringify(packageJson, null, 2)}\n`,
+      "utf-8",
+    );
+  }
+
+  return { configPath };
+}
+
+export { isNextComponentTaggerUpgradeNeeded };
