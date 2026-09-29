@@ -3,6 +3,7 @@ import { stepCountIs, streamText, type ModelMessage, type ToolSet } from "ai";
 import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import type { WebContents } from "electron";
 import log from "electron-log";
+import { isRetryableProviderStreamError } from "../retryable_stream_errors";
 
 import { db } from "@/db";
 import {
@@ -1859,7 +1860,47 @@ async function buildSubagentVerificationTools(input: {
   };
 }
 
+const MAX_SUBAGENT_STREAM_RETRIES = 3;
+const SUBAGENT_RETRY_BASE_DELAY_MS = 1_000;
+
+/**
+ * Sub-agents stream through their own path, separate from the main agent's, so
+ * they need the same transient-failure handling. A gateway that intermittently
+ * returns an empty completion ("Provider returned an empty response") otherwise
+ * aborts the sub-agent outright, and the parent then reports the whole
+ * implementer as failed even though nothing was wrong with the work.
+ */
 async function runModel(
+  params: RunModelParams,
+): Promise<{ text: string; hitStepLimit: boolean }> {
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await runModelOnce(params);
+    } catch (error) {
+      const aborted = params.abortSignal.aborted;
+      if (
+        aborted ||
+        attempt >= MAX_SUBAGENT_STREAM_RETRIES ||
+        !isRetryableProviderStreamError(error)
+      ) {
+        throw error;
+      }
+      attempt += 1;
+      const waitMs = SUBAGENT_RETRY_BASE_DELAY_MS * attempt;
+      log
+        .scope("subagent_manager")
+        .warn(
+          `Transient sub-agent stream failure for thread ${params.threadId}; ` +
+            `retrying (${attempt}/${MAX_SUBAGENT_STREAM_RETRIES}) after ${waitMs}ms: ` +
+            String(error),
+        );
+      await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
+    }
+  }
+}
+
+async function runModelOnce(
   params: RunModelParams,
 ): Promise<{ text: string; hitStepLimit: boolean }> {
   assertPro(params.persona);

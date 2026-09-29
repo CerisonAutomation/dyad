@@ -5,6 +5,10 @@ import {
 } from "@/shared/inference_source";
 import type { ExternalModelAdmission } from "@/ipc/services/external_model_admission";
 import type { AutoModelCandidates } from "@/ipc/services/auto_model_candidates";
+import {
+  isRetryableProviderStreamError as sharedIsRetryableProviderStreamError,
+  isTerminatedStreamError as sharedIsTerminatedStreamError,
+} from "./retryable_stream_errors";
 /**
  * Local Agent v2 Handler
  * Main orchestrator for tool-based agent mode with parallel execution
@@ -198,36 +202,6 @@ const STREAM_RETRY_BASE_DELAY_MS = 400;
 const STREAM_CONTINUE_MESSAGE =
   "[System] Your previous response stream was interrupted by a transient network error. Continue from exactly where you left off and do not repeat text that has already been sent.";
 const TOOL_ERROR_STATUS_MAX_CHARS = 4_000;
-
-const RETRYABLE_STREAM_ERROR_STATUS_CODES = new Set([
-  408, 429, 500, 502, 503, 504,
-]);
-const RETRYABLE_STREAM_ERROR_PATTERNS = [
-  "server_error",
-  "internal server error",
-  "service unavailable",
-  "bad gateway",
-  "gateway timeout",
-  "too many requests",
-  "rate_limit",
-  "overloaded",
-  "econnrefused",
-  "enotfound",
-  "econnreset",
-  "epipe",
-  "etimedout",
-  // Gateways (Kilo, OpenRouter, and others) intermittently return a completed
-  // turn whose content is empty - either because the upstream model emitted only
-  // reasoning and hit its output cap, or because the gateway dropped the
-  // response. The message text comes from the provider, not from this app, and it
-  // arrives with no usable token usage, so nothing downstream can tell it apart
-  // from a hard failure. It is transient: the same request normally succeeds on
-  // a retry, so the agent must not stop on it.
-  "empty response",
-  "returned an empty",
-  "empty_response",
-  "no content",
-];
 
 // ============================================================================
 // Tool Streaming State Management
@@ -2549,66 +2523,11 @@ function getErrorMessageWithDetails(error: unknown): string {
 }
 
 function isTerminatedStreamError(error: unknown): boolean {
-  const normalized = unwrapStreamError(error);
-  const message = getErrorMessage(normalized).toLowerCase();
-  if (message.includes("typeerror: terminated") || message === "terminated") {
-    return true;
-  }
-  const cause =
-    isRecord(normalized) && "cause" in normalized
-      ? normalized.cause
-      : undefined;
-  if (cause) {
-    return isTerminatedStreamError(cause);
-  }
-  return false;
+  return sharedIsTerminatedStreamError(error);
 }
 
 export function isRetryableProviderStreamError(error: unknown): boolean {
-  const normalized = unwrapStreamError(error);
-  if (!isRecord(normalized)) {
-    // The AI SDK can hand a stream failure over as a bare string rather than an
-    // Error - getErrorMessage renders those without a "Name: " prefix, which is
-    // how this showed up in the logs. A string carries no statusCode or code, so
-    // bailing out here classified every one of them as non-retryable and let the
-    // agent stop. Match on the text instead.
-    const text =
-      typeof normalized === "string"
-        ? normalized.toLowerCase()
-        : getErrorMessage(normalized).toLowerCase();
-    return RETRYABLE_STREAM_ERROR_PATTERNS.some((pattern) =>
-      text.includes(pattern),
-    );
-  }
-
-  const statusCode =
-    (typeof normalized.statusCode === "number" && normalized.statusCode) ||
-    (typeof normalized.status === "number" && normalized.status) ||
-    (isRecord(normalized.response) &&
-    typeof normalized.response.status === "number"
-      ? normalized.response.status
-      : undefined);
-
-  if (
-    typeof statusCode === "number" &&
-    (statusCode >= 500 || RETRYABLE_STREAM_ERROR_STATUS_CODES.has(statusCode))
-  ) {
-    return true;
-  }
-
-  const errorString =
-    [
-      typeof normalized.message === "string" ? normalized.message : undefined,
-      typeof normalized.code === "string" ? normalized.code : undefined,
-      typeof normalized.type === "string" ? normalized.type : undefined,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase() || getErrorMessage(normalized).toLowerCase();
-
-  return RETRYABLE_STREAM_ERROR_PATTERNS.some((pattern) =>
-    errorString.includes(pattern),
-  );
+  return sharedIsRetryableProviderStreamError(error);
 }
 
 function shouldRetryTransientStreamError(params: {
