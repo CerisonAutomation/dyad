@@ -1575,6 +1575,8 @@ describe("review barrier timeout must not hold the queue", () => {
       threadId: "thread-1",
     } as never);
 
+    expect(result.kind).toBe("applied");
+    if (result.kind !== "applied") return;
     expect(result.state.reviewBarrier.phase).toBe("idle");
     expect(result.state.reviewBarrier.threadId).toBeNull();
     expect(result.state.reviewBarrier.resumeQueueOnRelease).toBe(true);
@@ -1595,6 +1597,8 @@ describe("review barrier timeout must not hold the queue", () => {
       outcome: "waiting",
       threadId: "thread-1",
     } as never);
+    expect(result.kind).toBe("applied");
+    if (result.kind !== "applied") return;
     expect(result.commands).toContainEqual({ type: "resume-after-review" });
   });
 });
