@@ -265,6 +265,33 @@ export function withReasoningAsContent(baseFetch?: typeof fetch) {
               try {
                 const payload = JSON.parse(json);
                 chunkCount += 1;
+
+                // Some gateways report upstream failure INSIDE a 200 SSE chunk:
+                //   {"choices": [], "error": {"code": 502, "message": "..."}}
+                // The reader sees zero choices and reports a generic "Provider
+                // returned an empty response", throwing away the real code and
+                // the fact that it was a gateway error worth retrying on a code
+                // rather than on message text. Fail the stream with the upstream
+                // error instead, so the code and message survive to the retry
+                // classifier and to the user.
+                const embedded = (payload as any)?.error;
+                if (embedded && Array.isArray((payload as any)?.choices) &&
+                    (payload as any).choices.length === 0) {
+                  const code = Number(embedded.code) || 502;
+                  const message = String(embedded.message ?? "Upstream provider error");
+                  const err = new Error(message) as Error & {
+                    statusCode: number;
+                    isRetryable: boolean;
+                  };
+                  err.statusCode = code;
+                  err.isRetryable = code >= 500 || code === 429;
+                  logEmptyModelResponses() &&
+                    logger.error(
+                      `Gateway returned an embedded error in a 200 stream: ${code} ${message}`,
+                    );
+                  controller.error(err);
+                  return;
+                }
                 const choice = payload?.choices?.[0];
                 const target = choice?.delta ?? choice?.message;
                 if (typeof target?.content === "string" && target.content) {

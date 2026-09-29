@@ -155,3 +155,43 @@ describe("withReasoningAsContent diagnostics", () => {
     expect(errors.join("\n")).not.toContain("Stream produced no content");
   });
 });
+
+describe("gateway errors embedded in a 200 SSE stream", () => {
+  test("fails the stream with the upstream code instead of empty choices", async () => {
+    // Captured live: Kilo returns HTTP 200 with
+    //   {"choices": [], "error": {"code": 502, "message": "..."}}
+    // The reader sees zero choices and reports a generic "empty response",
+    // discarding the code that says it was a retryable gateway fault.
+    process.env.DYAD_LOG_EMPTY_MODEL_RESPONSE = "1";
+    const base = async () =>
+      sseResponse([
+        JSON.stringify({
+          id: "gen-x",
+          object: "chat.completion.chunk",
+          model: "stealth/space-bunny-alpha",
+          provider: "Stealth",
+          choices: [],
+          error: { code: 502, message: "Provider returned an empty response" },
+        }),
+      ]);
+    const wrapped = withReasoningAsContent(base as unknown as typeof fetch)!;
+    const response = await wrapped("https://example.test/v1");
+
+    let thrown: any;
+    // Read via a reader, the way the provider consumes the stream.
+    try {
+      const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+      for (;;) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+      reader.releaseLock();
+    } catch (error) {
+      thrown = error;
+    }
+    delete process.env.DYAD_LOG_EMPTY_MODEL_RESPONSE;
+    expect(thrown).toBeDefined();
+    expect(thrown.statusCode).toBe(502);
+    expect(thrown.isRetryable).toBe(true);
+  });
+});
