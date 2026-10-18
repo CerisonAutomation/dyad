@@ -183,6 +183,45 @@ function fakeModel(params: {
   } as unknown as LanguageModelV3;
 }
 
+/**
+ * A model whose `doGenerate` follows a scripted list of behaviors, so the
+ * non-streaming failover path can be exercised without a network call. The
+ * last behavior repeats once the list is exhausted.
+ */
+function generateModel(params: {
+  modelId: string;
+  calls: string[];
+  behaviors: Array<"succeed" | "reject-retryable" | "reject-permanent">;
+}): LanguageModelV3 {
+  let callIndex = 0;
+  return {
+    specificationVersion: "v3",
+    provider: "fake",
+    modelId: params.modelId,
+    supportedUrls: {},
+    async doGenerate() {
+      params.calls.push(params.modelId);
+      const behavior =
+        params.behaviors[callIndex++] ?? params.behaviors.at(-1) ?? "succeed";
+      if (behavior === "reject-retryable") {
+        // Matches RETRYABLE_ERROR_PATTERNS ("service unavailable").
+        throw new Error("service unavailable");
+      }
+      if (behavior === "reject-permanent") {
+        throw apiCallError({
+          message: "unexpected invalid temperature",
+          statusCode: 400,
+          isRetryable: false,
+        });
+      }
+      return { text: "ok" } as any;
+    },
+    async doStream() {
+      return { stream: textStream() };
+    },
+  } as unknown as LanguageModelV3;
+}
+
 async function drain(stream: ReadableStream<LanguageModelV3StreamPart>) {
   const reader = stream.getReader();
   while (!(await reader.read()).done) {
@@ -218,6 +257,16 @@ describe("fallback failure policy", () => {
         apiCallError({
           message: "model_not_found in this region",
           statusCode: 403,
+          isRetryable: false,
+        }),
+      ),
+    ).toBe("fallback-next");
+    expect(
+      getFallbackFailureAction(
+        apiCallError({
+          message:
+            "thinkingmachines/inkling-small:free is only available on agentic harnesses.",
+          statusCode: 400,
           isRetryable: false,
         }),
       ),
@@ -695,6 +744,81 @@ describe("fallback failure policy", () => {
       "status=503 providerRequestId=provider-request-456 code=ECONNRESET message=Gateway unavailable cause=socket hang up",
     );
   });
+
+  it("ends a hanging provider read promptly when the call aborts", async () => {
+    const hangingModel = {
+      specificationVersion: "v3",
+      provider: "fake",
+      modelId: "hanging-model",
+      supportedUrls: {},
+      async doGenerate() {
+        throw new Error("not used");
+      },
+      async doStream() {
+        return {
+          stream: new ReadableStream<LanguageModelV3StreamPart>({
+            start() {},
+          }),
+        };
+      },
+    } as unknown as LanguageModelV3;
+    const model = createFallback({
+      models: [hangingModel],
+    }) as unknown as LanguageModelV3;
+    const abortController = new AbortController();
+    const result = await model.doStream({
+      prompt: [],
+      abortSignal: abortController.signal,
+      headers: { "x-dyad-internal-request-id": "request-abort" },
+    } as unknown as LanguageModelV3CallOptions);
+    const reader = result.stream.getReader();
+    const read = reader.read();
+    abortController.abort(new DOMException("Aborted", "AbortError"));
+    await expect(read).rejects.toThrow();
+    reader.releaseLock();
+  });
+});
+
+describe("fallback model generate path", () => {
+  it("fails over to the next model when doGenerate throws a retryable error", async () => {
+    const calls: string[] = [];
+    const model = createFallback({
+      models: [
+        generateModel({
+          modelId: "primary",
+          calls,
+          behaviors: ["reject-retryable", "reject-retryable", "succeed"],
+        }),
+        generateModel({ modelId: "backup", calls, behaviors: ["succeed"] }),
+      ],
+    }) as unknown as LanguageModelV3;
+
+    const result = await model.doGenerate({ prompt: [] } as any);
+
+    expect(result).toBeDefined();
+    // Same-model transient retries are exhausted on the primary before the
+    // chain advances, mirroring the streaming policy.
+    expect(calls).toEqual(["primary", "primary", "backup"]);
+  });
+
+  it("does not fail over on a permanent request error", async () => {
+    const calls: string[] = [];
+    const model = createFallback({
+      models: [
+        generateModel({
+          modelId: "primary",
+          calls,
+          behaviors: ["reject-permanent"],
+        }),
+        generateModel({ modelId: "backup", calls, behaviors: ["succeed"] }),
+      ],
+    }) as unknown as LanguageModelV3;
+
+    await expect(model.doGenerate({ prompt: [] } as any)).rejects.toThrow(
+      /invalid temperature/,
+    );
+    expect(calls).toEqual(["primary"]);
+  });
 });
 
 describe("fallback model call options", () => {
@@ -1162,9 +1286,7 @@ describe("per-model free quota caps", () => {
   });
 
   it("still retries a generic 429 that is not model-scoped", () => {
-    const action = getFallbackFailureAction(
-      quotaError("Too Many Requests"),
-    );
+    const action = getFallbackFailureAction(quotaError("Too Many Requests"));
     expect(action).toBe("retry-same");
   });
 
