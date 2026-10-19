@@ -12,6 +12,7 @@ import type { LanguageModel } from "ai";
 import log from "electron-log";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import { DYAD_INTERNAL_REQUEST_ID_HEADER } from "./provider_options";
+import { noteModelSuccess } from "./restricted_model_memory";
 
 const logger = log.scope("fallback_model");
 const MAX_LOG_FIELD_LENGTH = 500;
@@ -652,7 +653,9 @@ class FallbackModel implements LanguageModelV3 {
         this.startAttempt(state);
 
         try {
-          return await operation(state);
+          const result = await operation(state);
+          noteModelSuccess(this.modelId);
+          return result;
         } catch (error) {
           const failedModelId = this.modelId;
           state.errors.push({ modelId: failedModelId, error });
@@ -764,6 +767,9 @@ class FallbackModel implements LanguageModelV3 {
               const { done, value } = await reader.read();
 
               if (done) {
+                if (attemptHasStreamedContent) {
+                  noteModelSuccess(fallbackModel.modelId);
+                }
                 controller.close();
                 return;
               }

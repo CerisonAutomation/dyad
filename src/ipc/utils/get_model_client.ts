@@ -41,7 +41,10 @@ import { getOmlxBaseUrl } from "./omlx_utils";
 import { createOllamaProvider } from "./ollama_provider";
 import { getOllamaApiUrl } from "../handlers/local_model_ollama_handler";
 import { createFallback } from "./fallback_ai_model";
-import { listRestrictedModels } from "./restricted_model_memory";
+import {
+  listRestrictedModels,
+  lastSuccessTimestamps,
+} from "./restricted_model_memory";
 import {
   listCustomProviderModelNames,
   orderCustomBackupNames,
@@ -973,6 +976,7 @@ function getRegularModelClient(
             model.name,
             listCustomProviderModelNames(model.provider),
             listRestrictedModels(),
+            lastSuccessTimestamps(),
           );
         } catch (error) {
           logger.warn(

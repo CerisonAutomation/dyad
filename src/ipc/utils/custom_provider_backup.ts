@@ -7,27 +7,31 @@ export const MAX_CUSTOM_BACKUPS = 5;
 
 /**
  * Order same-provider backup models behind the user's pick. The selected
- * model stays first, restricted ids observed earlier are dropped, and the
- * list is capped so a provider with dozens of registered models cannot
- * stretch one turn into an unbounded walk.
+ * model is excluded (it leads the chain), restricted ids are dropped, and
+ * the rest sort by proven recency: models that served recently come first
+ * while never-tried models keep registration order (stable sort). Capped so
+ * one provider cannot stretch a turn into an unbounded walk.
  */
 export function orderCustomBackupNames(
   selectedName: string,
   siblingNames: readonly string[],
   restrictedApiNames: readonly string[],
+  lastSuccessAt: ReadonlyMap<string, number> = new Map(),
   maxBackups: number = MAX_CUSTOM_BACKUPS,
 ): string[] {
   const restricted = new Set(restrictedApiNames);
-  const backups: string[] = [];
+  const candidates: string[] = [];
   for (const name of siblingNames) {
     if (name === selectedName) continue;
     if (restricted.has(name)) continue;
-    if (!backups.includes(name)) {
-      backups.push(name);
+    if (!candidates.includes(name)) {
+      candidates.push(name);
     }
-    if (backups.length >= maxBackups) break;
   }
-  return backups;
+  candidates.sort(
+    (a, b) => (lastSuccessAt.get(b) ?? 0) - (lastSuccessAt.get(a) ?? 0),
+  );
+  return candidates.slice(0, maxBackups);
 }
 
 /**
