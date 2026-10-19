@@ -110,6 +110,15 @@ export async function finishExternalModelUsage(
     logger.debug("External model usage record dropped (BYOK, no reporting)");
   }
 }
+export async function finishExternalModelUsageBatch(
+  id: string | undefined,
+  _models: { model: string; usage: LanguageModelV3Usage }[],
+) {
+  if (!id) return;
+  if (active.delete(id)) {
+    logger.debug("External model usage record dropped (BYOK, no reporting)");
+  }
+}
 export function interruptExternalModelUsage(
   id: string | undefined,
   notSent = false,
