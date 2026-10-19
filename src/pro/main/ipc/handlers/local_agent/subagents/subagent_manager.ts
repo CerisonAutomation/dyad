@@ -70,6 +70,46 @@ const MODELS = {
   reviewer: { provider: "openai", name: "gpt-5.6-sol", effort: "medium" },
   implementer: { provider: "openai", name: "gpt-5.6-luna", effort: "high" },
 } as const;
+
+export interface PersonaSubagentModel {
+  provider: string;
+  name: string;
+  effort: string;
+}
+
+/**
+ * Resolve which model a sub-agent persona runs on. Unless the user opted out
+ * with the subagentInheritChatModel setting, the persona inherits the chat's
+ * selected model so sub-agents work with whatever the user configured,
+ * including local and custom providers. The hardcoded entry stays as the
+ * last resort when no chat model is set. Effort always stays persona-owned:
+ * a reviewer reasons differently from an implementer regardless of model.
+ */
+export function resolvePersonaSubagentModel(
+  persona: SubagentPersona,
+  settings: Pick<UserSettings, "selectedModel" | "subagentInheritChatModel">,
+): PersonaSubagentModel {
+  const chatModel = settings.selectedModel;
+  if (
+    settings.subagentInheritChatModel !== false &&
+    typeof chatModel?.provider === "string" &&
+    chatModel.provider.length > 0 &&
+    typeof chatModel?.name === "string" &&
+    chatModel.name.length > 0
+  ) {
+    return {
+      provider: chatModel.provider,
+      name: chatModel.name,
+      effort: MODELS[persona].effort,
+    };
+  }
+  const defaults = MODELS[persona];
+  return {
+    provider: defaults.provider,
+    name: defaults.name,
+    effort: defaults.effort,
+  };
+}
 const MAX_DURABLE_REPORT_CHARS = 100_000;
 const MAX_ACTIVITY_XML_CHARS = 200_000;
 const MAX_ACTIVITY_OUTPUT_CHARS = 200_000;
@@ -1906,15 +1946,19 @@ async function personaModelSettings(
   chatId: number,
   acceptedSettings?: UserSettings,
 ) {
-  const defaults = MODELS[persona];
+  const inferenceSettings = await getChatInferenceSettings(
+    chatId,
+    acceptedSettings,
+  );
+  const resolved = resolvePersonaSubagentModel(persona, inferenceSettings);
   return {
-    ...(await getChatInferenceSettings(chatId, acceptedSettings)),
+    ...inferenceSettings,
     selectedModel: {
-      provider: defaults.provider,
-      name: defaults.name,
-      effortLevel: defaults.effort,
+      provider: resolved.provider,
+      name: resolved.name,
+      effortLevel: resolved.effort,
     },
-    thinkingBudget: defaults.effort,
+    thinkingBudget: resolved.effort,
   };
 }
 
@@ -1923,14 +1967,20 @@ async function preflightPersonaModel(
   chatId: number,
   acceptedSettings?: UserSettings,
 ): Promise<void> {
-  const defaults = MODELS[persona];
+  const inferenceSettings =
+    acceptedSettings ?? readSettings();
+  const resolved = resolvePersonaSubagentModel(persona, inferenceSettings);
   const catalog = await getBuiltinLanguageModelCatalog();
-  const available = catalog.modelsByProvider[defaults.provider]?.some(
-    (model) => model.apiName === defaults.name,
-  );
+  const catalogModels = catalog.modelsByProvider[resolved.provider];
+  // Providers the catalog does not know (custom and local providers) skip
+  // this check: their availability is proven by the credentialed client call
+  // below instead of a catalog listing.
+  const available =
+    catalogModels === undefined ||
+    catalogModels.some((model) => model.apiName === resolved.name);
   if (!available) {
     throw new DyadError(
-      `${persona} requires ${defaults.name}, which is not currently available. Check your Dyad Pro model access and try again.`,
+      `${persona} requires ${resolved.name}, which is not currently available. Check the model is configured and try again.`,
       DyadErrorKind.Precondition,
     );
   }
@@ -1943,7 +1993,7 @@ async function preflightPersonaModel(
     await getModelClient(settings.selectedModel, settings);
   } catch (error) {
     throw new DyadError(
-      `${persona} could not start because ${defaults.name} is not configured. Check your Dyad Pro model access and try again.`,
+      `${persona} could not start because ${resolved.name} is not configured. Check the model is configured and try again.`,
       DyadErrorKind.Precondition,
       { cause: error },
     );
@@ -2051,7 +2101,10 @@ async function createThread(params: {
   contextJson: Record<string, unknown>;
   review?: ReviewTarget;
 }) {
-  const defaults = MODELS[params.persona];
+  const resolved = resolvePersonaSubagentModel(
+    params.persona,
+    await getChatInferenceSettings(params.chatId),
+  );
   const [row] = await db
     .insert(agentThreads)
     .values({
@@ -2061,9 +2114,9 @@ async function createThread(params: {
       taskName: params.taskName,
       assignment: params.assignment,
       status: "queued",
-      provider: defaults.provider,
-      model: defaults.name,
-      reasoningEffort: defaults.effort,
+      provider: resolved.provider,
+      model: resolved.name,
+      reasoningEffort: resolved.effort,
       invocationSource: params.invocationSource,
       contextJson: params.contextJson,
       reviewBaseCommit: params.review?.baseCommit,

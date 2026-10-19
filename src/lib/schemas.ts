@@ -552,6 +552,7 @@ const BaseUserSettingsFields = {
   enableImplementerSubagent: z.boolean().optional(),
   enableAdvancedSubagents: z.boolean().optional(),
   autoFixReviewIssues: z.boolean().optional(),
+  subagentInheritChatModel: z.boolean().optional(),
   // Deploying to a server the user runs themselves, through Coolify. Off
   // unless explicitly turned on: the integration is early, undocumented and
   // still changing, and with it off the Publish panel keeps the Vercel card
