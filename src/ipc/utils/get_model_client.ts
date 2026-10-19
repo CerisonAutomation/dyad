@@ -29,6 +29,11 @@ import { getEnvVar } from "./read_env";
 import { getMaxTokens, getTemperature } from "./token_utils";
 import log from "electron-log";
 import { FREE_OPENROUTER_MODEL_NAMES } from "../shared/language_model_constants";
+import {
+  OPENCODE_BASE_URL,
+  OPENCODE_SESSION_HEADER,
+  openCodeSessionIdForChat,
+} from "@/ipc/shared/opencode_gateway";
 import { getLanguageModelProviders } from "../shared/language_model_helpers";
 import { resolveBuiltinModelAlias } from "../shared/remote_language_model_catalog";
 import { LanguageModelProvider } from "@/ipc/types";
@@ -1007,6 +1012,24 @@ function getRegularModelClient(
         includeUsage,
         baseURL: "https://api.minimax.io/v1",
         apiKey,
+        ...getModelClientFetchOption(),
+      });
+      return {
+        modelClient: {
+          model: provider(model.name),
+          builtinProviderId: providerId,
+        },
+        backupModelClients: [],
+      };
+    }
+    case "opencode": {
+      const provider = createOpenAICompatible({
+        name: "opencode",
+        baseURL: OPENCODE_BASE_URL,
+        apiKey,
+        headers: {
+          [OPENCODE_SESSION_HEADER]: openCodeSessionIdForChat(null),
+        },
         ...getModelClientFetchOption(),
       });
       return {

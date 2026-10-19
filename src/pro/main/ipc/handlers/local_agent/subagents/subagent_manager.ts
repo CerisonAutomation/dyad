@@ -14,12 +14,10 @@ import {
 } from "@/db/schema";
 import { DyadError, DyadErrorKind, isDyadError } from "@/errors/dyad_error";
 import { getModelClient } from "@/ipc/utils/get_model_client";
-import { getAuxiliarySettings } from "@/lib/auxiliaryModel";
 import { getAiHeaders, getProviderOptions } from "@/ipc/utils/provider_options";
 import { withLock } from "@/ipc/utils/lock_utils";
 import { fastTextOutput } from "@/ipc/utils/stream_text_utils";
 import { getBuiltinLanguageModelCatalog } from "@/ipc/shared/remote_language_model_catalog";
-import { SMALL_MODEL_NAME } from "@/ipc/shared/language_model_constants";
 import {
   appOperationCoordinator,
   readAppResource,
@@ -31,7 +29,11 @@ import type {
   SubagentThreadSummary,
 } from "@/ipc/types";
 import { isSubagentAcceptingMessages, isSubagentActive } from "@/ipc/types";
-import { isDyadProEnabled, type UserSettings } from "@/lib/schemas";
+import {
+  isDyadProEnabled,
+  type LargeLanguageModel,
+  type UserSettings,
+} from "@/lib/schemas";
 import { getChatInferenceSettings } from "@/ipc/services/chat_inference_settings";
 import { readSettings } from "@/main/settings";
 import { getDyadAppPath } from "@/paths/paths";
@@ -68,10 +70,53 @@ import type { ImplementerJoinSummary } from "./subagent_failure_reporting";
 export { SUBAGENT_NONTERMINAL_STATUSES } from "./state";
 
 const MODELS = {
-  explorer: { provider: "openai", name: SMALL_MODEL_NAME, effort: "high" },
+  explorer: { provider: "openai", name: "gpt-5.6-luna", effort: "high" },
   reviewer: { provider: "openai", name: "gpt-5.6-sol", effort: "medium" },
-  implementer: { provider: "openai", name: SMALL_MODEL_NAME, effort: "high" },
+  implementer: { provider: "openai", name: "gpt-5.6-luna", effort: "high" },
 } as const;
+
+export interface PersonaSubagentModel {
+  provider: string;
+  name: string;
+  effort: string;
+}
+
+/**
+ * Resolve which model a sub-agent persona runs on. Unless the user opted out
+ * with the subagentInheritChatModel setting, the persona inherits the chat's
+ * selected model so sub-agents work with whatever the user configured,
+ * including local and custom providers. The hardcoded entry stays as the
+ * last resort when no chat model is set. Effort always stays persona-owned:
+ * a reviewer reasons differently from an implementer regardless of model.
+ */
+export function resolvePersonaSubagentModel(
+  persona: SubagentPersona,
+  settings: {
+    selectedModel?: Pick<LargeLanguageModel, "provider" | "name"> | null;
+    subagentInheritChatModel?: boolean;
+  },
+): PersonaSubagentModel {
+  const chatModel = settings.selectedModel;
+  if (
+    settings.subagentInheritChatModel !== false &&
+    typeof chatModel?.provider === "string" &&
+    chatModel.provider.length > 0 &&
+    typeof chatModel?.name === "string" &&
+    chatModel.name.length > 0
+  ) {
+    return {
+      provider: chatModel.provider,
+      name: chatModel.name,
+      effort: MODELS[persona].effort,
+    };
+  }
+  const defaults = MODELS[persona];
+  return {
+    provider: defaults.provider,
+    name: defaults.name,
+    effort: defaults.effort,
+  };
+}
 const MAX_DURABLE_REPORT_CHARS = 100_000;
 const MAX_ACTIVITY_XML_CHARS = 200_000;
 const MAX_ACTIVITY_OUTPUT_CHARS = 200_000;
@@ -1908,16 +1953,19 @@ async function personaModelSettings(
   chatId: number,
   acceptedSettings?: UserSettings,
 ) {
-  const defaults = MODELS[persona];
-  const settings = await getChatInferenceSettings(chatId, acceptedSettings);
+  const inferenceSettings = await getChatInferenceSettings(
+    chatId,
+    acceptedSettings,
+  );
+  const resolved = resolvePersonaSubagentModel(persona, inferenceSettings);
   return {
-    ...getAuxiliarySettings(settings),
+    ...inferenceSettings,
     selectedModel: {
-      provider: defaults.provider,
-      name: defaults.name,
-      effortLevel: defaults.effort,
+      provider: resolved.provider,
+      name: resolved.name,
+      effortLevel: resolved.effort,
     },
-    thinkingBudget: defaults.effort,
+    thinkingBudget: resolved.effort,
   };
 }
 
@@ -1926,28 +1974,32 @@ async function preflightPersonaModel(
   chatId: number,
   acceptedSettings?: UserSettings,
 ): Promise<void> {
-  const defaults = MODELS[persona];
-  const settings = await personaModelSettings(
-    persona,
-    chatId,
-    acceptedSettings,
-  );
+  const inferenceSettings = acceptedSettings ?? readSettings();
+  const resolved = resolvePersonaSubagentModel(persona, inferenceSettings);
   const catalog = await getBuiltinLanguageModelCatalog();
-  const available = catalog.modelsByProvider[defaults.provider]?.some(
-    (model) => model.apiName === defaults.name,
-  );
+  const catalogModels = catalog.modelsByProvider[resolved.provider];
+  // Providers the catalog does not know (custom and local providers) skip
+  // this check: their availability is proven by the credentialed client call
+  // below instead of a catalog listing.
+  const available =
+    catalogModels === undefined ||
+    catalogModels.some((model) => model.apiName === resolved.name);
   if (!available) {
     throw new DyadError(
-      `${persona} requires ${defaults.name}, which is not currently available. Check your Dyad Pro model access and try again.`,
+      `${persona} requires ${resolved.name}, which is not currently available. Check the model is configured and try again.`,
       DyadErrorKind.Precondition,
     );
   }
-
   try {
+    const settings = await personaModelSettings(
+      persona,
+      chatId,
+      acceptedSettings,
+    );
     await getModelClient(settings.selectedModel, settings);
   } catch (error) {
     throw new DyadError(
-      `${persona} could not start because ${settings.selectedModel.name} is not configured. Check your selected model and credentials and try again.`,
+      `${persona} could not start because ${resolved.name} is not configured. Check the model is configured and try again.`,
       DyadErrorKind.Precondition,
       { cause: error },
     );
@@ -2055,7 +2107,10 @@ async function createThread(params: {
   contextJson: Record<string, unknown>;
   review?: ReviewTarget;
 }) {
-  const defaults = MODELS[params.persona];
+  const resolved = resolvePersonaSubagentModel(
+    params.persona,
+    await getChatInferenceSettings(params.chatId),
+  );
   const [row] = await db
     .insert(agentThreads)
     .values({
@@ -2065,9 +2120,9 @@ async function createThread(params: {
       taskName: params.taskName,
       assignment: params.assignment,
       status: "queued",
-      provider: defaults.provider,
-      model: defaults.name,
-      reasoningEffort: defaults.effort,
+      provider: resolved.provider,
+      model: resolved.name,
+      reasoningEffort: resolved.effort,
       invocationSource: params.invocationSource,
       contextJson: params.contextJson,
       reviewBaseCommit: params.review?.baseCommit,

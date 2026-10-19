@@ -582,6 +582,17 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
       temperature: 1.0,
       dollarSigns: 1,
     },
+    ],
+  opencode: [
+    {
+      name: "longcat-2.5-preview-free",
+      displayName: "LongCat 2.5 Preview (Free)",
+      description: "OpenCode's free preview model",
+      maxOutputTokens: 16_000,
+      contextWindow: 200_000,
+      temperature: 1.0,
+      dollarSigns: 0,
+    },
   ],
 };
 
@@ -596,6 +607,7 @@ export const PROVIDER_TO_ENV_VAR: Record<string, string> = {
   anthropic: "ANTHROPIC_API_KEY",
   google: "GEMINI_API_KEY",
   openrouter: "OPENROUTER_API_KEY",
+  opencode: "OPENCODE_API_KEY",
   azure: "AZURE_API_KEY",
   xai: "XAI_API_KEY",
   bedrock: "AWS_BEARER_TOKEN_BEDROCK",
@@ -676,6 +688,12 @@ export const CLOUD_PROVIDERS: Record<
     websiteUrl: "https://platform.minimax.io/",
     gatewayPrefix: "minimax/",
     secondary: true,
+  },
+  opencode: {
+    displayName: "OpenCode",
+    hasFreeTier: true,
+    websiteUrl: "https://opencode.ai/docs/go/",
+    gatewayPrefix: "opencode/",
   },
 };
 
