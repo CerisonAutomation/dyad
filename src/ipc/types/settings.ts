@@ -7,6 +7,13 @@ export const ProviderApiKeyValidationProviderSchema = z.enum([
   "openrouter",
   "auto",
   "opencode",
+  "openai",
+  "anthropic",
+  "azure",
+  "xai",
+  "bedrock",
+  "minimax",
+  "vertex",
 ]);
 
 // =============================================================================
