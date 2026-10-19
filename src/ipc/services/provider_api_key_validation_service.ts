@@ -1,4 +1,10 @@
+import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI as createGoogle } from "@ai-sdk/google";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createXai } from "@ai-sdk/xai";
+import { createVertex as createGoogleVertex } from "@ai-sdk/google-vertex";
+import { createAzure } from "@ai-sdk/azure";
+import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { streamText, type LanguageModel } from "ai";
 import log from "electron-log";
@@ -42,6 +48,13 @@ const PROVIDER_DISPLAY_NAMES: Record<ProviderApiKeyValidationProvider, string> =
     openrouter: "OpenRouter",
     auto: "Dyad",
     opencode: "OpenCode",
+    openai: "OpenAI",
+    anthropic: "Anthropic",
+    azure: "Azure OpenAI",
+    xai: "xAI",
+    bedrock: "Amazon Bedrock",
+    minimax: "MiniMax",
+    vertex: "Google Vertex AI",
   };
 
 export async function validateProviderApiKey({
@@ -182,6 +195,58 @@ async function createValidationModel(
         ...getTestFetchOption(),
       });
       return opencode("longcat-2.5-preview-free");
+    }
+    case "openai": {
+      const openai = createOpenAI({
+        apiKey,
+        ...getTestFetchOption(),
+      });
+      return openai("gpt-4o-mini");
+    }
+    case "anthropic": {
+      const anthropic = createAnthropic({
+        apiKey,
+        ...getTestFetchOption(),
+      });
+      return anthropic("claude-3-haiku-20240307");
+    }
+    case "azure": {
+      const azure = createAzure({
+        apiKey,
+        ...getTestFetchOption(),
+      });
+      return azure("gpt-4o-mini");
+    }
+    case "xai": {
+      const xai = createXai({
+        apiKey,
+        ...getTestFetchOption(),
+      });
+      return xai("grok-2-latest");
+    }
+    case "bedrock": {
+      const bedrock = createAmazonBedrock({
+        accessKeyId: undefined,
+        secretAccessKey: undefined,
+        region: "us-east-1",
+        ...getTestFetchOption(),
+      });
+      return bedrock("anthropic.claude-3-haiku-20240307");
+    }
+    case "minimax": {
+      const minimax = createOpenAICompatible({
+        name: "minimax",
+        apiKey,
+        baseURL: "https://api.minimax.io/v1",
+        ...getTestFetchOption(),
+      });
+      return minimax("MiniMax-M2.7");
+    }
+    case "vertex": {
+      const vertex = createGoogleVertex({
+        ...getTestFetchOption(),
+      });
+      return vertex("gemini-2.5-flash");
     }
   }
 }

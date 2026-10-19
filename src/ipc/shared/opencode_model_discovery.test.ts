@@ -34,7 +34,9 @@ describe("OpenCode model id helpers", () => {
 describe("buildOpenCodeMetadataIndex", () => {
   it("indexes every shipped OpenCode constant by model id", () => {
     expect(metadata.size).toBe(MODEL_OPTIONS.opencode.length);
-    expect(metadata.get("grok-4.5")?.displayName).toBe("Grok 4.5");
+    expect(metadata.get("longcat-2.5-preview-free")?.displayName).toBe(
+      "LongCat 2.5 Preview (Free)",
+    );
   });
 });
 
@@ -55,15 +57,15 @@ describe("normalizeOpenCodeModelsPayload", () => {
 
   it("enriches a known model from Dyad's own metadata", () => {
     const [model] = normalizeOpenCodeModelsPayload(
-      payload(["grok-4.5"]),
+      payload(["longcat-2.5-preview-free"]),
       metadata,
     );
     expect(model).toMatchObject({
-      displayName: "Grok 4.5",
-      description: "xAI's most capable model via OpenCode",
-      contextWindow: 131_072,
-      maxOutputTokens: 32_000,
-      dollarSigns: 4,
+      displayName: "LongCat 2.5 Preview (Free)",
+      description: "OpenCode's free preview model",
+      contextWindow: 200_000,
+      maxOutputTokens: 16_000,
+      dollarSigns: 0,
     });
   });
 
