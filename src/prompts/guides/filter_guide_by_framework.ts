@@ -28,6 +28,13 @@ export function filterGuideByFramework(
   markdown: string,
   frameworkType: AppFrameworkType | null,
 ): string {
+  const hasNextjs = HAS_NEXTJS_BLOCK.test(markdown);
+  const hasViteNitro = HAS_VITE_NITRO_BLOCK.test(markdown);
+  // Framework-agnostic guides (port methodology, not framework paths) carry
+  // neither block and pass through untouched for every framework.
+  if (!hasNextjs && !hasViteNitro) {
+    return markdown;
+  }
   if (!HAS_NEXTJS_BLOCK.test(markdown)) {
     throw new Error(
       "Guide is missing required <nextjs-only>...</nextjs-only> block",

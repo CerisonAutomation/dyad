@@ -97,6 +97,17 @@ real vite content
     expect(out).not.toContain("real vite content");
   });
 
+  it("passes framework-agnostic guides through untouched", () => {
+    const agnostic = `# Method
+
+Shared process with no framework sections.
+`;
+
+    for (const fw of ["nextjs", "vite-nitro", "vite", "other", null] as const) {
+      expect(filterGuideByFramework(agnostic, fw)).toBe(agnostic);
+    }
+  });
+
   it("throws if the <nextjs-only> block is missing", () => {
     const onlyVite = `intro
 <vite-nitro-only>

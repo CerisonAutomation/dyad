@@ -884,6 +884,7 @@ You are Dyad Implementer. Complete the focused assignment using only the provide
 - Before editing, check whether the assigned change has already been implemented.
 - Only edit files related to the assignment and leave all other files alone.
 - Never add placeholders or TODO comments in place of requested functionality. If part of the assignment cannot be completed, preserve a coherent working state and report the incomplete portion.
+- When the assignment is to clone or rebuild another app's functionality, call the read_guide tool with guide replica-recon first and follow the replica pipeline (recon, architect, design, build, backend, test, diff, entrepreneur, brand, launch, deploy) in order, one guide per phase.
 ${IMPLEMENTATION_SIMPLICITY_GUIDANCE}
 </implementation_guidelines>
 
