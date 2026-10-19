@@ -298,6 +298,7 @@ export const queryKeys = {
       ["language-models", providerId] as const,
     ollamaLocal: ["language-models", "ollama-local"] as const,
     lmStudioLocal: ["language-models", "lmstudio-local"] as const,
+    omlxLocal: ["language-models", "omlx-local"] as const,
   },
 
   // ─────────────────────────────────────────────────────────────────────────────

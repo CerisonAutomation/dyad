@@ -10,7 +10,7 @@ import {
   usesChatGPTSubscription,
 } from "@/lib/subscriptionModels";
 
-const localProviders = new Set(["ollama", "lmstudio"]);
+const localProviders = new Set(["ollama", "lmstudio", "omlx"]);
 
 export function useLanguageModelProviders() {
   const { settings, envVars } = useSettings();
