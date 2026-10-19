@@ -41,7 +41,7 @@ import {
   getAiHeaders,
   DYAD_INTERNAL_REQUEST_ID_HEADER,
 } from "@/ipc/utils/provider_options";
-import { isDyadProEnabled } from "@/lib/schemas";
+import { isAgent2Enabled } from "@/lib/schemas";
 import {
   normalizeModelSelection,
   resolveDefaultModelSelection,
@@ -210,7 +210,7 @@ export async function performCompaction(
           : await resolveDefaultModelSelection(storedSettings);
     // Stored connections describe an earlier turn, not this auxiliary request.
     const { connection: _connection, ...modelIdentity } = selectedModel;
-    const compactionModel = isDyadProEnabled(storedSettings)
+    const compactionModel = isAgent2Enabled(storedSettings)
       ? await resolveModelSelection({
           model: PRO_COMPACTION_MODEL,
           preferredEffortLevel:

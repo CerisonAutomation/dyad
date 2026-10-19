@@ -81,7 +81,6 @@ import {
   formatPreviewNetworkStatus,
 } from "@/lib/preview_console_buffer";
 import { queryKeys } from "@/lib/queryKeys";
-import { AnnotatorOnlyForPro } from "./AnnotatorOnlyForPro";
 import { useAttachments } from "@/hooks/useAttachments";
 import { useUserBudgetInfo } from "@/hooks/useUserBudgetInfo";
 import { Annotator } from "@/pro/ui/components/Annotator/Annotator";
@@ -1646,15 +1645,11 @@ export const PreviewIframe = ({
                     : { width: `${deviceWidthConfig[deviceMode]}px` }
                 }
               >
-                {userBudget ? (
-                  <Annotator
-                    screenshotUrl={screenshotDataUrl}
-                    onSubmit={addAttachments}
-                    handleAnnotatorClick={handleAnnotatorClick}
-                  />
-                ) : (
-                  <AnnotatorOnlyForPro onGoBack={handleAnnotatorClick} />
-                )}
+                <Annotator
+                  screenshotUrl={screenshotDataUrl}
+                  onSubmit={addAttachments}
+                  handleAnnotatorClick={handleAnnotatorClick}
+                />
               </div>
             ) : (
               <>

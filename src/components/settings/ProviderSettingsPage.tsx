@@ -32,7 +32,7 @@ import {
   UserSettings,
   AzureProviderSetting,
   VertexProviderSetting,
-  hasDyadProKey,
+  hasEngineCredential,
 } from "@/lib/schemas";
 import { DyadErrorKind } from "@/errors/dyad_error";
 import {
@@ -243,7 +243,7 @@ export function ProviderSettingsPage({ provider }: ProviderSettingsPageProps) {
 
       const isFirstProviderSetup = !isAnyProviderSetup();
       // Check if this is the first time user is setting up Dyad Pro
-      const isNewDyadProSetup = isDyad && settings && !hasDyadProKey(settings);
+      const isNewDyadProSetup = isDyad && settings && !hasEngineCredential(settings);
 
       const settingsUpdate: Partial<UserSettings> = {
         providerSettings: {
@@ -346,11 +346,13 @@ export function ProviderSettingsPage({ provider }: ProviderSettingsPageProps) {
   const handleToggleDyadPro = async (enabled: boolean) => {
     setIsSaving(true);
     try {
+      // enableDyadPro is deleted by migrateStoredSettings on every read, so
+      // writing it here was a no-op. enableAgent2 is the surviving key.
       await updateSettings({
-        enableDyadPro: enabled,
+        enableAgent2: enabled,
       });
     } catch (error: any) {
-      showError(`Error toggling Dyad Pro: ${error}`);
+      showError(`Error toggling Agent2: ${error}`);
     } finally {
       setIsSaving(false);
     }
@@ -573,8 +575,8 @@ export function ProviderSettingsPage({ provider }: ProviderSettingsPageProps) {
                 </p>
               </div>
               <Switch
-                aria-label="Enable Dyad Pro"
-                checked={settings?.enableDyadPro}
+                aria-label="Enable Agent2"
+                checked={settings?.enableAgent2}
                 onCheckedChange={handleToggleDyadPro}
                 disabled={isSaving}
               />

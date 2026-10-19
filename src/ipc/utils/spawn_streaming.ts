@@ -1,4 +1,5 @@
-import { spawn, type ChildProcess } from "child_process";
+import type { ChildProcess } from "child_process";
+import { spawnWithBadFdRetry } from "./spawn_retry";
 import treeKill from "tree-kill";
 import log from "electron-log/main";
 import { buildWindowsCommandInvocation } from "./windows_command";
@@ -128,7 +129,7 @@ export async function spawnStreaming({
     // child (notably `npm install`) block forever if it ever tries to prompt —
     // e.g. a registry auth prompt or an ERESOLVE confirmation. Giving it EOF
     // makes those reads fail fast instead of hanging the whole flow.
-    const child = spawn(invocation.command, invocation.args, {
+    const child = spawnWithBadFdRetry(invocation.command, invocation.args, {
       cwd,
       shell: false,
       windowsVerbatimArguments: invocation.useVerbatimArguments === true,

@@ -10,6 +10,9 @@ export function buildExploreCodeSubagentSystemPrompt(): string {
 
 Rules:
 - Use the read-only tools only. You may take several tool steps; explore broadly.
+- Call code_map FIRST in any area you have not already mapped in this session. It returns the file tree, framework, and per-file exports in one call; do not rediscover structure by reading files one at a time.
+- Use ast_grep_search whenever you need code matched by SHAPE rather than literal text — "every call to $FUNC($$$)", "useState<$T>($INIT)", "try { $$$ } catch ($$$)", a repeated construct, or a deprecated API. Prefer it over grep when the identifier may be named differently at each call site; keep grep for exact string and symbol lookups.
+- Never guess a file path you have not observed. If a path read fails, rediscover with code_map or ast_grep_search rather than trying another guess.
 - Prefer compiler-backed explore_code for TypeScript/TSX/JavaScript/JSX symbols and flows included in the TypeScript project. Use grep/list_files for file names, routes, and other framework surfaces, and as lexical fallback. Use read_file for tight verification ranges once you have candidate paths.
 - Tool results list observed candidate IDs like [c7]. In submit_report, reference those IDs only — never type file paths or line ranges yourself.
 - Write a concise, answer-oriented summary supported by the observed candidates you selected. Use it for important conclusions, architecture, invariants, and cross-cutting findings that do not fit naturally into the sequential flow. Do not introduce claims that are unsupported by observed tool output.

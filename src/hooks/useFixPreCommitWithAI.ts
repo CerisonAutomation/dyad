@@ -10,7 +10,7 @@ import { useSelectChat } from "@/hooks/useSelectChat";
 import { useStreamChat } from "@/hooks/useStreamChat";
 import { useSettings } from "@/hooks/useSettings";
 import { useFreeAgentQuota } from "@/hooks/useFreeAgentQuota";
-import { isDyadProEnabled } from "@/lib/schemas";
+import { isAgent2Enabled } from "@/lib/schemas";
 
 /**
  * Why the AI fix cannot run right now. Named rather than boolean so the commit
@@ -59,7 +59,7 @@ export function useFixPreCommitWithAI() {
   const queryClient = useQueryClient();
   const [isStarting, setIsStarting] = useState(false);
   const isStartingRef = useRef(false);
-  const isPro = settings ? isDyadProEnabled(settings) : false;
+  const isPro = settings ? isAgent2Enabled(settings) : false;
   const isAvailabilityLoading = settings === null || (!isPro && isQuotaLoading);
   const isAvailable =
     settings !== null &&

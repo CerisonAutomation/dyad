@@ -1132,3 +1132,46 @@ it("preserves classified errors containing the budget marker", async () => {
   await expect(model.doStream({ prompt: [] })).rejects.toBe(error);
   expect(calls).toEqual(["primary"]);
 });
+
+describe("per-model free quota caps", () => {
+  const quotaError = (message: string) =>
+    new APICallError({
+      message,
+      url: "https://openrouter.ai/api/v1/chat/completions",
+      requestBodyValues: {},
+      statusCode: 429,
+      isRetryable: true,
+    });
+
+  it("falls back instead of retrying a per-model daily cap", () => {
+    const action = getFallbackFailureAction(
+      quotaError("Rate limit exceeded: free-models-per-day-stealth"),
+    );
+    expect(action).toBe("fallback-next");
+  });
+
+  it("covers the hourly and per-minute variants", () => {
+    for (const message of [
+      "Rate limit exceeded: free-models-per-hour-stealth",
+      "Rate limit exceeded: free-models-per-minute-stealth",
+    ]) {
+      expect(getFallbackFailureAction(quotaError(message))).toBe(
+        "fallback-next",
+      );
+    }
+  });
+
+  it("still retries a generic 429 that is not model-scoped", () => {
+    const action = getFallbackFailureAction(
+      quotaError("Too Many Requests"),
+    );
+    expect(action).toBe("retry-same");
+  });
+
+  it("still fails closed on account-wide budget exhaustion", () => {
+    const action = getFallbackFailureAction(
+      quotaError("exceededbudget: monthly credit limit reached"),
+    );
+    expect(action).toBe("fail");
+  });
+});

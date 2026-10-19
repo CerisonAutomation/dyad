@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { spawn } from "node:child_process";
+import { spawnWithBadFdRetry } from "@/ipc/utils/spawn_retry";
 import {
   ToolDefinition,
   AgentContext,
@@ -205,7 +205,7 @@ async function runRipgrep({
 
     args.push("--", query, ".");
 
-    const rg = spawn(getRgExecutablePath(), args, { cwd: appPath });
+    const rg = spawnWithBadFdRetry(getRgExecutablePath(), args, { cwd: appPath });
     let buffer = "";
     let stderr = "";
 

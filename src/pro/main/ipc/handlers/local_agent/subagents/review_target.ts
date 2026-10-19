@@ -5,9 +5,10 @@ import path from "node:path";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import { execAgentGit } from "@/ipc/utils/git_utils";
 
-// gpt-5.6-sol has a 372k-token context window. Keep the raw diff well below
-// that ceiling even for token-dense source, leaving room for instructions,
-// durable thread history, and the structured response.
+// Byte caps on the review payload. They are deliberately well under the
+// smallest context window the sub-agents run with, so a review cannot overflow
+// regardless of which model the user has selected, while still leaving room
+// for instructions, durable thread history, and the structured response.
 export const REVIEW_MAX_FILE_BYTES = 96 * 1024;
 export const REVIEW_MAX_TOTAL_BYTES = 192 * 1024;
 export const REVIEW_MAX_EXCLUSION_COUNT = 200;

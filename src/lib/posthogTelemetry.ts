@@ -1,4 +1,4 @@
-import { hasDyadProKey, type UserSettings } from "@/lib/schemas";
+import { hasEngineCredential, type UserSettings } from "@/lib/schemas";
 import { DEFAULT_ENABLE_TESTING_FOR_NEW_APPS } from "@/shared/settings_defaults";
 import {
   appSizeEventFields,
@@ -53,7 +53,7 @@ export type InitialLoadTelemetryInput = {
 
 export function getSettingsPersonTelemetryProperties(settings: UserSettings) {
   return {
-    isPro: hasDyadProKey(settings),
+    isPro: hasEngineCredential(settings),
     enableAppBlueprint: settings.enableAppBlueprint ?? true,
     enableTestingForNewApps:
       settings.enableTestingForNewApps ?? DEFAULT_ENABLE_TESTING_FOR_NEW_APPS,

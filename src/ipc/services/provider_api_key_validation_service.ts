@@ -21,7 +21,6 @@ import type { ModelSelection, UserSettings } from "@/lib/schemas";
 import { createDyadEngine } from "@/ipc/utils/llm_engine_provider";
 import { fastTextOutput } from "@/ipc/utils/stream_text_utils";
 import { IS_TEST_BUILD } from "@/ipc/utils/test_utils";
-import { getDyadEngineBaseUrl } from "@/ipc/utils/dyad_engine_url";
 import { getTestFetchOption } from "@/ipc/utils/test_fetch_override";
 import { getOpenRouterAppAttributionHeaders } from "@/ipc/utils/openrouter_attribution";
 import { GPT_5_6_LUNA_MODEL_NAME } from "@/ipc/shared/language_model_constants";
@@ -156,6 +155,7 @@ async function createValidationModel(
       });
       return openrouter("openrouter/free");
     }
+<<<<<<< HEAD
     case "auto": {
       const settings = await readEffectiveSettings();
       const dyad = createDyadEngine({
@@ -248,6 +248,12 @@ async function createValidationModel(
       });
       return vertex("gemini-2.5-flash");
     }
+=======
+    case "auto":
+      // No hosted engine: every supported provider is validated against its
+      // own endpoint above, so there is nothing left to check here.
+      throw new Error("The hosted Dyad engine is not available");
+>>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
   }
 }
 

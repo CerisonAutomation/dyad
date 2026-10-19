@@ -70,10 +70,10 @@
   "deleteItemTitle": "{{itemType}} 삭제",
   "deleteItemConfirmation": "\"{{itemName}}\"을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
   "proBanner": {
-    "manageDyadPro": "Dyad Pro 관리",
-    "alreadyHavePro": "이미 Dyad Pro를 사용 중이신가요? 키 추가하기",
+    "manageDyadPro": "Agent2 관리",
+    "alreadyHavePro": "이미 Agent2를 사용 중이신가요? 키 추가하기",
     "accessLeadingModels": "하나의 요금제로 최고의 AI 모델 이용하기",
-    "getDyadPro": "Dyad Pro 받기",
+    "getDyadPro": "Agent2 받기",
     "upTo3xCheaper": "최대 3배 저렴",
     "byUsingSmartContext": "스마트 컨텍스트 사용으로"
   },
@@ -99,7 +99,7 @@
     "notSureWatchVideo": "무엇을 해야 할지 모르시겠나요? 위의 시작하기 동영상을 시청하세요",
     "setupGeminiApiKey": "Google Gemini API 키 설정",
     "setupOpenRouterApiKey": "OpenRouter API 키 설정",
-    "setupDyadPro": "Dyad Pro 설정",
+    "setupDyadPro": "Agent2 설정",
     "accessAllModels": "하나의 요금제로 모든 AI 모델 이용하기",
     "setupOtherProviders": "다른 AI 공급자 설정",
     "openAiAnthropicMore": "OpenAI, Anthropic 등",
@@ -464,10 +464,7 @@
       "undo": "실행 취소",
       "redo": "다시 실행",
       "addToChat": "채팅에 추가",
-      "closeAnnotator": "어노테이터 닫기",
-      "proFeatureTitle": "어노테이터는 Pro 기능입니다",
-      "proFeatureDescription": "Dyad Pro로 스크린샷에 주석을 달고 작업 흐름을 개선하는 기능을 잠금 해제하세요.",
-      "getDyadPro": "Dyad Pro 받기"
+      "closeAnnotator": "어노테이터 닫기"
     }
   },
   "integrations": {

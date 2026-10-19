@@ -121,10 +121,10 @@
     "errorLoadingSettings": "Error al Cargar la Configuración",
     "couldNotLoadProvider": "No se pudieron cargar los datos del proveedor: {{message}}",
     "couldNotLoadSettings": "No se pudieron cargar los datos de configuración: {{message}}",
-    "enableDyadPro": "Habilitar Dyad Pro",
-    "toggleDyadPro": "Alternar para habilitar Dyad Pro",
+    "enableDyadPro": "Habilitar Agent2",
+    "toggleDyadPro": "Alternar para habilitar Agent2",
     "apiKeyEmpty": "La clave API no puede estar vacía.",
-    "errorTogglingPro": "Error al alternar Dyad Pro: {{error}}",
+    "errorTogglingPro": "Error al alternar Agent2: {{error}}",
     "failedSaveApiKey": "Error al guardar la clave API.",
     "failedDeleteApiKey": "Error al eliminar la clave API."
   },
@@ -303,6 +303,6 @@
     "updateProvider": "Actualizar Proveedor",
     "failedCreate": "Error al crear el proveedor personalizado"
   },
-  "manageDyadPro": "Gestionar Suscripción de Dyad Pro",
-  "setupDyadPro": "Configurar Suscripción de Dyad Pro"
+  "manageDyadPro": "Gestionar Suscripción de Agent2",
+  "setupDyadPro": "Configurar Suscripción de Agent2"
 }

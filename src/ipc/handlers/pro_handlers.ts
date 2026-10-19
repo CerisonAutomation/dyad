@@ -118,84 +118,25 @@ export function registerProHandlers() {
   // This method should try to avoid throwing errors because this is auxiliary
   // information and isn't critical to using the app
   handle("get-user-budget", async (): Promise<UserBudgetInfo | null> => {
-    if (IS_TEST_BUILD) {
-      // Return mock budget data for E2E tests instead of spamming the API
-      const resetDate = new Date();
-      resetDate.setDate(resetDate.getDate() + 30); // Reset in 30 days
-      return {
-        usedCredits: 100,
-        totalCredits: 1000,
-        budgetResetDate: resetDate,
-        redactedUserId: "<redacted-user-id-testing>",
-        isTrial: false,
-      };
-    }
-    logger.debug("Attempting to fetch user budget information.");
-
-    const settings = readSettings();
-
-    const apiKey = settings.providerSettings?.auto?.apiKey?.value;
-
-    if (!apiKey) {
-      // Expected state for non-Pro users; not an error.
-      logger.debug("LLM Gateway API key (Dyad Pro) is not configured.");
-      return null;
-    }
-
-    try {
-      const data = await fetchUserInfo(apiKey);
-
-      // Turn user_abc1234 =>  "****1234"
-      // Preserve the last 4 characters so we can correlate bug reports
-      // with the user.
-      const redactedUserId =
-        data.userId.length > 8 ? "****" + data.userId.slice(-4) : "<redacted>";
-
-      logger.debug("Successfully fetched user budget information.");
-
-      // Transform to UserBudgetInfo format
-      const userBudgetInfo = UserBudgetInfoSchema.parse({
-        usedCredits: data.usedCredits,
-        totalCredits: data.totalCredits,
-        budgetResetDate: new Date(data.budgetResetDate),
-        redactedUserId: redactedUserId,
-        isTrial: data.isTrial,
-      });
-
-      return userBudgetInfo;
-    } catch (error: any) {
-      logger.error(`Error fetching user budget: ${error.message}`, error);
-      return null;
-    }
+    // Agent2 runs on the user's own provider credentials, so there is no
+    // Dyad-side budget to read. Report a permanent zero-used allowance
+    // locally instead of calling the hosted service, which keeps every
+    // downstream quota check satisfied without a network round trip.
+    const budgetResetDate = new Date();
+    budgetResetDate.setFullYear(budgetResetDate.getFullYear() + 100);
+    return {
+      usedCredits: 0,
+      totalCredits: 0,
+      budgetResetDate,
+      redactedUserId: "<local-byok>",
+      isTrial: false,
+    };
   });
 
   typedHandle(systemContracts.getSubscriptionStatus, async () => {
-    const apiKey = getSubscriptionStatusApiKey();
-    if (!apiKey) {
-      return null;
-    }
-    if (IS_TEST_BUILD && !process.env.DYAD_SUBSCRIPTION_STATUS_URL) {
-      return null;
-    }
-
-    try {
-      const response = await fetch(getSubscriptionStatusUrl(), {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
-      });
-      if (!response.ok) {
-        logger.warn(
-          `Failed to fetch subscription status. Status: ${response.status}`,
-        );
-        return null;
-      }
-      return SubscriptionStatusSchema.parse(await response.json());
-    } catch (error) {
-      logger.error("Failed to fetch subscription status", error);
-      return null;
-    }
+    // No hosted subscription service: Agent2 always runs on the user's own
+    // provider keys, so there is no remote entitlement to read.
+    return null;
   });
 
   typedHandle(systemContracts.openBillingAction, async (_event, value) => {

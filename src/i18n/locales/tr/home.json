@@ -74,10 +74,10 @@
   "deleteItemTitle": "{{itemType}} sil",
   "deleteItemConfirmation": "\"{{itemName}}\" öğesini silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.",
   "proBanner": {
-    "manageDyadPro": "Dyad Pro'yu Yönet",
-    "alreadyHavePro": "Dyad Pro'nuz var mı? Anahtarınızı ekleyin",
+    "manageDyadPro": "Agent2'yu Yönet",
+    "alreadyHavePro": "Agent2'nuz var mı? Anahtarınızı ekleyin",
     "accessLeadingModels": "Önde gelen AI modellerine tek planla erişin",
-    "getDyadPro": "Dyad Pro'yu Edinin",
+    "getDyadPro": "Agent2'yu Edinin",
     "upTo3xCheaper": "3 kata kadar daha ucuz",
     "byUsingSmartContext": "Akıllı Bağlam kullanarak"
   },
@@ -103,7 +103,7 @@
     "notSureWatchVideo": "Ne yapacağınızdan emin değil misiniz? Yukarıdaki Başlarken videosunu izleyin",
     "setupGeminiApiKey": "Google Gemini API Anahtarını Kur",
     "setupOpenRouterApiKey": "OpenRouter API Anahtarını Kur",
-    "setupDyadPro": "Dyad Pro'yu Kur",
+    "setupDyadPro": "Agent2'yu Kur",
     "accessAllModels": "Tüm AI modellerine tek planla erişin",
     "setupOtherProviders": "Diğer AI sağlayıcılarını kur",
     "openAiAnthropicMore": "OpenAI, Anthropic ve daha fazlası",
@@ -467,6 +467,7 @@
       "undo": "Geri Al",
       "redo": "Yinele",
       "addToChat": "Sohbete Ekle",
+<<<<<<< HEAD
       "closeAnnotator": "Açıklayıcıyı Kapat",
       "proFeatureTitle": "Açıklayıcı bir Pro Özelliğidir",
       "proFeatureDescription": "Dyad Pro ile ekran görüntülerine açıklama ekleme yeteneğinin kilidini açın ve iş akışınızı geliştirin.",
@@ -490,6 +491,9 @@
       "neonRefusalDisabled": "Bu uygulama için testler çalıştırılamıyor: yalıtılmış test sunucuları Ayarlar bölümünde kapalı ve Dyad, Neon testlerini gerçek veritabanınızda çalıştırmaz. Testleri çalıştırmak için bunları açın.",
       "turnOnSandbox": "Aç",
       "openSettings": "Ayarları aç"
+=======
+      "closeAnnotator": "Açıklayıcıyı Kapat"
+>>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
     }
   },
   "integrations": {

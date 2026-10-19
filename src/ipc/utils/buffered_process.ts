@@ -1,4 +1,5 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
+import { spawnWithBadFdRetry } from "./spawn_retry";
 import { StringDecoder } from "node:string_decoder";
 import treeKill from "tree-kill";
 import {
@@ -105,8 +106,8 @@ export async function runBufferedProcess(
         env: options.env,
       };
       child = options.args
-        ? spawn(options.command, options.args, spawnOptions)
-        : spawn(options.command, spawnOptions);
+        ? spawnWithBadFdRetry(options.command, options.args, spawnOptions)
+        : spawnWithBadFdRetry(options.command, spawnOptions);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       reject(new BufferedProcessSpawnError(message, "", ""));

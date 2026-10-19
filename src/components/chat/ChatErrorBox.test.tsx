@@ -44,7 +44,7 @@ describe("ChatErrorBox Basic Agent quota error", () => {
     render(
       <ChatErrorBox
         error='{"type":"FREE_AGENT_QUOTA_EXCEEDED","resetTime":1787295600000}'
-        isDyadProEnabled={false}
+        isAgent2Enabled={false}
         onDismiss={onDismiss}
         onSwitchToBuildMode={onSwitchToBuildMode}
       />,
@@ -69,7 +69,7 @@ describe("ChatErrorBox Basic Agent quota error", () => {
     render(
       <ChatErrorBox
         error='{"type":"FREE_AGENT_QUOTA_EXCEEDED","resetTime":1787295600000}'
-        isDyadProEnabled={false}
+        isAgent2Enabled={false}
         onDismiss={vi.fn()}
       />,
     );
@@ -88,7 +88,7 @@ describe("ChatErrorBox error presentation", () => {
     render(
       <ChatErrorBox
         error={`Implementer failures:\n${"Detailed failure line\n".repeat(200)}`}
-        isDyadProEnabled
+        isAgent2Enabled
         onDismiss={vi.fn()}
       />,
     );
@@ -122,7 +122,7 @@ describe("ChatErrorBox subscription billing errors", () => {
       render(
         <ChatErrorBox
           error={new SubscriptionBillingError(code).serialize()}
-          isDyadProEnabled
+          isAgent2Enabled
           onDismiss={vi.fn()}
           onStartNewChat={vi.fn()}
         />,
@@ -146,7 +146,7 @@ describe("ChatErrorBox exhausted credit notice", () => {
       render(
         <ChatErrorBox
           error="ExceededBudget: exhausted"
-          isDyadProEnabled
+          isAgent2Enabled
           onDismiss={onDismiss}
           onStartNewChat={vi.fn()}
         />,
@@ -180,13 +180,13 @@ describe("ChatErrorBox exhausted credit notice", () => {
 describe("ChatErrorBox legacy rejected Pro key", () => {
   it.each([false, true])(
     "offers the membership portal (Pro enabled: %s)",
-    (isDyadProEnabled) => {
+    (isAgent2Enabled) => {
       mocks.openExternalUrl.mockReset();
       const onDismiss = vi.fn();
       render(
         <ChatErrorBox
           error="Provider returned error: LiteLLM Virtual Key expected"
-          isDyadProEnabled={isDyadProEnabled}
+          isAgent2Enabled={isAgent2Enabled}
           onDismiss={onDismiss}
           onStartNewChat={vi.fn()}
         />,
@@ -216,7 +216,7 @@ it("recognizes a legacy rejected key inside fallback details", () => {
       error={
         'All models failed. Fallbacks=[{"error":"LiteLLM Virtual Key expected"}]'
       }
-      isDyadProEnabled
+      isAgent2Enabled
       onDismiss={vi.fn()}
     />,
   );

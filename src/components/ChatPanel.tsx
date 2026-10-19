@@ -21,7 +21,6 @@ import { ChatHeader } from "./chat/ChatHeader";
 import { MessagesList } from "./chat/MessagesList";
 import { ChatInput } from "./chat/ChatInput";
 import { VersionPane } from "./chat/VersionPane";
-import { FreeAgentQuotaBanner } from "./chat/FreeAgentQuotaBanner";
 import { NotificationBanner } from "./chat/NotificationBanner";
 import { SupabaseLegacyKeyBanner } from "./chat/SupabaseLegacyKeyBanner";
 import { Button } from "@/components/ui/button";
@@ -34,7 +33,7 @@ import { ArrowDown } from "lucide-react";
 import { useSettings } from "@/hooks/useSettings";
 import { useFreeAgentQuota } from "@/hooks/useFreeAgentQuota";
 import { useChatMode } from "@/hooks/useChatMode";
-import { isDyadProEnabled } from "@/lib/schemas";
+import { isAgent2Enabled } from "@/lib/schemas";
 import { isFreeProModel } from "@/lib/freeProModel";
 import { terminalOpenByChatIdAtom } from "@/atoms/terminalAtoms";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
@@ -103,7 +102,7 @@ export function ChatPanel({
   const { isQuotaExceeded } = useFreeAgentQuota();
   const showFreeAgentQuotaBanner =
     settings &&
-    !isDyadProEnabled(settings) &&
+    !isAgent2Enabled(settings) &&
     selectedMode === "local-agent" &&
     isQuotaExceeded;
 
@@ -308,15 +307,6 @@ export function ChatPanel({
                       </div>
                     )}
                   </div>
-                  {showFreeAgentQuotaBanner && (
-                    <FreeAgentQuotaBanner
-                      onSwitchToBuildMode={
-                        isFreeProModel(selectedModel)
-                          ? undefined
-                          : () => void setChatMode("build").catch(() => {})
-                      }
-                    />
-                  )}
                   <SupabaseLegacyKeyBanner appId={selectedAppId} />
                   <NotificationBanner />
                   <ChatInput chatId={chatId} />

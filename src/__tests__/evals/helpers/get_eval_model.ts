@@ -24,7 +24,7 @@ const GATEWAY_PREFIXES: Record<EvalProvider, string> = {
   google: "gemini/",
 };
 
-export function hasDyadProKey(): boolean {
+export function hasEngineCredential(): boolean {
   return !!process.env.DYAD_PRO_API_KEY;
 }
 

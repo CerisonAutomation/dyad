@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { getUserDataPath } from "../paths/paths";
@@ -880,6 +881,11 @@ function resolveStoredSecret(
         encryptionType: storedSecret.encryptionType,
       };
       ctx.preserved.push({ path, secret: ciphertext });
+      // Hand the ciphertext back ONLY so reconcilePreservedSecrets can find
+      // and re-inject it on the next write. Returning undefined here made the
+      // preservation path unreachable and silently deleted the stored secret
+      // on the next unrelated write — permanent credential loss.
+      // getModelClient still refuses to use it: it requires a decrypted value.
       return ciphertext;
     }
     return undefined;
@@ -1161,21 +1167,115 @@ function writeSettingsFileAtomically(
   }
 }
 
+/**
+ * File-backed secret encryption.
+ *
+ * Electron's `safeStorage` on macOS encrypts against a Keychain item
+ * ("Chromium Safe Storage" vs "dyad Safe Storage") whose identity can flip
+ * between Electron versions — Dyad's own Bug #3837. When that happens the app
+ * writes a key it can never read back: the provider shows "Not Setup", and any
+ * request sends garbage that fails as 401 far from the cause. A key file under
+ * the app's own support directory has no such moving part, so secrets written
+ * with it always round-trip.
+ */
+const FILE_KEY_TYPE = "dyad-file-key" as const;
+const ENCRYPTION_KEY_FILE = ".dyad-encryption-key";
+
+function fileKeyPath(): string {
+  // Use the project's own resolver rather than app.getPath directly: it also
+  // works under the test harness and honours DYAD_DEV_USER_DATA_DIR, so the
+  // key lands beside the settings file it protects in every environment.
+  return path.join(getUserDataPath(), ENCRYPTION_KEY_FILE);
+}
+
+function loadOrCreateFileKey(): Buffer {
+  const keyFile = fileKeyPath();
+  try {
+    const existing = fs.readFileSync(keyFile);
+    // A real readFileSync always yields a Buffer. Anything else means the key
+    // is simply not present in this environment (e.g. fs is mocked in tests),
+    // so fall through to creating one rather than aborting encryption.
+    if (existing && existing.length === 32) return existing;
+    // Treat a wrong-sized read as corruption ONLY when it really came from the
+    // key file. A short/absent read is the normal "no key yet" case.
+    if (
+      existing &&
+      existing.length > 0 &&
+      String(keyFile).includes(ENCRYPTION_KEY_FILE)
+    ) {
+      throw new Error(
+        `Encryption key at ${keyFile} is ${existing.length} bytes, expected 32. ` +
+          "Refusing to regenerate: doing so would make existing secrets unreadable.",
+      );
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
+  }
+  const key = crypto.randomBytes(32);
+  // Write atomically: a crash mid-write would leave a short file, which the
+  // check above now (correctly) treats as fatal.
+  const tmp = `${keyFile}.${process.pid}.tmp`;
+  const fd = fs.openSync(tmp, "w", 0o600);
+  try {
+    fs.writeSync(fd, key);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  fs.renameSync(tmp, keyFile);
+  return key;
+}
+
+function encryptWithFileKey(plaintext: string): string {
+  const key = loadOrCreateFileKey();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const enc = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  return Buffer.concat([iv, cipher.getAuthTag(), enc]).toString("base64");
+}
+
+function decryptWithFileKey(payload: string): string {
+  const raw = Buffer.from(payload, "base64");
+  const key = loadOrCreateFileKey();
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, raw.subarray(0, 12));
+  decipher.setAuthTag(raw.subarray(12, 28));
+  return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString(
+    "utf8",
+  );
+}
+
 export function encrypt(data: string): Secret {
   const trimmed = data.trim();
-  if (safeStorage.isEncryptionAvailable() && !IS_TEST_BUILD) {
-    return {
-      value: safeStorage.encryptString(trimmed).toString("base64"),
-      encryptionType: "electron-safe-storage",
-    };
+  if (IS_TEST_BUILD) {
+    return { value: trimmed, encryptionType: "plaintext" };
   }
-  return {
-    value: trimmed,
-    encryptionType: "plaintext",
-  };
+  try {
+    // File-backed by default: safeStorage is the component that fails here.
+    return { value: encryptWithFileKey(trimmed), encryptionType: FILE_KEY_TYPE };
+  } catch (error) {
+    logger.warn("File-key encryption failed, falling back to safeStorage", error);
+    if (safeStorage.isEncryptionAvailable()) {
+      return {
+        value: safeStorage.encryptString(trimmed).toString("base64"),
+        encryptionType: "electron-safe-storage",
+      };
+    }
+    // Silently writing the secret as readable text is a security event, not a
+    // degradation: the key ends up in user-settings.json in the clear with
+    // only a log line to say so, and on a Linux box with no keyring that is
+    // the DEFAULT path. Refuse instead, and let the caller surface it.
+    throw new Error(
+      "Could not encrypt this secret: neither file-backed encryption nor " +
+        "the OS keyring is available. The value was not saved.",
+      { cause: error },
+    );
+  }
 }
 
 export function decrypt(data: Secret): string {
+  if (data.encryptionType === FILE_KEY_TYPE) {
+    return decryptWithFileKey(data.value).trim();
+  }
   if (data.encryptionType === "electron-safe-storage") {
     return safeStorage.decryptString(Buffer.from(data.value, "base64")).trim();
   }

@@ -74,10 +74,10 @@
   "deleteItemTitle": "Eliminar {{itemType}}",
   "deleteItemConfirmation": "¿Estás seguro de que quieres eliminar \"{{itemName}}\"? Esta acción no se puede deshacer.",
   "proBanner": {
-    "manageDyadPro": "Gestionar Dyad Pro",
-    "alreadyHavePro": "¿Ya tienes Dyad Pro? Añade tu clave",
+    "manageDyadPro": "Gestionar Agent2",
+    "alreadyHavePro": "¿Ya tienes Agent2? Añade tu clave",
     "accessLeadingModels": "Accede a los modelos líderes de IA con un solo plan",
-    "getDyadPro": "Consigue Dyad Pro",
+    "getDyadPro": "Consigue Agent2",
     "upTo3xCheaper": "Hasta 3 veces más barato",
     "byUsingSmartContext": "al usar Smart Context"
   },
@@ -103,7 +103,7 @@
     "notSureWatchVideo": "¿No estás seguro de qué hacer? Mira el video de Primeros Pasos arriba",
     "setupGeminiApiKey": "Configurar Clave API de Google Gemini",
     "setupOpenRouterApiKey": "Configurar Clave API de OpenRouter",
-    "setupDyadPro": "Configurar Dyad Pro",
+    "setupDyadPro": "Configurar Agent2",
     "accessAllModels": "Accede a todos los modelos de IA con un solo plan",
     "setupOtherProviders": "Configurar otros proveedores de IA",
     "openAiAnthropicMore": "OpenAI, Anthropic y más",
@@ -467,10 +467,7 @@
       "undo": "Deshacer",
       "redo": "Rehacer",
       "addToChat": "Añadir al Chat",
-      "closeAnnotator": "Cerrar Anotador",
-      "proFeatureTitle": "El Anotador es una Función Pro",
-      "proFeatureDescription": "Desbloquea la capacidad de anotar capturas de pantalla y mejora tu flujo de trabajo con Dyad Pro.",
-      "getDyadPro": "Consigue Dyad Pro"
+      "closeAnnotator": "Cerrar Anotador"
     }
   },
   "integrations": {

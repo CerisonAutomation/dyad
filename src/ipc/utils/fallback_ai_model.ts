@@ -91,6 +91,24 @@ const RETRY_SAME_ERROR_PATTERNS = [
   "etimedout",
 ];
 
+/**
+ * Quota caps scoped to a single free model (OpenRouter reports these as HTTP
+ * 429 with a body like "Rate limit exceeded: free-models-per-day-<slug>").
+ *
+ * These are deliberately NOT handled as retries: a per-model daily cap cannot
+ * clear within the turn, so retrying the same model is guaranteed to fail. They
+ * are also not account-wide budget exhaustion — other models, including
+ * `openrouter/free`, may still serve — so the correct action is to move to the
+ * next model in the chain instead of failing the turn.
+ */
+const PER_MODEL_QUOTA_PATTERNS = [
+  "free-models-per-day-",
+  "free-models-per-hour-",
+  "free-models-per-minute-",
+  "exceeded free model",
+  "free model rate limit",
+];
+
 const FALLBACK_NEXT_ERROR_PATTERNS = [
   "model_not_found",
   "model not found",
@@ -219,6 +237,15 @@ export function getFallbackFailureAction(
 
   try {
     const { statusCode, errorString } = getErrorDetails(error);
+    // A quota cap scoped to this one model cannot clear by retrying, but it is
+    // not account-wide either, so move to the next model in the chain. Checked
+    // before the generic 429/retryable handling, which would otherwise burn
+    // every attempt on a model that is capped for the rest of the window.
+    if (
+      PER_MODEL_QUOTA_PATTERNS.some((pattern) => errorString.includes(pattern))
+    ) {
+      return "fallback-next";
+    }
     // Billing exhaustion is account-wide, even when the gateway returns 429.
     if (errorString.includes("exceededbudget:")) return "fail";
 

@@ -30,7 +30,7 @@ if (!process.env.DYAD_PRO_API_KEY && process.env.DYAD_PRO_KEY) {
   process.env.DYAD_PRO_API_KEY = process.env.DYAD_PRO_KEY;
 }
 
-import { GPT_5_4, getEvalModel, hasDyadProKey } from "./helpers/get_eval_model";
+import { GPT_5_4, getEvalModel, hasEngineCredential } from "./helpers/get_eval_model";
 import {
   loadFixtures,
   loadSpecs,
@@ -173,7 +173,7 @@ describe("compaction fixtures validate", () => {
 
 // ── Benchmark ──────────────────────────────────────────────────
 
-const canRun = hasDyadProKey() && fixtures.length > 0 && optedIn;
+const canRun = hasEngineCredential() && fixtures.length > 0 && optedIn;
 
 (canRun ? describe : describe.skip)("compaction quality benchmark", () => {
   beforeAll(() => {
