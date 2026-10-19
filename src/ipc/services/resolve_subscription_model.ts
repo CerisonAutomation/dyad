@@ -36,7 +36,7 @@ export async function resolveSubscriptionModel(
     (p) => p.id === model.provider,
   );
   if (
-    ["ollama", "lmstudio"].includes(model.provider) ||
+    ["ollama", "lmstudio", "omlx"].includes(model.provider) ||
     provider?.type === "custom"
   ) {
     return proEnabled ? { ...identity, connection: "api-key" } : identity;
