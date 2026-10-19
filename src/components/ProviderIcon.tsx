@@ -67,6 +67,8 @@ function resolveBrand(providerId: string, apiName?: string): Brand {
       return "ollama";
     case "lmstudio":
       return "lmstudio";
+    case "omlx":
+      return "custom";
     default:
       return "custom";
   }

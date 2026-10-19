@@ -37,6 +37,7 @@ import {
 } from "./llm_engine_provider";
 
 import { getLmStudioBaseUrl } from "./lm_studio_utils";
+import { getOmlxBaseUrl } from "./omlx_utils";
 import { createOllamaProvider } from "./ollama_provider";
 import { getOllamaApiUrl } from "../handlers/local_model_ollama_handler";
 import { createFallback } from "./fallback_ai_model";
@@ -225,7 +226,9 @@ export async function getModelClient(
         "Dyad",
       )
     : undefined;
-  const isLocalProvider = ["ollama", "lmstudio"].includes(model.provider);
+  const isLocalProvider = ["ollama", "lmstudio", "omlx"].includes(
+    model.provider,
+  );
   const isDyadProEnabledForRequest = Boolean(
     dyadApiKey && settings.enableDyadPro,
   );
@@ -882,6 +885,24 @@ function getRegularModelClient(
           model: provider(model.name),
           builtinProviderId: providerId,
           reasoningEffortProviderId: "lmstudio",
+        },
+        backupModelClients: [],
+      };
+    }
+    case "omlx": {
+      // oMLX serves an OpenAI compatible API (default http://localhost:8000)
+      const baseURL = providerConfig.apiBaseUrl || getOmlxBaseUrl() + "/v1";
+      const provider = createOpenAICompatible({
+        name: "omlx",
+        includeUsage,
+        baseURL,
+        ...getModelClientFetchOption(),
+      });
+      return {
+        modelClient: {
+          model: provider(model.name),
+          builtinProviderId: providerId,
+          reasoningEffortProviderId: "omlx",
         },
         backupModelClients: [],
       };

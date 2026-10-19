@@ -56,7 +56,7 @@ export const LanguageModelSchema = z.object({
 export type LanguageModel = z.infer<typeof LanguageModelSchema>;
 
 export const LocalModelSchema = z.object({
-  provider: z.enum(["ollama", "lmstudio"]),
+  provider: z.enum(["ollama", "lmstudio", "omlx"]),
   modelName: z.string(),
   displayName: z.string(),
 });
@@ -172,6 +172,12 @@ export const languageModelContracts = {
 
   listLMStudioModels: defineContract({
     channel: "local-models:list-lmstudio",
+    input: z.void(),
+    output: z.object({ models: z.array(LocalModelSchema) }),
+  }),
+
+  listOmlxModels: defineContract({
+    channel: "local-models:list-omlx",
     input: z.void(),
     output: z.object({ models: z.array(LocalModelSchema) }),
   }),

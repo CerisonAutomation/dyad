@@ -41,6 +41,7 @@ const mocks = vi.hoisted(() => ({
   openExternalUrl: vi.fn(),
   loadOllamaModels: vi.fn(),
   loadLMStudioModels: vi.fn(),
+  loadOmlxModels: vi.fn(),
   dropdownOpenChange: null as null | ((open: boolean) => void),
   preventBaseUIHandler: vi.fn(),
   selectedMode: "build",
@@ -76,6 +77,12 @@ const mocks = vi.hoisted(() => ({
     displayName: string;
   }>,
   lmStudioError: null as Error | null,
+  omlxModels: [] as Array<{
+    provider: "omlx";
+    modelName: string;
+    displayName: string;
+  }>,
+  omlxError: null as Error | null,
   freeModelQuota: {
     quotaStatus: {
       messagesUsed: 3,
@@ -415,6 +422,15 @@ vi.mock("@/hooks/useLMStudioModels", () => ({
   }),
 }));
 
+vi.mock("@/hooks/useOmlxModels", () => ({
+  useOmlxModels: () => ({
+    models: mocks.omlxModels,
+    loading: false,
+    error: mocks.omlxError,
+    loadModels: mocks.loadOmlxModels,
+  }),
+}));
+
 vi.mock("@/components/PriceBadge", () => ({
   PriceBadge: () => <span data-testid="price-badge" />,
 }));
@@ -544,6 +560,8 @@ describe("ModelPicker", () => {
     mocks.loadOllamaModels.mockResolvedValue(undefined);
     mocks.loadLMStudioModels.mockReset();
     mocks.loadLMStudioModels.mockResolvedValue(undefined);
+    mocks.loadOmlxModels.mockReset();
+    mocks.loadOmlxModels.mockResolvedValue(undefined);
     mocks.dropdownOpenChange = null;
     mocks.preventBaseUIHandler.mockReset();
     mocks.selectedMode = "build";
@@ -562,6 +580,8 @@ describe("ModelPicker", () => {
     mocks.ollamaError = null;
     mocks.lmStudioModels = [];
     mocks.lmStudioError = null;
+    mocks.omlxModels = [];
+    mocks.omlxError = null;
     mocks.settings.enableDyadPro = true;
     mocks.settings.providerSettings.auto.apiKey.value = "dyad-pro-key";
     mocks.settings.providerSettings.openrouter.apiKey.value = "";
@@ -993,6 +1013,7 @@ describe("ModelPicker", () => {
     ).toBeTruthy();
     expect(within(allModelsMenu).getByText("Ollama")).toBeTruthy();
     expect(within(allModelsMenu).getByText("LM Studio")).toBeTruthy();
+    expect(within(allModelsMenu).getByText("oMLX")).toBeTruthy();
     expect(screen.queryByText("Local models")).toBeNull();
   });
 
