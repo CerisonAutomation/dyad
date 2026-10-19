@@ -13,7 +13,7 @@ export function getInferenceSource(
   isEngineEnabled: boolean,
 ): InferenceSource {
   if (model.connection === "subscription") return "subscription";
-  if (["ollama", "lmstudio"].includes(model.provider)) return "local";
+  if (["ollama", "lmstudio", "omlx"].includes(model.provider)) return "local";
   if (model.connection === "pro" || isEngineEnabled) return "pro";
   return "api-key";
 }

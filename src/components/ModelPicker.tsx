@@ -30,6 +30,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { usePostHog } from "posthog-js/react";
 import { useLocalModels } from "@/hooks/useLocalModels";
 import { useLocalLMSModels } from "@/hooks/useLMStudioModels";
+import { useOmlxModels } from "@/hooks/useOmlxModels";
 import { useLanguageModelsByProviders } from "@/hooks/useLanguageModelsByProviders";
 
 import { ipc, type LanguageModel, type LocalModel } from "@/ipc/types";
@@ -119,12 +120,12 @@ type RecentModelEntry =
   | { type: "cloud"; providerId: string; model: LanguageModel }
   | {
       type: "local";
-      providerId: "ollama" | "lmstudio";
+      providerId: "ollama" | "lmstudio" | "omlx";
       model: LocalModel;
     }
   | {
       type: "local-loading";
-      providerId: "ollama" | "lmstudio";
+      providerId: "ollama" | "lmstudio" | "omlx";
       modelName: string;
     };
 type ModelSelectParams = {
@@ -412,16 +413,25 @@ export function ModelPicker() {
     error: lmStudioError,
     loadModels: loadLMStudioModels,
   } = useLocalLMSModels();
+
+  // oMLX Models Hook
+  const {
+    models: omlxModels,
+    loading: omlxLoading,
+    error: omlxError,
+    loadModels: loadOmlxModels,
+  } = useOmlxModels();
   const [localProvidersLoaded, setLocalProvidersLoaded] = useState({
     ollama: false,
     lmstudio: false,
+    omlx: false,
   });
 
   // Load models when the dropdown opens
   useEffect(() => {
     if (open) {
       let active = true;
-      setLocalProvidersLoaded({ ollama: false, lmstudio: false });
+      setLocalProvidersLoaded({ ollama: false, lmstudio: false, omlx: false });
       void loadOllamaModels().finally(() => {
         if (active) {
           setLocalProvidersLoaded((loaded) => ({ ...loaded, ollama: true }));
@@ -435,11 +445,16 @@ export function ModelPicker() {
           }));
         }
       });
+      void loadOmlxModels().finally(() => {
+        if (active) {
+          setLocalProvidersLoaded((loaded) => ({ ...loaded, omlx: true }));
+        }
+      });
       return () => {
         active = false;
       };
     }
-  }, [open, loadOllamaModels, loadLMStudioModels]);
+  }, [open, loadOllamaModels, loadLMStudioModels, loadOmlxModels]);
 
   // Get display name for the selected model
   const selectedModel: LargeLanguageModel = modelForChatBackend(chat, settings);
@@ -464,6 +479,13 @@ export function ModelPicker() {
         lmStudioModels.find(
           (model: LocalModel) => model.modelName === displayModel.name,
         )?.displayName || displayModel.name // Fallback to path if not found
+      );
+    }
+    if (selectedModel.provider === "omlx") {
+      return (
+        omlxModels.find(
+          (model: LocalModel) => model.modelName === selectedModel.name,
+        )?.displayName || selectedModel.name
       );
     }
 
@@ -720,6 +742,32 @@ export function ModelPicker() {
               },
             ];
       }
+      if (recentModel.provider === "omlx") {
+        if (omlxError) {
+          return [];
+        }
+        const model = omlxModels.find(
+          (candidate) => candidate.modelName === recentModel.name,
+        );
+        if (model) {
+          return [
+            {
+              type: "local" as const,
+              providerId: "omlx" as const,
+              model,
+            },
+          ];
+        }
+        return localProvidersLoaded.omlx
+          ? []
+          : [
+              {
+                type: "local-loading" as const,
+                providerId: "omlx" as const,
+                modelName: recentModel.name,
+              },
+            ];
+      }
 
       const model = modelsByProviders?.[recentModel.provider]?.find(
         (candidate) =>
@@ -777,6 +825,15 @@ export function ModelPicker() {
           Boolean(lmStudioError) ||
           !localProvidersLoaded.lmstudio ||
           lmStudioModels.some(
+            (candidate) => candidate.modelName === recentModel.name,
+          )
+        );
+      }
+      if (recentModel.provider === "omlx") {
+        return (
+          Boolean(omlxError) ||
+          !localProvidersLoaded.omlx ||
+          omlxModels.some(
             (candidate) => candidate.modelName === recentModel.name,
           )
         );
@@ -1313,7 +1370,7 @@ export function ModelPicker() {
   };
 
   const renderLocalModelItem = (
-    providerId: "ollama" | "lmstudio",
+    providerId: "ollama" | "lmstudio" | "omlx",
     model: LocalModel,
   ) => {
     const modelRef = { name: model.modelName, provider: providerId };
@@ -1429,7 +1486,7 @@ export function ModelPicker() {
     loading: localLoading,
     error,
   }: {
-    providerId: "ollama" | "lmstudio";
+    providerId: "ollama" | "lmstudio" | "omlx";
     label: string;
     models: LocalModel[];
     loading: boolean;
@@ -1828,6 +1885,13 @@ export function ModelPicker() {
                       models: lmStudioModels,
                       loading: lmStudioLoading,
                       error: lmStudioError,
+                    })}
+                    {renderLocalProviderSubmenu({
+                      providerId: "omlx",
+                      label: "oMLX",
+                      models: omlxModels,
+                      loading: omlxLoading,
+                      error: omlxError,
                     })}
                     {otherProviderEntries.length > 0 && (
                       <>

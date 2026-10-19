@@ -73,6 +73,7 @@ const providers = [
   "openrouter",
   "ollama",
   "lmstudio",
+  "omlx",
   "azure",
   "xai",
   "bedrock",
@@ -80,7 +81,8 @@ const providers = [
 ] as const;
 
 export const cloudProviders = providers.filter(
-  (provider) => provider !== "ollama" && provider !== "lmstudio",
+  (provider) =>
+    provider !== "ollama" && provider !== "lmstudio" && provider !== "omlx",
 );
 
 /**
