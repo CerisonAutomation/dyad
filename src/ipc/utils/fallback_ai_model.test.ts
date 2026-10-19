@@ -738,6 +738,87 @@ describe("fallback failure policy", () => {
     await expect(read).rejects.toThrow();
     reader.releaseLock();
   });
+
+  it("falls back when a provider closes the stream with no content and no finish", async () => {
+    const calls: string[] = [];
+    const emptyCloser = {
+      specificationVersion: "v3",
+      provider: "fake",
+      modelId: "empty-closer",
+      supportedUrls: {},
+      async doGenerate() {
+        throw new Error("not used");
+      },
+      async doStream() {
+        calls.push("empty-closer");
+        return {
+          stream: new ReadableStream<LanguageModelV3StreamPart>({
+            start(controller) {
+              controller.close();
+            },
+          }),
+        };
+      },
+    } as unknown as LanguageModelV3;
+    const backupCalls: string[] = [];
+    const model = createFallback({
+      models: [
+        emptyCloser,
+        sequencedModel({
+          modelId: "backup",
+          outcomes: [{ type: "succeed" }],
+          calls: backupCalls,
+        }),
+      ],
+    }) as unknown as LanguageModelV3;
+
+    const result = await model.doStream({
+      prompt: [],
+      headers: { "x-dyad-internal-request-id": "request-empty-close" },
+    } as unknown as LanguageModelV3CallOptions);
+    await drain(result.stream);
+
+    expect(calls).toEqual(["empty-closer"]);
+    expect(backupCalls).toEqual(["backup"]);
+  });
+
+  it("does not fall back when the stream ends with a finish part", async () => {
+    const calls: string[] = [];
+    const finishOnly = {
+      specificationVersion: "v3",
+      provider: "fake",
+      modelId: "finish-only",
+      supportedUrls: {},
+      async doGenerate() {
+        throw new Error("not used");
+      },
+      async doStream() {
+        calls.push("finish-only");
+        return {
+          stream: new ReadableStream<LanguageModelV3StreamPart>({
+            start(controller) {
+              controller.enqueue({
+                type: "finish",
+                finishReason: "stop",
+              } as LanguageModelV3StreamPart);
+              controller.close();
+            },
+          }),
+        };
+      },
+    } as unknown as LanguageModelV3;
+    const model = createFallback({
+      models: [finishOnly],
+    }) as unknown as LanguageModelV3;
+
+    const result = await model.doStream({
+      prompt: [],
+      headers: { "x-dyad-internal-request-id": "request-finish-only" },
+    } as unknown as LanguageModelV3CallOptions);
+    await drain(result.stream);
+
+    expect(calls).toEqual(["finish-only"]);
+  });
 });
 
 describe("fallback model call options", () => {

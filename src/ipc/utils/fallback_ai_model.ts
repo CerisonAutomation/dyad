@@ -101,6 +101,10 @@ const FALLBACK_NEXT_ERROR_PATTERNS = [
   // "… is only available on agentic harnesses") says nothing about the next
   // candidate, so move down the chain instead of failing the turn.
   "only available on",
+  // Thrown by the wrapped stream below when a provider closes the response
+  // with neither content nor a finish part. The message is ours, so this
+  // pattern is stable across gateways.
+  "ended without a finish reason",
 ];
 
 function isRecord(value: unknown): value is Record<string, any> {
@@ -800,6 +804,7 @@ class FallbackModel implements LanguageModelV3 {
           stream: ReadableStream<LanguageModelV3StreamPart>,
         ): Promise<void> => {
           let attemptHasStreamedContent = false;
+          let attemptSawFinish = false;
           reader = stream.getReader();
 
           try {
@@ -807,6 +812,16 @@ class FallbackModel implements LanguageModelV3 {
               const { done, value } = await reader.read();
 
               if (done) {
+                // A provider that closes the stream with neither content nor
+                // a finish part dropped the turn (flaky free gateways do this
+                // by ending SSE cleanly). Closing normally here would surface
+                // downstream as "ended without a finish reason" with no
+                // recovery, so fail loudly into the fallback chain instead.
+                if (!attemptSawFinish && !attemptHasStreamedContent) {
+                  throw new Error(
+                    "Response stream ended without a finish reason",
+                  );
+                }
                 controller.close();
                 return;
               }
@@ -825,6 +840,9 @@ class FallbackModel implements LanguageModelV3 {
 
               controller.enqueue(value);
 
+              if (value && value.type === "finish") {
+                attemptSawFinish = true;
+              }
               // Mark that we've streamed actual content (not just metadata)
               if (isStreamContentPart(value)) {
                 attemptHasStreamedContent = true;
