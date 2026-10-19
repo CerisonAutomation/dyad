@@ -1,7 +1,7 @@
 import { runningApps } from "@/ipc/utils/process_manager";
 import { z } from "zod";
 import { readSettings } from "@/main/settings";
-import { isDyadProEnabled } from "@/lib/schemas";
+import { isAgent2Enabled } from "@/lib/schemas";
 import {
   isShellExperimentAvailable,
   shellExecutionGuidance,
@@ -84,7 +84,7 @@ export const runShellTool: ToolDefinition<z.infer<typeof schema>> = {
       if (mode === "cloud" || mode === "docker") return false;
       return isShellExperimentAvailable({
         settings,
-        isDyadPro: ctx.isDyadPro && isDyadProEnabled(settings),
+        isDyadPro: ctx.isDyadPro && isAgent2Enabled(settings),
         freeModelMode: ctx.freeModelMode,
         isChild: !!ctx.mutationActivityOwner?.persona,
       });
