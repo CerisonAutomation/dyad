@@ -43,6 +43,11 @@ import { getOmlxBaseUrl } from "./omlx_utils";
 import { createOllamaProvider } from "./ollama_provider";
 import { getOllamaApiUrl } from "../handlers/local_model_ollama_handler";
 import { createFallback } from "./fallback_ai_model";
+import { listRestrictedModels } from "./restricted_model_memory";
+import {
+  listCustomProviderModelNames,
+  orderCustomBackupNames,
+} from "./custom_provider_backup";
 import { getDyadEngineBaseUrl } from "./dyad_engine_url";
 import { getTestFetchOption } from "./test_fetch_override";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
@@ -1018,16 +1023,48 @@ function getRegularModelClient(
           );
         }
         // Assume custom providers are OpenAI compatible for now
-        const provider = createOpenAICompatible({
-          name: providerConfig.id,
-          includeUsage,
-          baseURL: providerConfig.apiBaseUrl,
-          apiKey,
-          ...getModelClientFetchOption(),
-        });
+        const buildCustomModel = (modelName: string) =>
+          createOpenAICompatible({
+            name: providerConfig.id,
+            includeUsage,
+            baseURL: providerConfig.apiBaseUrl as string,
+            apiKey,
+            ...getModelClientFetchOption(),
+          })(modelName);
+        // Backups stay inside the same custom provider (same key, same
+        // account), so failing over can never silently switch billing
+        // sources. Restricted ids observed earlier are left out up front.
+        // A provider with a single registered model behaves exactly as before.
+        let backupNames: string[] = [];
+        try {
+          backupNames = orderCustomBackupNames(
+            model.name,
+            listCustomProviderModelNames(model.provider),
+            listRestrictedModels(),
+          );
+        } catch (error) {
+          logger.warn(
+            `Custom-provider backup lookup failed for ${model.provider}; using the selected model alone`,
+            error,
+          );
+        }
+        if (backupNames.length === 0) {
+          return {
+            modelClient: {
+              model: buildCustomModel(model.name),
+              builtinProviderId: providerConfig.id,
+              reasoningEffortProviderId: providerConfig.id,
+            },
+            backupModelClients: [],
+          };
+        }
+        const chain = [model.name, ...backupNames];
         return {
           modelClient: {
-            model: provider(model.name),
+            model: createFallback({
+              models: chain.map((name) => buildCustomModel(name)),
+              allowFallback: chain.map(() => true),
+            }),
             builtinProviderId: providerConfig.id,
             reasoningEffortProviderId: providerConfig.id,
           },
