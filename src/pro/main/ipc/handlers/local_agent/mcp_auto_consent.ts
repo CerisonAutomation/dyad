@@ -1,20 +1,22 @@
-import type { UserSettings } from "@/lib/schemas";
+import { streamText } from "ai";
+import { z } from "zod";
+import log from "electron-log";
+import { getModelClient } from "@/ipc/utils/get_model_client";
+import type { LargeLanguageModel, UserSettings } from "@/lib/schemas";
 import { buildMcpConsentSystemPrompt } from "@/prompts/mcp_consent_policy";
 import type { McpAutoApproveResult } from "@/ipc/utils/mcp_consent";
-import { reviewToolAction } from "./tool_safety_reviewer";
+import { fastTextOutput } from "@/ipc/utils/stream_text_utils";
+import { extractJson } from "@/ipc/utils/extract_json";
 import {
   formatRecentTurns,
   getRecentTurnsForConsent,
   type RecentTurn,
 } from "./mcp_consent_context";
 
-<<<<<<< HEAD
-=======
 const logger = log.scope("mcp-auto-consent");
 
 const CLASSIFIER_TIMEOUT_MS = 8000;
 
->>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
 export interface McpConsentDecision {
   decision: "allow" | "ask";
   reason: string;
@@ -28,8 +30,19 @@ export interface ClassifyMcpToolConsentInput {
   args: unknown;
   recentTurns: RecentTurn[];
   settings: UserSettings;
-  signal?: AbortSignal;
 }
+
+// Fail-closed default: when anything goes wrong, ask.
+function ask(reason: string): McpConsentDecision {
+  return { decision: "ask", reason };
+}
+
+// reason is emitted first so it acts as a brief reasoning step before the
+// verdict, not a post-hoc rationalization.
+const rawDecisionSchema = z.object({
+  reason: z.string().optional(),
+  decision: z.enum(["allow", "ask"]),
+});
 
 function buildUserPayload(input: ClassifyMcpToolConsentInput): string {
   const schema = input.inputSchema
@@ -55,15 +68,17 @@ function buildUserPayload(input: ClassifyMcpToolConsentInput): string {
 export async function classifyMcpToolConsent(
   input: ClassifyMcpToolConsentInput,
 ): Promise<McpConsentDecision> {
-  return reviewToolAction({
-    settings: input.settings,
-    system: buildMcpConsentSystemPrompt(),
-    fallback: "ask",
-    signal: input.signal,
-    prepare: async () => ({ payload: buildUserPayload(input) }),
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  // Race the stream against a timeout that rejects, so a stuck request can
+  // never block the tool call. On timeout, abort() cancels the in-flight
+  // request so it doesn't keep running after we've moved on.
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error("classifier timeout"));
+    }, CLASSIFIER_TIMEOUT_MS);
   });
-<<<<<<< HEAD
-=======
   try {
     // Classify with the user's own model. A compiled-in OpenAI model made
     // auto-consent impossible for anyone without that key.
@@ -110,7 +125,6 @@ export async function classifyMcpToolConsent(
   } finally {
     clearTimeout(timer);
   }
->>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
 }
 
 // Builds the auto-approve callback for requireMcpToolConsent, or undefined when
@@ -118,7 +132,6 @@ export async function classifyMcpToolConsent(
 // agent MCP paths (sandbox host functions and directly-registered tools) so
 // auto-approval behaves the same regardless of how the tool is plumbed.
 export function buildMcpAutoApprove(params: {
-  signal?: AbortSignal;
   settings: UserSettings;
   isDyadPro: boolean;
   freeModelMode?: boolean;
@@ -149,7 +162,6 @@ export function buildMcpAutoApprove(params: {
         args: params.args,
         recentTurns,
         settings: params.settings,
-        signal: params.signal,
       });
       return {
         approved: decision.decision === "allow",

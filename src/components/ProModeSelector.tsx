@@ -19,32 +19,10 @@ import {
   TooltipContent,
 } from "@/components/ui/tooltip";
 import { useSettings } from "@/hooks/useSettings";
-<<<<<<< HEAD
-import { ipc } from "@/ipc/types";
-import { hasDyadProKey } from "@/lib/schemas";
-import { useQuery } from "@tanstack/react-query";
-import { queryKeys } from "@/lib/queryKeys";
-
-export function ProModeSelector() {
-  const { settings, updateSettings } = useSettings();
-  const subscription = useSubscriptionAccount();
-  const claudeStatus = useQuery({
-    queryKey: queryKeys.system.claudeCodeStatus,
-    queryFn: () => ipc.chat.claudeCodeStatus({}),
-    enabled: !!settings?.enableClaudeCodeSubscription,
-    staleTime: 10_000,
-  });
-  const claudeConnected =
-    !!settings?.enableClaudeCodeSubscription &&
-    !!claudeStatus.data?.connected &&
-    !!claudeStatus.data?.compatible;
-  const subscriptionConnected = subscription.data?.connected || claudeConnected;
-=======
 import type { UserSettings } from "@/lib/schemas";
 
 export function ProModeSelector() {
   const { settings, updateSettings } = useSettings();
->>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
 
   const toggleAgent2Enabled = () => {
     void updateSettings({ enableAgent2: !settings?.enableAgent2 });
@@ -89,7 +67,7 @@ export function ProModeSelector() {
         </TooltipTrigger>
         <TooltipContent>Configure Agent2 settings</TooltipContent>
       </Tooltip>
-      <PopoverContent className="w-[26rem] max-w-[calc(100vw-2rem)] border-primary/20">
+      <PopoverContent className="w-80 border-primary/20">
         <div className="space-y-4">
           <div className="space-y-1">
             <h4 className="font-medium flex items-center gap-1.5">
@@ -112,83 +90,6 @@ export function ProModeSelector() {
                 value="agent2-features"
                 className="rounded-lg border border-border/60 bg-muted/30 px-3 border-b-0"
               >
-<<<<<<< HEAD
-                Unlock Pro modes
-              </a>
-            </div>
-          )}
-          {(hasProKey || settings?.proModelUsage === "api-key") && (
-            <div className="space-y-2">
-              <Label>Model usage</Label>
-              <ToggleGroup
-                aria-label="Model usage"
-                variant="outline"
-                size="sm"
-                orientation="horizontal"
-                className="w-full items-stretch [&>button]:h-auto [&>button]:min-h-8 [&>button]:flex-auto [&>button]:whitespace-normal [&>button]:py-1"
-                value={[
-                  settings?.proModelUsage === "api-key"
-                    ? "api-key"
-                    : subscriptionConnected && settings?.proModelUsage !== "pro"
-                      ? "subscription"
-                      : "pro",
-                ]}
-                onValueChange={(value) => {
-                  if (
-                    value[0] === "pro" ||
-                    value[0] === "api-key" ||
-                    (value[0] === "subscription" && subscriptionConnected)
-                  )
-                    void updateSettings({
-                      proModelUsage: value[0] as
-                        | "pro"
-                        | "subscription"
-                        | "api-key",
-                    });
-                }}
-              >
-                <ToggleGroupItem
-                  value="subscription"
-                  disabled={!subscriptionConnected}
-                  className="text-xs aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:hover:bg-primary aria-pressed:hover:text-primary-foreground"
-                >
-                  {settings?.enableClaudeCodeSubscription
-                    ? "Subscriptions"
-                    : "ChatGPT Subscription"}
-                </ToggleGroupItem>
-                <ToggleGroupItem
-                  value="pro"
-                  disabled={!hasProKey}
-                  className="text-xs aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:hover:bg-primary aria-pressed:hover:text-primary-foreground"
-                  onClick={() => {
-                    // Disconnected accounts display Pro even when the saved
-                    // preference still requires subscription credentials.
-                    // Clicking that selected toggle emits an empty value.
-                    if (
-                      !subscriptionConnected &&
-                      settings?.proModelUsage !== "api-key" &&
-                      settings?.proModelUsage !== "pro"
-                    )
-                      void updateSettings({ proModelUsage: "pro" });
-                  }}
-                >
-                  Dyad Pro credits
-                </ToggleGroupItem>
-                <ToggleGroupItem value="api-key" className="text-xs">
-                  Your API keys
-                </ToggleGroupItem>
-              </ToggleGroup>
-            </div>
-          )}
-          <SelectorRow
-            id="pro-enabled"
-            label="Enable Dyad Pro"
-            tooltip="Uses your selected model usage source and Dyad Pro credits for Pro features."
-            isTogglable={hasProKey}
-            settingEnabled={Boolean(settings?.enableDyadPro)}
-            toggle={toggleProEnabled}
-          />
-=======
                 <AccordionTrigger className="cursor-pointer py-2 text-foreground/80 hover:text-foreground hover:no-underline">
                   Agent2 features
                 </AccordionTrigger>
@@ -215,7 +116,6 @@ export function ProModeSelector() {
               </AccordionItem>
             </Accordion>
           </div>
->>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
         </div>
       </PopoverContent>
     </Popover>

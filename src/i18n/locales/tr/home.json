@@ -60,7 +60,6 @@
   "createApp": "Uygulama Oluştur",
   "forceCloseDetected": "Zorla Kapatma Algılandı",
   "forceCloseDescription": "Uygulama son çalıştığında düzgün kapatılmadı. Bu, bir çökme veya beklenmeyen sonlanmaya işaret edebilir.",
-  "reportThisCrash": "Bu çökmeyi bildir",
   "lastKnownState": "Bilinen Son Durum:",
   "noDiagnosticData": "Bu çökme için kullanılabilir tanılama verisi yok.",
   "processMetrics": "İşlem Ölçümleri",
@@ -149,61 +148,6 @@
     "titlePlaceholder": "Başlık",
     "descriptionPlaceholder": "Açıklama (isteğe bağlı)",
     "contentPlaceholder": "İçerik"
-  },
-  "report": {
-    "whatHappened": "Ne oldu? (zorunlu)",
-    "descriptionPlaceholder": "Sorunu ve nasıl yeniden oluşturulacağını açıklayın. Ne kadar çok ayrıntı verirseniz o kadar hızlı yardımcı olabiliriz.",
-    "descriptionRequired": "Lütfen ne olduğunu açıklayın — tek cümle yeterli.",
-    "capReached": "Karakter sınırına ulaşıldı. Açıklamanızı bir sonraki adımda GitHub üzerinde tamamlayabilirsiniz.",
-    "preparing": "Raporunuz hazırlanıyor...",
-    "createIssue": "GitHub sorunu oluştur",
-    "public": "Herkese açık",
-    "private": "Özel — yalnızca Dyad ekibi",
-    "showWhatWillBeSent": "Gönderilecekleri göster",
-    "systemTitle": "Temel sistem bilgileri ve günlükler",
-    "systemSubtitle": "Sürüm, platform, ayarlar ve uygulama günlükleri. Günlükler dosya yolları ve proje adları içerebilir.",
-    "diagnosticsFailed": "Teşhis verileri okunamadı. Raporunuz yine de gönderilecek.",
-    "diagnosticsLoading": "Teşhis verileri yükleniyor...",
-    "sessionTitle": "Sohbet oturumu",
-    "sessionSubtitle": "Ekibin sorunu yeniden oluşturabilmesi için sohbet mesajlarınız ve kodunuzun bir anlık görüntüsü.",
-    "sessionLoading": "Sohbet oturumu yükleniyor...",
-    "sessionExpand": "Gönderilecek oturumu yüklemek için genişletin.",
-    "sessionUnavailable": "Oturumu dahil etmek için önce bir sohbet açın.",
-    "reportAnIssue": "Sorun bildir",
-    "reportBugBlurb": "Ne ters gittiğini bize anlatın. Yanında ne gönderileceğini siz seçersiniz.",
-    "reportBugHeading": "Hata bildir",
-    "back": "Geri",
-    "sessionUploadFailed": "Sohbet oturumunuz yüklenemedi. Rapor onsuz gönderiliyor.",
-    "systemInfoFailed": "Sistem bilgileriniz dahil edilemedi. Rapor onsuz gönderiliyor.",
-    "screenshotRestoreFailed": "Ekran görüntünüz geri yüklenemedi. Rapor onsuz gönderiliyor.",
-    "screenshotDropped": "Ekran görüntünüz artık geri yüklenemediği için bu rapordan kaldırıldı.",
-    "screenshotUploadFailed": "Ekran görüntünüz eklenemedi. Soruna yapıştırabilmeniz için Dyad onu panonuza koyacak.",
-    "filingFailed": "Raporunuz gönderilirken bir şeyler ters gitti. Lütfen tekrar deneyin.",
-    "updaterLogs": "Otomatik Güncelleyici Günlükleri",
-    "appMetadata": "Uygulama Metaverisi",
-    "providers": "Özel Sağlayıcılar ve Modeller",
-    "mcpServers": "MCP Sunucuları",
-    "memoryDiagnostics": "Bellek Teşhisi",
-    "settingsLabel": "Ayarlar",
-    "notAvailable": "Kullanılamıyor",
-    "screenshot": "Ekran görüntüsü",
-    "addScreenshot": "Ekran görüntüsü ekle",
-    "takingScreenshot": "Ekran görüntüsü alınıyor...",
-    "screenshotHint": "Bu iletişim kutusu kenara çekilir; önce hatanın olduğu yere gidebilirsiniz. Ekran görüntüsü raporunuza otomatik olarak eklenir.",
-    "captureBarLabel": "Hata raporunuz için ekran görüntüsü",
-    "captureBarHeading": "Hatanın olduğu yere gidin.",
-    "captureBarHint": "Hata ekrandayken yakalayın. Raporunuz kaydedilir ve ekran görüntüsüyle birlikte yeniden açılır.",
-    "captureBarCapture": "Ekran görüntüsü yakala",
-    "captureBarCancel": "Rapora dön",
-    "filedHeading": "Ekran görüntünüzü yapıştırdınız mı?",
-    "filedPasteBody": "Ekran görüntünüz otomatik olarak eklenemedi, bu yüzden panonuzda bekliyor. Eklemek için GitHub sorununda {{shortcut}} tuşlarına basın. Sorunu onsuz gönderdiyseniz sorunu düzenleyin ve görüntüyü oraya yapıştırın. Zaten ekliyse işiniz tamam.",
-    "filedDone": "Bitti",
-    "screenshotAlt": "Dyad penceresinin ekran görüntüsü",
-    "screenshotAttachHint": "Bu görüntü, herkesin görebileceği GitHub sorununuza eklenecek. Herkese açık olmasını istemediğiniz bir şey içermediğinden emin olun.",
-    "screenshotFailed": "Ekran görüntüsü alınamadı.",
-    "screenshotStillFile": "Raporu onsuz da gönderebilirsiniz.",
-    "retake": "Yeniden çek",
-    "remove": "Kaldır"
   },
   "help": {
     "needHelp": "Dyad ile ilgili yardıma mı ihtiyacınız var?",
@@ -389,12 +333,6 @@
       "publishApp": "Uygulamayı Yayımla",
       "github": "GitHub",
       "githubDescription": "İşbirliği için kodunuzu GitHub'a eşitleyin.",
-      "gitlab": "GitLab",
-      "gitlabDescription": "Kodunuzu gitlab.com'daki veya kendi örneğinizdeki GitLab ile eşitleyin.",
-      "repository": "Depo",
-      "repositoryDescription": "Kodunuzu GitHub veya GitLab ile eşitleyin.",
-      "chooseProvider": "Bu uygulamanın kodu nerede tutulsun?",
-      "loadingProviders": "Hangi sağlayıcıların kullanılabilir olduğu kontrol ediliyor…",
       "vercel": "Vercel",
       "vercelDescription": "Uygulamanızı Vercel'e dağıtarak yayımlayın.",
       "githubRequiredForVercel": "Vercel Dağıtımı için GitHub Gerekli",
@@ -467,33 +405,7 @@
       "undo": "Geri Al",
       "redo": "Yinele",
       "addToChat": "Sohbete Ekle",
-<<<<<<< HEAD
-      "closeAnnotator": "Açıklayıcıyı Kapat",
-      "proFeatureTitle": "Açıklayıcı bir Pro Özelliğidir",
-      "proFeatureDescription": "Dyad Pro ile ekran görüntülerine açıklama ekleme yeteneğinin kilidini açın ve iş akışınızı geliştirin.",
-      "getDyadPro": "Dyad Pro'yu Edinin"
-    },
-    "testQueued": "Sırada",
-    "testRunsQueued_one": "{{count}} çalıştırma sırada",
-    "testRunsQueued_other": "{{count}} çalıştırma sırada",
-    "cancelQueued": "Sıradakileri iptal et",
-    "cancelQueuedTests": "Sıradaki testleri iptal et",
-    "allTests": "Tüm testler",
-    "queueAll": "Tümünü sıraya al",
-    "queueAllTests": "Tüm testleri sıraya al",
-    "testGate": {
-      "settingsLoading": "Ayarlar yükleniyor…",
-      "settingsUnavailable": "Dyad ayarlarınızı yükleyemediği için testlerin nasıl çalıştırılacağını belirleyemiyor.",
-      "retry": "Yeniden dene",
-      "startApp": "Testleri çalıştırmak için uygulamayı başlatın.",
-      "start": "Başlat",
-      "neonRefusalRuntime": "Bu uygulama için testler çalıştırılamıyor: yalıtılmış test sunucuları henüz {{runtime}} çalışma ortamında kullanılamıyor ve Dyad, Neon testlerini gerçek veritabanınızda çalıştırmaz. Testleri çalıştırmak için host çalışma ortamına geçin.",
-      "neonRefusalDisabled": "Bu uygulama için testler çalıştırılamıyor: yalıtılmış test sunucuları Ayarlar bölümünde kapalı ve Dyad, Neon testlerini gerçek veritabanınızda çalıştırmaz. Testleri çalıştırmak için bunları açın.",
-      "turnOnSandbox": "Aç",
-      "openSettings": "Ayarları aç"
-=======
       "closeAnnotator": "Açıklayıcıyı Kapat"
->>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
     }
   },
   "integrations": {
@@ -557,31 +469,6 @@
       "failedContinueRebase": "Rebase sürdürülemedi.",
       "failedSync": "GitHub'a eşitlenemedi.",
       "failedDisconnectRepo": "Depo bağlantısı kesilemedi."
-    },
-    "gitlab": {
-      "title": "GitLab Entegrasyonu",
-      "notConnected": "Kişisel erişim belirteciyle gitlab.com'u veya kendi GitLab örneğinizi bağlayın.",
-      "connectedAs": "{{instance}} adresine {{username}} olarak bağlanıldı.",
-      "tokenExpires": "Belirtecin süresi {{date}} tarihinde doluyor.",
-      "disconnect": "GitLab bağlantısını kes",
-      "disconnected": "GitLab bağlantısı başarıyla kesildi",
-      "failedDisconnect": "GitLab bağlantısı kesilemedi",
-      "instanceUrl": "GitLab örneği URL'si",
-      "instanceUrlHint": "gitlab.com veya kendi örneğinizin adresi",
-      "token": "Kişisel erişim belirteci",
-      "tokenHint": "api kapsamına sahip bir belirteç oluşturun.",
-      "createToken": "Belirteç oluştur",
-      "instanceUrlInvalid": "Şemayı da yazın, örneğin https://gitlab.example.com.",
-      "instanceUrlUseSuggestion": "{{url}} kullan",
-      "connectTarget": "Dyad {{instance}} adresine bağlanacak.",
-      "connectFailed": "GitLab'a bağlanılamadı.",
-      "insecureTitle": "Bu adres şifreli değil",
-      "insecureExplanation": "Sizinle sunucu arasındaki ağda bulunan her şey, Dyad'ın gönderdiği erişim belirtecini okuyabilir. Sunucuya bir alan adı ve sertifika vermek bunu önler.",
-      "insecureConnectAnyway": "Yine de bağlan",
-      "connect": "GitLab'a bağlan",
-      "connecting": "Bağlanıyor...",
-      "experimentLabel": "GitLab'a yayımlamaya izin ver",
-      "experimentDescription": "GitHub’ın yanına depo sağlayıcısı olarak GitLab’ı (gitlab.com veya kendi barındırdığınız GitLab örneği) ekler. Erken aşamadadır ve değişebilir."
     },
     "githubBranch": {
       "selectBranch": "Dal seç",
@@ -766,8 +653,7 @@
       "redeploySucceededWithPruning_other": "{{count}} edge işlevi yeniden dağıtıldı ve yalnızca uzak olan işlevler kaldırıldı: {{functions}}",
       "redeployPrunedOnly": "Yalnızca uzak olan edge işlevleri kaldırıldı: {{functions}}",
       "noFunctionsToRedeploy": "Yeniden dağıtılacak yerel edge işlevi bulunamadı",
-      "redeployFailed": "Edge işlevi yeniden dağıtımı sorunlarla tamamlandı: {{error}}",
-      "previewRedirectNotice": "Dyad, yerel önizleme URL'lerini {{project}} projesinin Auth yönlendirme izin listesine otomatik olarak ekler. Ekip arkadaşları aynı URL'leri kullanabileceğinden uygulamanın bağlantısı kesildikten veya uygulama silindikten sonra bu kayıtlar korunur. Kullanılmayan kayıtları Supabase → Authentication → URL Configuration bölümünden kaldırın."
+      "redeployFailed": "Edge işlevi yeniden dağıtımı sorunlarla tamamlandı: {{error}}"
     },
     "neon": {
       "title": "Neon Entegrasyonu",
@@ -829,10 +715,7 @@
       "disconnectAccountConfirmation": "Neon hesabınızın bağlantısını kesmek istediğinizden emin misiniz? Yeniden bağlanmak için OAuth ile yeniden kimlik doğrulamanız gerekecek.",
       "removeVercelEnvVars": "Neon ortam değişkenlerini Vercel'den kaldır",
       "removeVercelEnvVarsHelp": "Bağlantısı kesilmiş bir veritabanını işaret etmemeleri için bağlı Vercel projesinden DATABASE_URL ve Neon Auth değişkenlerini siler.",
-      "failedRemoveVercelEnvVars": "Bağlantı kesildi ancak Neon ortam değişkenleri Vercel'den kaldırılamadı.",
-      "removeCloudflareEnvVars": "Neon gizli değerlerini Cloudflare'den kaldır",
-      "removeCloudflareEnvVarsHelp": "Bağlantısı kesilmiş bir veritabanını işaret etmemeleri için bağlı Worker'lardan DATABASE_URL ve NEON_AUTH_BASE_URL'yi siler.",
-      "failedRemoveCloudflareEnvVars": "Bağlantı kesildi ancak Neon gizli değerleri Cloudflare'den kaldırılamadı."
+      "failedRemoveVercelEnvVars": "Bağlantı kesildi ancak Neon ortam değişkenleri Vercel'den kaldırılamadı."
     },
     "db": {
       "projectInfo": "{{provider}} Proje Bilgileri",
@@ -901,11 +784,7 @@
       "syncSuccess": "Veritabanı yapılandırması Vercel'e eşitlendi ancak canlı uygulamanızın bunu kullanması için yeniden dağıtım gerekir.",
       "syncError": "Vercel'e eşitlenemedi.",
       "selectBranchError": "Veritabanı dalı seçiminiz kaydedilemedi.",
-      "clearBranchError": "Veritabanı dalı seçiminiz temizlenemedi.",
-      "syncToCloudflare": "Cloudflare'e Eşitle",
-      "syncToCloudflareHelp": "Cloudflare Worker'larınızda veritabanı gizli değerlerini ayarlayın ve adreslerini Neon'un kimlik doğrulama yönlendirme izin listesine ekleyin.",
-      "syncToCloudflareSuccess": "Veritabanı yapılandırması Cloudflare'e eşitlendi. Canlı uygulamanız bunu hemen kullanır.",
-      "syncToCloudflareError": "Cloudflare'e eşitlenemedi."
+      "clearBranchError": "Veritabanı dalı seçiminiz temizlenemedi."
     },
     "migration": {
       "title": "Veritabanı Geçişi",
@@ -962,10 +841,5 @@
       "neonUnavailable": "Supabase projesi zaten bağlı olduğundan Neon kullanılamıyor. Aynı anda yalnızca bir veritabanı entegrasyonu etkin olabilir.",
       "chooseOne": "Bir veritabanı entegrasyonu seçin. Supabase veya Neon'dan birini bağlamak, bu uygulama için diğerini devre dışı bırakır."
     }
-  },
-  "previewAuth": {
-    "neonPending": "Bu uygulamanın önizleme adresi arka planda Neon'a kaydediliyor. Kayıt tamamlanana kadar OAuth oturum açma ve kimlik doğrulama yönlendirmeleri çalışmayabilir.",
-    "supabasePending": "Bu uygulamanın önizleme yönlendirme URL'leri arka planda Supabase'e kaydediliyor. Kayıt tamamlanana kadar kimlik doğrulama yönlendirmeleri çalışmayabilir.",
-    "retry": "Yeniden başlat ve tekrar dene"
   }
 }

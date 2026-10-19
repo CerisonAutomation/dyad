@@ -1,8 +1,3 @@
-import {
-  isShellExperimentAvailable,
-  shellExecutionGuidance,
-} from "@/shared/shell_capability";
-import { isFreeProModel } from "@/lib/freeProModel";
 import { db } from "../../db";
 import { chats } from "../../db/schema";
 import { eq } from "drizzle-orm";
@@ -51,7 +46,6 @@ import {
   hasCompletedAppBlueprintQuestionnaire,
 } from "@/pro/main/ipc/handlers/local_agent/local_agent_handler";
 import { getCachedMcpToolDefs } from "@/pro/main/ipc/handlers/local_agent/tools/mcp_type_defs";
-import { collectSuggestablePlugins } from "@/pro/main/ipc/handlers/local_agent/tools/suggest_plugin";
 import { resolveRootDatabasePromptState } from "@/shared/database_provider";
 import { getAppBlueprintForChat } from "./app_blueprint_handlers";
 
@@ -192,41 +186,16 @@ export function registerTokenCountHandlers() {
         systemPrompt += "\n\n" + SUPABASE_NOT_AVAILABLE_SYSTEM_PROMPT;
       }
 
-<<<<<<< HEAD
-      const isDyadPro = isDyadProEnabled(settings);
-      const freeModelMode = isFreeProModel(selectedModel);
-=======
       const isDyadPro = isAgent2Enabled(settings);
->>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
       const mcpToolDefs =
         selectedChatMode === "local-agent" ? getCachedMcpToolDefs() : [];
-      // Cached only: an estimate must never wait on the catalog network
-      // fetch, and a failure here must not fail the whole count.
-      const suggestablePlugins =
-        selectedChatMode === "local-agent"
-          ? await collectSuggestablePlugins({
-              chatId: req.chatId,
-              cachedOnly: true,
-            }).catch((error: unknown) => {
-              logger.warn("Failed to read suggestable MCP servers", error);
-              return [];
-            })
-          : [];
-      if (
-        selectedChatMode === "local-agent" &&
-        isShellExperimentAvailable({ settings, isDyadPro, freeModelMode })
-      ) {
-        systemPrompt += `\n\n<shell_execution>\n${shellExecutionGuidance(process.platform, getDyadAppPath(chat.app.path))}\n</shell_execution>`;
-      }
       const toolDefinitionTokens = await estimateAgentToolTokens({
-        appPath: getDyadAppPath(chat.app.path),
         toolProfile: selectedChatMode === "build" ? "build" : "agent",
         readOnly: selectedChatMode === "ask",
         planModeOnly: selectedChatMode === "plan",
         basicAgentMode:
           selectedChatMode === "local-agent" && isBasicAgentMode(settings),
         enableAppBlueprint,
-        freeModelMode,
         isDyadPro,
         frameworkType,
         supabaseProjectId: chat.app.supabaseProjectId,
@@ -244,7 +213,6 @@ export function registerTokenCountHandlers() {
           isDyadPro &&
           isImplementerSubagentEnabled(settings),
         mcpToolDefs,
-        suggestablePlugins,
         canUseAdvancedSubagentTools:
           selectedChatMode === "local-agent" &&
           isDyadPro &&

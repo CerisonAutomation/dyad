@@ -6,11 +6,15 @@ import {
   escapeXmlAttr,
   escapeXmlContent,
 } from "./types";
-import { localCodeSearch } from "./local_code_search";
+import { extractCodebase } from "../../../../../../utils/codebase";
+import { engineFetch } from "./engine_fetch";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
-import { readSettings } from "@/main/settings";
 import { isCodeExplorerReady } from "@/ipc/processors/code_explorer";
-import { resolveTargetAppPath } from "./resolve_app_context";
+import { readSettings } from "@/main/settings";
+import {
+  filterDyadInternalFiles,
+  resolveTargetAppPath,
+} from "./resolve_app_context";
 
 const logger = log.scope("code_search");
 
@@ -24,6 +28,15 @@ const codeSearchSchema = z.object({
     ),
 });
 
+const FileContextSchema = z.object({
+  path: z.string(),
+  content: z.string(),
+});
+
+const codeSearchResponseSchema = z.object({
+  relevantFiles: z.array(z.string()).describe("Paths of relevant files"),
+});
+
 type CodeSearchArgs = z.infer<typeof codeSearchSchema>;
 
 function buildCodeSearchAttributes(args: Partial<CodeSearchArgs>) {
@@ -32,6 +45,42 @@ function buildCodeSearchAttributes(args: Partial<CodeSearchArgs>) {
     ? ` app_name="${escapeXmlAttr(args.app_name)}"`
     : "";
   return `${queryAttr}${appNameAttr}`;
+}
+
+async function callCodeSearch(
+  params: {
+    query: string;
+    app_name?: string;
+    filesContext: z.infer<typeof FileContextSchema>[];
+  },
+  ctx: AgentContext,
+): Promise<string[]> {
+  // Stream initial state to UI
+  ctx.onXmlStream(
+    `<dyad-code-search${buildCodeSearchAttributes({
+      query: params.query,
+      app_name: params.app_name,
+    })}>`,
+  );
+
+  const response = await engineFetch(ctx, "/tools/code-search", {
+    method: "POST",
+    body: JSON.stringify({
+      query: params.query,
+      filesContext: params.filesContext,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new DyadError(
+      `Code search failed: ${response.status} ${response.statusText} - ${errorText}`,
+      DyadErrorKind.External,
+    );
+  }
+
+  const data = codeSearchResponseSchema.parse(await response.json());
+  return data.relevantFiles;
 }
 
 const DESCRIPTION = `Search the codebase semantically to find files relevant to a query. Use this tool when you need to discover which files contain code related to a specific concept, feature, or functionality. Returns a list of file paths that are most relevant to the search query.
@@ -55,13 +104,21 @@ export const codeSearchTool: ToolDefinition<CodeSearchArgs> = {
   description: DESCRIPTION,
   inputSchema: codeSearchSchema,
   defaultConsent: "always",
+  usesEngineEndpoint: true,
 
   // Route root discovery through the Explorer sub-agent whenever it is
   // available. Inside Explorer, retain code_search as a fallback unless the
   // compiler-backed exploration surface is ready.
-  // Available when code explorer is not active (fallback tool for all users)
-  isEnabled: (ctx) =>
-    !(readSettings().enableCodeExplorer && isCodeExplorerReady(ctx.appPath)),
+  isEnabled: (ctx) => ctx.isDyadPro,
+  isDiscoverable: (ctx) => {
+    if (!ctx.subagentThreadId && ctx.canUseExplorerSubagent) return false;
+
+    const exploreCodeAvailable =
+      ctx.subagentPersona === "explorer" &&
+      readSettings().enableCodeExplorer === true &&
+      isCodeExplorerReady(ctx.appPath);
+    return !exploreCodeAvailable;
+  },
 
   getConsentPreview: (args) =>
     args.app_name
@@ -71,130 +128,62 @@ export const codeSearchTool: ToolDefinition<CodeSearchArgs> = {
   buildXml: (args, isComplete) => {
     if (!args.query) return undefined;
     if (isComplete) return undefined;
-    return `<dyad-code-search${buildCodeSearchAttributes(args)}>Searching...</dyad-code-search>`;
+    return `<dyad-code-search${buildCodeSearchAttributes(args)}>Searching...`;
   },
 
   execute: async (args, ctx: AgentContext) => {
     logger.log(`Executing code search: ${args.query}`);
     const targetAppPath = resolveTargetAppPath(ctx, args.app_name);
 
-    ctx.onXmlStream(
-      `<dyad-code-search${buildCodeSearchAttributes({
-        query: args.query,
-        app_name: args.app_name,
-      })}>`,
+    // Gather all files from the project
+    const { files } = await extractCodebase({
+      appPath: targetAppPath,
+      chatContext: {
+        contextPaths: [],
+        smartContextAutoIncludes: [],
+        excludePaths: [],
+      },
+    });
+
+    const filteredFiles = filterDyadInternalFiles(files, args.app_name);
+
+    // Map files to FileContext format
+    const filesContext = filteredFiles.map((file) => ({
+      path: file.path,
+      content: file.content,
+    }));
+
+    logger.log(
+      `Searching ${filesContext.length} files for query: "${args.query}"`,
     );
 
-    try {
-      // Tokenized search: multi-word queries ("authentication middleware")
-      // rarely match a literal phrase, so search each term separately and
-      // also match file paths. Falls back to the full-phrase literal search.
-      const results = await tokenizedCodeSearch(args.query, targetAppPath);
+    // Call the code-search endpoint
+    const relevantFiles = await callCodeSearch(
+      {
+        query: args.query,
+        app_name: args.app_name,
+        filesContext,
+      },
+      ctx,
+    );
 
-      // Format results
-      const resultText =
-        results.length === 0
-          ? "No relevant files found."
-          : results
-              .map(
-                (r) =>
-                  ` - ${r.file}:${r.line} — ${r.content.substring(0, 100)}`,
-              )
-              .join("\n");
+    // Format results
+    const resultText =
+      relevantFiles.length === 0
+        ? "No relevant files found."
+        : relevantFiles.map((f) => ` - ${f}`).join("\n");
 
-      // Write final result to UI
-      ctx.onXmlComplete(
-        `<dyad-code-search${buildCodeSearchAttributes(args)}>${escapeXmlContent(resultText)}</dyad-code-search>`,
-      );
+    // Write final result to UI and DB with dyad-code-search wrapper
+    ctx.onXmlComplete(
+      `<dyad-code-search${buildCodeSearchAttributes(args)}>${escapeXmlContent(resultText)}</dyad-code-search>`,
+    );
 
-      logger.log(`Code search completed for query: ${args.query}`);
+    logger.log(`Code search completed for query: ${args.query}`);
 
-      if (results.length === 0) {
-        return "No relevant files found for the given query.";
-      }
-
-      return `Found ${results.length} relevant match(es):\n${resultText}`;
-    } catch (error) {
-      if (error instanceof DyadError) throw error;
-      throw new DyadError(
-        `Code search failed: ${error instanceof Error ? error.message : String(error)}`,
-        DyadErrorKind.External,
-      );
+    if (relevantFiles.length === 0) {
+      return "No relevant files found for the given query.";
     }
+
+    return `Found ${relevantFiles.length} relevant file(s):\n${resultText}`;
   },
 };
-
-/**
- * Tokenized search: splits a natural-language query into terms and searches
- * both file contents and file paths for each term, then ranks/dedupes.
- * Falls back to a full-phrase literal search when the query yields nothing.
- */
-async function tokenizedCodeSearch(
-  query: string,
-  appPath: string,
-): Promise<Awaited<ReturnType<typeof localCodeSearch>>> {
-  const tokens = query
-    .split(/\s+/)
-    .map((t) => t.replace(/[^a-zA-Z0-9_./-]+/g, ""))
-    .filter((t) => t.length >= 2);
-
-  const byKey = new Map<
-    string,
-    Awaited<ReturnType<typeof localCodeSearch>>[number]
-  >();
-
-  const addResult = (
-    r: Awaited<ReturnType<typeof localCodeSearch>>[number],
-  ) => {
-    const key = `${r.file}:${r.line}`;
-    const existing = byKey.get(key);
-    if (!existing || r.score > existing.score) byKey.set(key, r);
-  };
-
-  for (const token of tokens.slice(0, 6)) {
-    const termResults = await localCodeSearch({
-      query: token,
-      appPath,
-      maxResults: 12,
-    });
-    termResults.forEach(addResult);
-  }
-
-  // Path-based matching: a query term appearing in the file path is highly
-  // relevant (e.g. "middleware" → middleware.ts, "auth" → src/app/api/auth/).
-  if (tokens.length > 0) {
-    const { execFile } = await import("node:child_process");
-    const { promisify } = await import("node:util");
-    const execFileAsync = promisify(execFile);
-    try {
-      const { stdout } = await execFileAsync("rg", ["--files", appPath], {
-        cwd: appPath,
-        timeout: 8000,
-      });
-      const lowerTokens = tokens.map((t) => t.toLowerCase());
-      for (const file of stdout.split("\n").filter(Boolean)) {
-        const lower = file.toLowerCase();
-        if (
-          lowerTokens.some((t) => lower.includes(t)) &&
-          !lower.includes("node_modules")
-        ) {
-          addResult({
-            file,
-            line: 1,
-            content: "(path match)",
-            matchType: "fuzzy",
-            score: 0.95,
-          });
-        }
-      }
-    } catch {
-      // rg unavailable — skip path matching
-    }
-  }
-
-  const results = [...byKey.values()].sort((a, b) => b.score - a.score);
-  if (results.length > 0) return results.slice(0, 20);
-
-  // Nothing matched — try the raw phrase once before giving up.
-  return localCodeSearch({ query, appPath, maxResults: 20 });
-}

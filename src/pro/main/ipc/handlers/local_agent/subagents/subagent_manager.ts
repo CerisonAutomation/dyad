@@ -3,6 +3,7 @@ import { stepCountIs, streamText, type ModelMessage, type ToolSet } from "ai";
 import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import type { WebContents } from "electron";
 import log from "electron-log";
+import { isRetryableProviderStreamError } from "../retryable_stream_errors";
 
 import { db } from "@/db";
 import {
@@ -35,15 +36,7 @@ import type {
   SubagentThreadSummary,
 } from "@/ipc/types";
 import { isSubagentAcceptingMessages, isSubagentActive } from "@/ipc/types";
-<<<<<<< HEAD
-import {
-  isDyadProEnabled,
-  type LargeLanguageModel,
-  type UserSettings,
-} from "@/lib/schemas";
-=======
 import { isAgent2Enabled, type UserSettings } from "@/lib/schemas";
->>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
 import { getChatInferenceSettings } from "@/ipc/services/chat_inference_settings";
 import { readSettings } from "@/main/settings";
 import { getDyadAppPath } from "@/paths/paths";
@@ -89,49 +82,6 @@ const MODELS = {
   reviewer: { effort: "medium" },
   implementer: { effort: "high" },
 } as const;
-
-export interface PersonaSubagentModel {
-  provider: string;
-  name: string;
-  effort: string;
-}
-
-/**
- * Resolve which model a sub-agent persona runs on. Unless the user opted out
- * with the subagentInheritChatModel setting, the persona inherits the chat's
- * selected model so sub-agents work with whatever the user configured,
- * including local and custom providers. The hardcoded entry stays as the
- * last resort when no chat model is set. Effort always stays persona-owned:
- * a reviewer reasons differently from an implementer regardless of model.
- */
-export function resolvePersonaSubagentModel(
-  persona: SubagentPersona,
-  settings: {
-    selectedModel?: Pick<LargeLanguageModel, "provider" | "name"> | null;
-    subagentInheritChatModel?: boolean;
-  },
-): PersonaSubagentModel {
-  const chatModel = settings.selectedModel;
-  if (
-    settings.subagentInheritChatModel !== false &&
-    typeof chatModel?.provider === "string" &&
-    chatModel.provider.length > 0 &&
-    typeof chatModel?.name === "string" &&
-    chatModel.name.length > 0
-  ) {
-    return {
-      provider: chatModel.provider,
-      name: chatModel.name,
-      effort: MODELS[persona].effort,
-    };
-  }
-  const defaults = MODELS[persona];
-  return {
-    provider: defaults.provider,
-    name: defaults.name,
-    effort: defaults.effort,
-  };
-}
 const MAX_DURABLE_REPORT_CHARS = 100_000;
 const MAX_ACTIVITY_XML_CHARS = 200_000;
 const MAX_ACTIVITY_OUTPUT_CHARS = 200_000;
@@ -1787,7 +1737,43 @@ async function runReview(
       abortSignal: controller.signal,
     });
     const report = reviewResult.text;
-    const parsed = parseReviewResult(report, target.files);
+    let parsed = parseReviewResult(report, target.files);
+    // A reviewer whose output could not be parsed has not actually reviewed
+    // anything, and recording it as "partial" ends the review with nothing
+    // usable. Give it exactly one more attempt with the failure attached, then
+    // accept whatever comes back. Bounded on purpose: a reviewer that cannot
+    // produce parseable JSON twice is not going to on a third try, and retrying
+    // without a bound is what wedged the queue in the first place.
+    if (parsed.parseError) {
+      logger.warn(
+        `Reviewer output for thread ${threadId} was unparseable (${parsed.parseError}); retrying once`,
+      );
+      const retry = await runModel({
+        threadId,
+        chatId: thread.chatId,
+        appId,
+        persona: "reviewer",
+        assignment:
+          `Your previous reply could not be parsed as JSON and was discarded.\n` +
+          `Parse error: ${parsed.parseError}\n\n` +
+          `Re-review the same diff. Reply with a single raw JSON object and no ` +
+          `prose, no code fence, and nothing before or after it.\n\n` +
+          `${STRUCTURED_REVIEW_INSTRUCTIONS}\n\nFiles: ${target.files.join(", ")}\n` +
+          `Excluded: ${target.exclusions.join(", ") || "none"}\n\n${target.diff}`,
+        tools: await buildSubagentVerificationTools({
+          appId,
+          appPath,
+          chatId: thread.chatId,
+        }),
+        abortSignal: controller.signal,
+      });
+      const retryParsed = parseReviewResult(retry.text, target.files);
+      // Only take the retry when it actually parsed; otherwise keep the
+      // original output so the thread still shows what was really said.
+      if (!retryParsed.parseError) {
+        parsed = retryParsed;
+      }
+    }
     const { target: currentTarget } = await buildCoordinatedReviewTarget({
       chatId: thread.chatId,
       baseCommit: target.baseCommit,
@@ -1910,7 +1896,47 @@ async function buildSubagentVerificationTools(input: {
   };
 }
 
+const MAX_SUBAGENT_STREAM_RETRIES = 3;
+const SUBAGENT_RETRY_BASE_DELAY_MS = 1_000;
+
+/**
+ * Sub-agents stream through their own path, separate from the main agent's, so
+ * they need the same transient-failure handling. A gateway that intermittently
+ * returns an empty completion ("Provider returned an empty response") otherwise
+ * aborts the sub-agent outright, and the parent then reports the whole
+ * implementer as failed even though nothing was wrong with the work.
+ */
 async function runModel(
+  params: RunModelParams,
+): Promise<{ text: string; hitStepLimit: boolean }> {
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await runModelOnce(params);
+    } catch (error) {
+      const aborted = params.abortSignal.aborted;
+      if (
+        aborted ||
+        attempt >= MAX_SUBAGENT_STREAM_RETRIES ||
+        !isRetryableProviderStreamError(error)
+      ) {
+        throw error;
+      }
+      attempt += 1;
+      const waitMs = SUBAGENT_RETRY_BASE_DELAY_MS * attempt;
+      log
+        .scope("subagent_manager")
+        .warn(
+          `Transient sub-agent stream failure for thread ${params.threadId}; ` +
+            `retrying (${attempt}/${MAX_SUBAGENT_STREAM_RETRIES}) after ${waitMs}ms: ` +
+            String(error),
+        );
+      await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
+    }
+  }
+}
+
+async function runModelOnce(
   params: RunModelParams,
 ): Promise<{ text: string; hitStepLimit: boolean }> {
   assertPro(params.persona);
@@ -2043,19 +2069,6 @@ async function personaModelSettings(
   chatId: number,
   acceptedSettings?: UserSettings,
 ) {
-<<<<<<< HEAD
-  const inferenceSettings = await getChatInferenceSettings(
-    chatId,
-    acceptedSettings,
-  );
-  const resolved = resolvePersonaSubagentModel(persona, inferenceSettings);
-  return {
-    ...inferenceSettings,
-    selectedModel: {
-      provider: resolved.provider,
-      name: resolved.name,
-      effortLevel: resolved.effort,
-=======
   const defaults = MODELS[persona];
   const base = await getChatInferenceSettings(chatId, acceptedSettings);
   // Sub-agents run on the model the user has actually selected. The persona
@@ -2067,9 +2080,8 @@ async function personaModelSettings(
     selectedModel: {
       ...base.selectedModel,
       effortLevel: defaults.effort,
->>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
     },
-    thinkingBudget: resolved.effort,
+    thinkingBudget: defaults.effort,
   };
 }
 
@@ -2078,25 +2090,6 @@ async function preflightPersonaModel(
   chatId: number,
   acceptedSettings?: UserSettings,
 ): Promise<void> {
-<<<<<<< HEAD
-  const inferenceSettings = acceptedSettings ?? readSettings();
-  const resolved = resolvePersonaSubagentModel(persona, inferenceSettings);
-  const catalog = await getBuiltinLanguageModelCatalog();
-  const catalogModels = catalog.modelsByProvider[resolved.provider];
-  // Providers the catalog does not know (custom and local providers) skip
-  // this check: their availability is proven by the credentialed client call
-  // below instead of a catalog listing.
-  const available =
-    catalogModels === undefined ||
-    catalogModels.some((model) => model.apiName === resolved.name);
-  if (!available) {
-    throw new DyadError(
-      `${persona} requires ${resolved.name}, which is not currently available. Check the model is configured and try again.`,
-      DyadErrorKind.Precondition,
-    );
-  }
-=======
->>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
   try {
     const settings = await personaModelSettings(
       persona,
@@ -2110,11 +2103,7 @@ async function preflightPersonaModel(
     await getModelClient(settings.selectedModel, settings);
   } catch (error) {
     throw new DyadError(
-<<<<<<< HEAD
-      `${persona} could not start because ${resolved.name} is not configured. Check the model is configured and try again.`,
-=======
       `${persona} could not start because ${errorMessage(error)}`,
->>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
       DyadErrorKind.Precondition,
       { cause: error },
     );
@@ -2258,18 +2247,11 @@ async function createThread(params: {
   contextJson: Record<string, unknown>;
   review?: ReviewTarget;
 }) {
-<<<<<<< HEAD
-  const resolved = resolvePersonaSubagentModel(
-    params.persona,
-    await getChatInferenceSettings(params.chatId),
-  );
-=======
   const defaults = MODELS[params.persona];
   // Record the model this thread will actually run on — the user's selected
   // model — so the persisted row is not a stale compiled-in default.
   const inference = await getChatInferenceSettings(params.chatId);
   const modelSelection = inference.selectedModel;
->>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
   const [row] = await db
     .insert(agentThreads)
     .values({
@@ -2279,15 +2261,9 @@ async function createThread(params: {
       taskName: params.taskName,
       assignment: params.assignment,
       status: "queued",
-<<<<<<< HEAD
-      provider: resolved.provider,
-      model: resolved.name,
-      reasoningEffort: resolved.effort,
-=======
       provider: modelSelection.provider,
       model: modelSelection.name,
       reasoningEffort: defaults.effort,
->>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
       invocationSource: params.invocationSource,
       contextJson: params.contextJson,
       reviewBaseCommit: params.review?.baseCommit,

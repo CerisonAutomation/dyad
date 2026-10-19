@@ -20,26 +20,7 @@ export async function resolveSubscriptionModel(
   settings: UserSettings,
 ): Promise<ModelSelection> {
   const { connection: _legacyConnection, ...identity } = model;
-<<<<<<< HEAD
-  if (settings.proModelUsage === "api-key") {
-    if (model.provider === "auto" && ["value", "free-pro"].includes(model.name))
-      throw new DyadError(
-        "This Auto option requires Pro credits. Select Pro credits or choose an API-key or local model.",
-        DyadErrorKind.Validation,
-      );
-    if (model.provider === "claude-code")
-      throw new DyadError(
-        "This chat uses Claude Code. Select Subscriptions, or choose an API-key model to start a new chat.",
-        DyadErrorKind.Validation,
-      );
-    return { ...identity, connection: "api-key" };
-  }
-  if (model.provider === "claude-code")
-    return { ...identity, connection: "subscription" };
-  const proEnabled = isDyadProEnabled(settings);
-=======
   const proEnabled = isAgent2Enabled(settings);
->>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
   // Billing a turn as Pro credits needs a real Dyad cloud credential. Pro
   // features can be enabled without one, so gate the connection on the key and
   // leave it unset otherwise — the turn then falls through to the user's own
@@ -55,7 +36,7 @@ export async function resolveSubscriptionModel(
     (p) => p.id === model.provider,
   );
   if (
-    ["ollama", "lmstudio", "omlx"].includes(model.provider) ||
+    ["ollama", "lmstudio"].includes(model.provider) ||
     provider?.type === "custom"
   ) {
     return proEnabled ? { ...identity, connection: "api-key" } : identity;
