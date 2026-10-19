@@ -823,13 +823,9 @@ export function getEffectiveDefaultChatMode(
  */
 export function isBasicAgentMode(settings: UserSettings): boolean {
   return (
-<<<<<<< HEAD
     settings.selectedModel.provider !== "claude-code" &&
-    !isDyadProEnabled(settings) &&
+    !isAgent2Enabled(settings) &&
     settings.selectedChatMode === "local-agent"
-=======
-    !isAgent2Enabled(settings) && settings.selectedChatMode === "local-agent"
->>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
   );
 }
 

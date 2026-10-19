@@ -155,35 +155,10 @@ async function createValidationModel(
       });
       return openrouter("openrouter/free");
     }
-<<<<<<< HEAD
-    case "auto": {
-      const settings = await readEffectiveSettings();
-      const dyad = createDyadEngine({
-        apiKey,
-        modelSelection: DYAD_VALIDATION_MODEL,
-        baseURL: getDyadEngineBaseUrl(),
-        ...getTestFetchOption(),
-        dyadOptions: {
-          enableLazyEdits: false,
-          enableSmartFilesContext: false,
-          enableWebSearch: false,
-        },
-        settings: {
-          ...settings,
-          enableDyadPro: true,
-          providerSettings: {
-            ...settings.providerSettings,
-            auto: {
-              ...settings.providerSettings?.auto,
-              apiKey: { value: apiKey },
-            },
-          },
-        } satisfies UserSettings,
-      });
-      return dyad.responses(DYAD_VALIDATION_MODEL.name, {
-        providerId: DYAD_VALIDATION_MODEL.provider,
-      });
-    }
+    case "auto":
+      // No hosted engine: every supported provider is validated against its
+      // own endpoint above, so there is nothing left to check here.
+      throw new Error("The hosted Dyad engine is not available");
     case "opencode": {
       const opencode = createOpenAICompatible({
         name: "opencode",
@@ -248,12 +223,6 @@ async function createValidationModel(
       });
       return vertex("gemini-2.5-flash");
     }
-=======
-    case "auto":
-      // No hosted engine: every supported provider is validated against its
-      // own endpoint above, so there is nothing left to check here.
-      throw new Error("The hosted Dyad engine is not available");
->>>>>>> 5680f080 (Checkpoint: Pro->Agent2 conversion, local tool de-engineering, spawn retry, model picker)
   }
 }
 
