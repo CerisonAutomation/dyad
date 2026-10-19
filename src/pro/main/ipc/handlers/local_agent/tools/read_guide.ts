@@ -6,6 +6,7 @@ import addAuthentication from "@/prompts/guides/add-authentication.md?raw";
 import addEmailVerification from "@/prompts/guides/add-email-verification.md?raw";
 import addPasswordReset from "@/prompts/guides/add-password-reset.md?raw";
 import customSupabaseTestFixtures from "@/prompts/guides/custom-supabase-test-fixtures.md?raw";
+import qaPreviewControl from "@/prompts/guides/qa-preview-control.md?raw";
 import { renderGuide } from "@/prompts/guides/render_guide";
 import { readSettings } from "@/main/settings";
 
@@ -18,6 +19,7 @@ const GUIDES: Record<string, string> = {
   "add-email-verification": addEmailVerification,
   "add-password-reset": addPasswordReset,
   "custom-supabase-test-fixtures": customSupabaseTestFixtures,
+  "qa-preview-control": qaPreviewControl,
 };
 
 const readGuideSchema = z.object({

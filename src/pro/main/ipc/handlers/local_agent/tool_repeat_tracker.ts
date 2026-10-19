@@ -65,7 +65,9 @@ function validateThresholds(values: number[]): number[] {
     }
   }
   if (new Set(values).size !== values.length) {
-    throw new Error("ToolRepeatTracker: thresholds must not contain duplicates");
+    throw new Error(
+      "ToolRepeatTracker: thresholds must not contain duplicates",
+    );
   }
   return [...values].sort((a, b) => a - b);
 }
@@ -104,7 +106,9 @@ function buildReminderText(
   );
 }
 
-function callKey(call: unknown): { toolName: string; canonical: string } | undefined {
+function callKey(
+  call: unknown,
+): { toolName: string; canonical: string } | undefined {
   if (!isRecord(call)) return undefined;
   if (typeof call.toolName !== "string" || call.toolName.length === 0) {
     return undefined;

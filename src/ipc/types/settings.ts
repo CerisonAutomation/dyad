@@ -6,6 +6,7 @@ export const ProviderApiKeyValidationProviderSchema = z.enum([
   "google",
   "openrouter",
   "auto",
+  "opencode",
 ]);
 
 // =============================================================================

@@ -534,7 +534,10 @@ function fakeWebContents() {
 }
 
 describe("persona sub-agent model resolution", () => {
-  const chatModel = { provider: "custom::opencode", name: "longcat-2.5-preview-free" };
+  const chatModel = {
+    provider: "custom::opencode",
+    name: "longcat-2.5-preview-free",
+  };
 
   it("inherits the chat model when the setting is unset", async () => {
     expect(
