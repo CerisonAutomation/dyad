@@ -957,12 +957,15 @@ function getRegularModelClient(
       };
     }
     case "omlx": {
-      // oMLX serves an OpenAI compatible API (default http://localhost:8000)
+      // oMLX serves an OpenAI compatible API (default http://localhost:8000).
+      // A key pasted into the provider settings is forwarded; without one the
+      // request goes out headerless like other local providers.
       const baseURL = providerConfig.apiBaseUrl || getOmlxBaseUrl() + "/v1";
       const provider = createOpenAICompatible({
         name: "omlx",
         includeUsage,
         baseURL,
+        apiKey,
         ...getModelClientFetchOption(),
       });
       return {
