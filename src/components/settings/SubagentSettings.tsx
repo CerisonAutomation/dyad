@@ -104,6 +104,15 @@ export function SubagentSettings() {
         }
       />
       <SettingRow
+        id={SETTING_IDS.subagentInheritChatModel}
+        label="Sub-agents use the chat model"
+        description="Reviewer, explorer, and implementer sub-agents run on your selected chat model instead of their built-in defaults. Turn off to pin them to the built-in models."
+        checked={settings.subagentInheritChatModel !== false}
+        onCheckedChange={(checked) =>
+          updateSettings({ subagentInheritChatModel: checked })
+        }
+      />
+      <SettingRow
         id={SETTING_IDS.enableReviewButton}
         label="Show Review changes button"
         description="Show the experimental manual Reviewer action on the latest Agent response."
