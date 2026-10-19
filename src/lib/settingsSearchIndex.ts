@@ -56,6 +56,7 @@ export const SETTING_IDS = {
   enableImplementerSubagent: "setting-enable-implementer-subagent",
   enableAdvancedSubagents: "setting-enable-advanced-subagents",
   autoFixReviewIssues: "setting-auto-fix-review-issues",
+  subagentInheritChatModel: "setting-subagent-inherit-chat-model",
   enableOwnServerDeployment: "setting-enable-own-server-deployment",
   enableGitlabPublishing: "setting-enable-gitlab-publishing",
   enableCloudflareDeployment: "setting-enable-cloudflare-deployment",
