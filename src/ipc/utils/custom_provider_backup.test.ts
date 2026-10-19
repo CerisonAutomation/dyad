@@ -35,6 +35,24 @@ describe("orderCustomBackupNames", () => {
     expect(backups).toEqual(["a", "b", "c", "d", "e"]);
     expect(backups.length).toBeLessThanOrEqual(MAX_CUSTOM_BACKUPS);
   });
+
+  it("ranks recently successful models first, keeping registration order otherwise", () => {
+    const siblings = ["space-bunny-free", "muse", "mimo", "beam"];
+    expect(
+      orderCustomBackupNames("longcat", siblings, [], new Map()),
+    ).toEqual(["space-bunny-free", "muse", "mimo", "beam"]);
+    expect(
+      orderCustomBackupNames(
+        "longcat",
+        siblings,
+        [],
+        new Map([
+          ["beam", 300],
+          ["muse", 100],
+        ]),
+      ),
+    ).toEqual(["beam", "muse", "space-bunny-free", "mimo"]);
+  });
 });
 
 describe("listCustomProviderModelNames", () => {

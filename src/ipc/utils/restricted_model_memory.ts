@@ -45,3 +45,24 @@ export function listRestrictedModels(): string[] {
 export function clearRestrictedModels(): void {
   restrictedSince.clear();
 }
+
+const lastSuccessAt = new Map<string, number>();
+
+export function noteModelSuccess(apiName: string): void {
+  if (apiName.length > 0) {
+    lastSuccessAt.set(apiName, Date.now());
+  }
+}
+
+/**
+ * Last-success timestamps keyed by model id, for ranking backup candidates
+ * by proven recency. Models that serve move first; never-tried models keep
+ * their existing relative order.
+ */
+export function lastSuccessTimestamps(): ReadonlyMap<string, number> {
+  return lastSuccessAt;
+}
+
+export function clearModelSuccesses(): void {
+  lastSuccessAt.clear();
+}
