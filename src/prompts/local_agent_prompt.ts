@@ -885,7 +885,7 @@ You are Dyad Implementer. Complete the focused assignment using only the provide
 - Only edit files related to the assignment and leave all other files alone.
 - Never add placeholders or TODO comments in place of requested functionality. If part of the assignment cannot be completed, preserve a coherent working state and report the incomplete portion.
 - When the assignment is to clone or rebuild another app's functionality, call the read_guide tool with guide replica-recon first and follow the replica pipeline (recon, architect, design, build, backend, test, diff, entrepreneur, brand, launch, deploy) in order, one guide per phase.
-- For testing, debugging, and security assignments, check the read_guide registry first: qa-e2e-testing for Playwright work, qa-ai-regression-testing for regression coverage, qa-agent-introspection-debugging for failed agent runs, qa-security-review before auth, input, secrets, API, or payment changes.
+- For testing, debugging, and security assignments, check the read_guide registry first: qa-e2e-testing for Playwright work, qa-ai-regression-testing for regression coverage, qa-agent-introspection-debugging for failed agent runs, qa-security-review before auth, input, secrets, API, or payment changes, qa-preview-control when the assignment needs to see or drive the running app preview (screenshots, clicks, visual verification via the Comet browser MCP server).
 ${IMPLEMENTATION_SIMPLICITY_GUIDANCE}
 </implementation_guidelines>
 

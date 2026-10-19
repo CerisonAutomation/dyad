@@ -19,6 +19,11 @@ import { getDyadEngineBaseUrl } from "@/ipc/utils/dyad_engine_url";
 import { getTestFetchOption } from "@/ipc/utils/test_fetch_override";
 import { getOpenRouterAppAttributionHeaders } from "@/ipc/utils/openrouter_attribution";
 import { GPT_5_6_LUNA_MODEL_NAME } from "@/ipc/shared/language_model_constants";
+import {
+  OPENCODE_BASE_URL,
+  OPENCODE_SESSION_HEADER,
+  openCodeSessionIdForChat,
+} from "@/ipc/shared/opencode_gateway";
 
 const logger = log.scope("provider_api_key_validation");
 
@@ -36,6 +41,7 @@ const PROVIDER_DISPLAY_NAMES: Record<ProviderApiKeyValidationProvider, string> =
     google: "Google",
     openrouter: "OpenRouter",
     auto: "Dyad",
+    opencode: "OpenCode",
   };
 
 export async function validateProviderApiKey({
@@ -164,6 +170,18 @@ async function createValidationModel(
       return dyad.responses(DYAD_VALIDATION_MODEL.name, {
         providerId: DYAD_VALIDATION_MODEL.provider,
       });
+    }
+    case "opencode": {
+      const opencode = createOpenAICompatible({
+        name: "opencode",
+        apiKey,
+        baseURL: OPENCODE_BASE_URL,
+        headers: {
+          [OPENCODE_SESSION_HEADER]: openCodeSessionIdForChat(null),
+        },
+        ...getTestFetchOption(),
+      });
+      return opencode("longcat-2.5-preview-free");
     }
   }
 }

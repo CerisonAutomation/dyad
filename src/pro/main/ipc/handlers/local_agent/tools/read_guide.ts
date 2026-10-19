@@ -5,22 +5,10 @@ import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import addAuthentication from "@/prompts/guides/add-authentication.md?raw";
 import addEmailVerification from "@/prompts/guides/add-email-verification.md?raw";
 import addPasswordReset from "@/prompts/guides/add-password-reset.md?raw";
-import replicaArchitect from "@/prompts/guides/replica-architect.md?raw";
-import replicaBackend from "@/prompts/guides/replica-backend.md?raw";
-import replicaBrand from "@/prompts/guides/replica-brand.md?raw";
-import replicaBuild from "@/prompts/guides/replica-build.md?raw";
-import replicaDeploy from "@/prompts/guides/replica-deploy.md?raw";
-import replicaDesign from "@/prompts/guides/replica-design.md?raw";
-import replicaDiff from "@/prompts/guides/replica-diff.md?raw";
-import replicaEntrepreneur from "@/prompts/guides/replica-entrepreneur.md?raw";
-import replicaLaunch from "@/prompts/guides/replica-launch.md?raw";
-import replicaRecon from "@/prompts/guides/replica-recon.md?raw";
-import replicaTest from "@/prompts/guides/replica-test.md?raw";
-import qaAiRegressionTesting from "@/prompts/guides/qa-ai-regression-testing.md?raw";
-import qaAgentIntrospectionDebugging from "@/prompts/guides/qa-agent-introspection-debugging.md?raw";
-import qaE2eTesting from "@/prompts/guides/qa-e2e-testing.md?raw";
-import qaSecurityReview from "@/prompts/guides/qa-security-review.md?raw";
-import { filterGuideByFramework } from "@/prompts/guides/filter_guide_by_framework";
+import customSupabaseTestFixtures from "@/prompts/guides/custom-supabase-test-fixtures.md?raw";
+import qaPreviewControl from "@/prompts/guides/qa-preview-control.md?raw";
+import { renderGuide } from "@/prompts/guides/render_guide";
+import { readSettings } from "@/main/settings";
 
 /**
  * Registry of available guides. To add a new guide, import its .md file
@@ -30,28 +18,15 @@ const GUIDES: Record<string, string> = {
   "add-authentication": addAuthentication,
   "add-email-verification": addEmailVerification,
   "add-password-reset": addPasswordReset,
-  "replica-recon": replicaRecon,
-  "replica-architect": replicaArchitect,
-  "replica-design": replicaDesign,
-  "replica-build": replicaBuild,
-  "replica-backend": replicaBackend,
-  "replica-test": replicaTest,
-  "replica-diff": replicaDiff,
-  "replica-entrepreneur": replicaEntrepreneur,
-  "replica-brand": replicaBrand,
-  "replica-launch": replicaLaunch,
-  "replica-deploy": replicaDeploy,
-  "qa-e2e-testing": qaE2eTesting,
-  "qa-ai-regression-testing": qaAiRegressionTesting,
-  "qa-agent-introspection-debugging": qaAgentIntrospectionDebugging,
-  "qa-security-review": qaSecurityReview,
+  "custom-supabase-test-fixtures": customSupabaseTestFixtures,
+  "qa-preview-control": qaPreviewControl,
 };
 
 const readGuideSchema = z.object({
   guide: z
     .string()
     .describe(
-      "Name of the guide to read (e.g. 'add-authentication', 'replica-recon', 'replica-build')",
+      "Name of the guide to read (e.g. 'add-authentication', 'add-email-verification', 'add-password-reset')",
     ),
 });
 
@@ -78,6 +53,10 @@ export const readGuideTool: ToolDefinition<z.infer<typeof readGuideSchema>> = {
         DyadErrorKind.NotFound,
       );
     }
-    return filterGuideByFramework(content, ctx.frameworkType);
+    // Fixture setup runs in Node and is identical across app frameworks.
+    if (args.guide === "custom-supabase-test-fixtures") return content;
+    return renderGuide(content, ctx.frameworkType, {
+      enableAppPreviewDomains: readSettings().enableAppPreviewDomains,
+    });
   },
 };

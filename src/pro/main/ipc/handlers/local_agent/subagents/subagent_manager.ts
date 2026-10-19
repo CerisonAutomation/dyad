@@ -29,7 +29,11 @@ import type {
   SubagentThreadSummary,
 } from "@/ipc/types";
 import { isSubagentAcceptingMessages, isSubagentActive } from "@/ipc/types";
-import { isDyadProEnabled, type UserSettings } from "@/lib/schemas";
+import {
+  isDyadProEnabled,
+  type LargeLanguageModel,
+  type UserSettings,
+} from "@/lib/schemas";
 import { getChatInferenceSettings } from "@/ipc/services/chat_inference_settings";
 import { readSettings } from "@/main/settings";
 import { getDyadAppPath } from "@/paths/paths";
@@ -87,7 +91,10 @@ export interface PersonaSubagentModel {
  */
 export function resolvePersonaSubagentModel(
   persona: SubagentPersona,
-  settings: Pick<UserSettings, "selectedModel" | "subagentInheritChatModel">,
+  settings: {
+    selectedModel?: Pick<LargeLanguageModel, "provider" | "name"> | null;
+    subagentInheritChatModel?: boolean;
+  },
 ): PersonaSubagentModel {
   const chatModel = settings.selectedModel;
   if (
@@ -1967,8 +1974,7 @@ async function preflightPersonaModel(
   chatId: number,
   acceptedSettings?: UserSettings,
 ): Promise<void> {
-  const inferenceSettings =
-    acceptedSettings ?? readSettings();
+  const inferenceSettings = acceptedSettings ?? readSettings();
   const resolved = resolvePersonaSubagentModel(persona, inferenceSettings);
   const catalog = await getBuiltinLanguageModelCatalog();
   const catalogModels = catalog.modelsByProvider[resolved.provider];

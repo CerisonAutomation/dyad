@@ -47,8 +47,8 @@ const logger = log.scope("settings");
 export const DEFAULT_SETTINGS: UserSettings = {
   chatgptFastMode: false,
   selectedModel: {
-    name: "auto",
-    provider: "auto",
+    name: "longcat-2.5-preview-free",
+    provider: "opencode",
   },
   providerSettings: {},
   telemetryConsent: "unset",

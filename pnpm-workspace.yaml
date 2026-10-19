@@ -1,0 +1,25 @@
+# pnpm 11+ reads non-auth/non-registry settings from this file, not from
+# .npmrc, so a `.npmrc` entry for the setting below is silently ignored.
+#
+# `blockExoticSubdeps` defaults to true from pnpm 11. It requires that only
+# direct dependencies may resolve from exotic sources (git, tarball URL, local
+# path). This project's tree pulls `@electron/node-gyp` (a dependency of
+# electron itself) from a git source as a *transitive* dependency, so the
+# default rejects the whole tree and `pnpm install` cannot complete - which
+# means `pnpm package` cannot either.
+#
+# This is the documented opt-out, and it is deliberately the narrow one: it
+# permits exotic subdependencies rather than disabling the check globally. The
+# hardening follow-up is to replace that git-sourced transitive with a
+# published version via `pnpm.overrides`, after which this line can be removed.
+# Note that leaving it in place is flagged by supply-chain scanners.
+blockExoticSubdeps: false
+
+# electron-forge verifies this by shelling out to `pnpm config get node-linker`
+# and refuses to package unless it reads "hoisted", because it copies
+# node_modules into the app as-is and needs the npm-style flat layout. pnpm 11+
+# reads the setting from here rather than from .npmrc, and keys in this file must
+# be camelCase - a kebab-case "node-linker" is silently ignored with a warning.
+# The existing node_modules is already hoisted (transitive packages resolve at
+# the root), so this records the layout the project already had.
+nodeLinker: hoisted

@@ -7,31 +7,19 @@ const ctx = (frameworkType: AgentContext["frameworkType"]) =>
   ({ frameworkType }) as unknown as AgentContext;
 
 describe("readGuideTool", () => {
-  it("serves framework-agnostic replica guides untouched", async () => {
+  it("serves the preview-control guide with its MCP routing", async () => {
     const out = await readGuideTool.execute(
-      { guide: "replica-recon" },
+      { guide: "qa-preview-control" },
       ctx(null),
     );
 
-    expect(out).toContain("# replica-recon");
-    expect(out).toContain("replica/recon.md");
+    expect(out).toContain("# Preview Control");
+    expect(out).toContain("preview_snapshot");
   });
 
-  it("rejects unknown guides while listing the replica set", async () => {
+  it("rejects unknown guides while listing available guides", async () => {
     await expect(
       readGuideTool.execute({ guide: "no-such-guide" }, ctx(null)),
-    ).rejects.toThrow(/replica-recon/);
-  });
-
-  it("serves the QA skill ports untouched", async () => {
-    for (const guide of [
-      "qa-e2e-testing",
-      "qa-ai-regression-testing",
-      "qa-agent-introspection-debugging",
-      "qa-security-review",
-    ]) {
-      const out = await readGuideTool.execute({ guide }, ctx(null));
-      expect(out).toContain("Ported from affaan-m/ECC skills");
-    }
+    ).rejects.toThrow(/qa-preview-control/);
   });
 });
