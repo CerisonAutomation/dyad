@@ -12,6 +12,7 @@ import type { LanguageModel } from "ai";
 import log from "electron-log";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import { DYAD_INTERNAL_REQUEST_ID_HEADER } from "./provider_options";
+import { noteRestrictedModel } from "./restricted_model_memory";
 
 const logger = log.scope("fallback_model");
 const MAX_LOG_FIELD_LENGTH = 500;
@@ -44,6 +45,13 @@ interface FallbackSettings {
    * `temperature` and `maxOutputTokens` stripped, everything else forwarded.
    */
   modelCallOptions?: Array<FallbackModelCallOptions | undefined>;
+  /**
+   * Same-model transient-retry budget for the chain primary (index 0), which
+   * is the user's own pick or the top-ranked candidate. Defaults to
+   * maxAttemptsPerModel. A higher value keeps retrying a flaky unlimited
+   * default instead of wandering to weaker backups.
+   */
+  primaryMaxAttempts?: number;
 }
 
 interface RetryState {
@@ -202,6 +210,15 @@ function getErrorDetails(error: unknown): {
     .toLowerCase();
 
   return { statusCode, errorString };
+}
+
+/**
+ * Whether the error is a gateway allowlist rejection for one specific model
+ * ("... is only available on ..."). Retrying that model cannot succeed, but
+ * the rejection says nothing about any other candidate.
+ */
+export function isAllowlistRestriction(error: unknown): boolean {
+  return getErrorDetails(error).errorString.includes("only available on");
 }
 
 /**
@@ -417,7 +434,15 @@ class FallbackModel implements LanguageModelV3 {
     this.settings = settings;
     this.modelResetInterval = 3 * 60 * 1000; // Default: 3 minutes
     this.maxAttemptsPerModel = 2;
-    this.maxAttempts = settings.models.length * this.maxAttemptsPerModel;
+    this.maxAttempts =
+      (settings.primaryMaxAttempts ?? this.maxAttemptsPerModel) +
+      (settings.models.length - 1) * this.maxAttemptsPerModel;
+  }
+
+  private maxAttemptsFor(index: number): number {
+    return index === 0
+      ? (this.settings.primaryMaxAttempts ?? this.maxAttemptsPerModel)
+      : this.maxAttemptsPerModel;
   }
 
   get modelId(): string {
@@ -547,7 +572,7 @@ class FallbackModel implements LanguageModelV3 {
     for (let offset = 1; offset < this.settings.models.length; offset++) {
       const candidateIndex =
         (this.currentModelIndex + offset) % this.settings.models.length;
-      if (state.attemptsByModel[candidateIndex] < this.maxAttemptsPerModel) {
+      if (state.attemptsByModel[candidateIndex] < this.maxAttemptsFor(candidateIndex)) {
         this.currentModelIndex = candidateIndex;
         return true;
       }
@@ -562,7 +587,8 @@ class FallbackModel implements LanguageModelV3 {
     const failedModelId = this.modelId;
     if (
       action === "retry-same" &&
-      state.attemptsByModel[this.currentModelIndex] < this.maxAttemptsPerModel
+      state.attemptsByModel[this.currentModelIndex] <
+        this.maxAttemptsFor(this.currentModelIndex)
     ) {
       return {
         kind: "retry-same",
@@ -575,7 +601,9 @@ class FallbackModel implements LanguageModelV3 {
     // should not circle back to the same model during this request.
     if (this.settings.allowFallback?.[this.currentModelIndex] === false)
       return null;
-    state.attemptsByModel[this.currentModelIndex] = this.maxAttemptsPerModel;
+    state.attemptsByModel[this.currentModelIndex] = this.maxAttemptsFor(
+      this.currentModelIndex,
+    );
     if (!this.moveToNextAvailableModel(state)) return null;
 
     return {
@@ -603,7 +631,7 @@ class FallbackModel implements LanguageModelV3 {
 
     if (decision.kind === "retry-same") {
       logger.warn(
-        `Retrying model ${decision.failedModelId} (requestId=${requestId}, stage=${stage}${streamDetails}, modelAttempt=${state.attemptsByModel[this.currentModelIndex] + 1}/${this.maxAttemptsPerModel}, totalAttempt=${state.attemptNumber + 1}/${this.maxAttempts}, error="${errorDetails}")`,
+        `Retrying model ${decision.failedModelId} (requestId=${requestId}, stage=${stage}${streamDetails}, modelAttempt=${state.attemptsByModel[this.currentModelIndex] + 1}/${this.maxAttemptsFor(this.currentModelIndex)}, totalAttempt=${state.attemptNumber + 1}/${this.maxAttempts}, error="${errorDetails}")`,
       );
       return;
     }
@@ -665,6 +693,9 @@ class FallbackModel implements LanguageModelV3 {
           const failedModelId = this.modelId;
           state.errors.push({ modelId: failedModelId, error });
           const action = getFallbackFailureAction(error);
+          if (isAllowlistRestriction(error)) {
+            noteRestrictedModel(failedModelId);
+          }
           if (action === "fail") {
             logger.warn(
               `Request error from model ${failedModelId}; not retrying or falling back (requestId=${requestId}, stage=initial-request, attempt=${state.attemptNumber}/${this.maxAttempts}, error="${formatFallbackErrorForLog(error)}")`,
@@ -875,6 +906,9 @@ class FallbackModel implements LanguageModelV3 {
             error: pendingError,
           });
           const action = getFallbackFailureAction(pendingError);
+          if (isAllowlistRestriction(pendingError)) {
+            noteRestrictedModel(failedModelId);
+          }
           if (action === "fail" || hasStreamedContent) {
             logger.warn(
               `Stream error from model ${failedModelId}; not retrying or falling back (requestId=${getRequestId(options)}, hasStreamedContent=${hasStreamedContent}, attempt=${retryState.attemptNumber}/${fallbackModel.maxAttempts}, error="${formatFallbackErrorForLog(pendingError)}")`,

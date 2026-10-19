@@ -12,6 +12,7 @@ import {
   formatFallbackErrorForLog,
   getFallbackFailureAction,
   getFallbackRetryDelayMs,
+  isAllowlistRestriction,
 } from "./fallback_ai_model";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 
@@ -368,6 +369,66 @@ describe("fallback failure policy", () => {
         "Retrying model gpt-5.6-sol (requestId=request-123, stage=initial-request",
       ),
     );
+  });
+
+  it("classifies gateway allowlist rejections as model-scoped", () => {
+    expect(
+      isAllowlistRestriction(
+        apiCallError({
+          message:
+            "thinkingmachines/inkling-small:free is only available on agentic harnesses.",
+          statusCode: 403,
+          isRetryable: false,
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isAllowlistRestriction(
+        apiCallError({
+          message: "model not found",
+          statusCode: 404,
+          isRetryable: false,
+        }),
+      ),
+    ).toBe(false);
+    expect(isAllowlistRestriction(new Error("socket hang up"))).toBe(false);
+  });
+
+  it("gives the chain primary extra transient retries when configured", async () => {
+    const calls: string[] = [];
+    const transientError = apiCallError({
+      message: "service unavailable",
+      statusCode: 503,
+      isRetryable: true,
+    });
+    const model = createFallback({
+      models: [
+        sequencedModel({
+          modelId: "primary",
+          outcomes: [
+            { type: "throw", error: transientError },
+            { type: "throw", error: transientError },
+            { type: "throw", error: transientError },
+            { type: "succeed" },
+          ],
+          calls,
+        }),
+        sequencedModel({
+          modelId: "backup",
+          outcomes: [{ type: "succeed" }],
+          calls,
+        }),
+      ],
+      primaryMaxAttempts: 4,
+    }) as unknown as LanguageModelV3;
+
+    const result = await model.doStream({
+      prompt: [],
+      headers: { "x-dyad-internal-request-id": "request-patience" },
+    } as unknown as LanguageModelV3CallOptions);
+    await drain(result.stream);
+
+    expect(calls).toEqual(["primary", "primary", "primary", "primary"]);
   });
 
   it("falls back after the same-model transient retry is exhausted", async () => {
@@ -800,7 +861,7 @@ describe("fallback failure policy", () => {
               controller.enqueue({
                 type: "finish",
                 finishReason: "stop",
-              } as LanguageModelV3StreamPart);
+              } as unknown as LanguageModelV3StreamPart);
               controller.close();
             },
           }),

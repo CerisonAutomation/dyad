@@ -40,6 +40,7 @@ import { getLmStudioBaseUrl } from "./lm_studio_utils";
 import { createOllamaProvider } from "./ollama_provider";
 import { getOllamaApiUrl } from "../handlers/local_model_ollama_handler";
 import { createFallback } from "./fallback_ai_model";
+import { isRestrictedModel } from "./restricted_model_memory";
 import { getDyadEngineBaseUrl } from "./dyad_engine_url";
 import { getTestFetchOption } from "./test_fetch_override";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
@@ -363,10 +364,16 @@ export async function getModelClient(
           DyadErrorKind.NotFound,
         );
       }
+      // Restricted ids observed earlier this session are left out up front
+      // instead of failing loudly on every turn, and the chain primary gets
+      // extra transient patience because it is the top-ranked candidate.
+      const freeNames = FREE_OPENROUTER_MODEL_NAMES.filter(
+        (name: string) => !isRestrictedModel(name),
+      );
       return {
         modelClient: {
           model: createFallback({
-            models: FREE_OPENROUTER_MODEL_NAMES.map(
+            models: freeNames.map(
               (name: string) =>
                 getRegularModelClient(
                   { provider: "openrouter", name },
@@ -374,6 +381,7 @@ export async function getModelClient(
                   openRouterProvider,
                 ).modelClient.model,
             ),
+            primaryMaxAttempts: 4,
           }),
           builtinProviderId: "openrouter",
         },
