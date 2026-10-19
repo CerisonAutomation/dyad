@@ -181,6 +181,7 @@ import {
   maybeCaptureRetryReplayText,
   maybeAppendRetryReplayForRetry,
 } from "./retry_replay_utils";
+import { ToolRepeatTracker } from "./tool_repeat_tracker";
 import { setChatSummaryTool } from "./tools/set_chat_summary";
 import { computeStreamingPatch } from "@/ipc/utils/stream_text_utils";
 import { userInputRegistry } from "@/user_input/main";
@@ -916,6 +917,9 @@ export async function handleLocalAgentStream(
 
   // Track pending user messages to inject after tool results
   const pendingUserMessages: UserMessageContentPart[][] = [];
+  // Consecutive-repeat detector for this turn. A new turn constructs a new
+  // tracker, so repetition is only ever counted within one user request.
+  const repeatTracker = new ToolRepeatTracker();
   // Store injected messages with their insertion index to re-inject at the same spot each step
   const allInjectedMessages: InjectedMessage[] = [];
   const warningMessages: string[] = [];
@@ -1658,6 +1662,18 @@ export async function handleLocalAgentStream(
                     `Injected synthetic planning_questionnaire reflection message for chat ${req.chatId}`,
                   );
                 }
+              }
+
+              const repeatReminder = repeatTracker.observeStep(
+                step.toolCalls ?? [],
+              );
+              if (repeatReminder) {
+                pendingUserMessages.push([
+                  { type: "text", text: repeatReminder.text },
+                ]);
+                logger.warn(
+                  `Repeat tool-call streak (${repeatReminder.toolName} x${repeatReminder.count}, ${repeatReminder.tier}) for chat ${req.chatId}`,
+                );
               }
 
               if (
