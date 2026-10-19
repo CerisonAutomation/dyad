@@ -22,4 +22,16 @@ describe("readGuideTool", () => {
       readGuideTool.execute({ guide: "no-such-guide" }, ctx(null)),
     ).rejects.toThrow(/replica-recon/);
   });
+
+  it("serves the QA skill ports untouched", async () => {
+    for (const guide of [
+      "qa-e2e-testing",
+      "qa-ai-regression-testing",
+      "qa-agent-introspection-debugging",
+      "qa-security-review",
+    ]) {
+      const out = await readGuideTool.execute({ guide }, ctx(null));
+      expect(out).toContain("Ported from affaan-m/ECC skills");
+    }
+  });
 });

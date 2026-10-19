@@ -16,6 +16,10 @@ import replicaEntrepreneur from "@/prompts/guides/replica-entrepreneur.md?raw";
 import replicaLaunch from "@/prompts/guides/replica-launch.md?raw";
 import replicaRecon from "@/prompts/guides/replica-recon.md?raw";
 import replicaTest from "@/prompts/guides/replica-test.md?raw";
+import qaAiRegressionTesting from "@/prompts/guides/qa-ai-regression-testing.md?raw";
+import qaAgentIntrospectionDebugging from "@/prompts/guides/qa-agent-introspection-debugging.md?raw";
+import qaE2eTesting from "@/prompts/guides/qa-e2e-testing.md?raw";
+import qaSecurityReview from "@/prompts/guides/qa-security-review.md?raw";
 import { filterGuideByFramework } from "@/prompts/guides/filter_guide_by_framework";
 
 /**
@@ -37,6 +41,10 @@ const GUIDES: Record<string, string> = {
   "replica-brand": replicaBrand,
   "replica-launch": replicaLaunch,
   "replica-deploy": replicaDeploy,
+  "qa-e2e-testing": qaE2eTesting,
+  "qa-ai-regression-testing": qaAiRegressionTesting,
+  "qa-agent-introspection-debugging": qaAgentIntrospectionDebugging,
+  "qa-security-review": qaSecurityReview,
 };
 
 const readGuideSchema = z.object({
