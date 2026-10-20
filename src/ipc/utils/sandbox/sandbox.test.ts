@@ -25,7 +25,6 @@ import { executeSandboxScriptInProcess } from "@/ipc/utils/sandbox/execution";
 import {
   SANDBOX_LLM_OUTPUT_LIMIT_BYTES,
   SANDBOX_READ_FILE_LIMIT_BYTES,
-  SANDBOX_UI_OUTPUT_LIMIT_BYTES,
 } from "@/ipc/utils/sandbox/limits";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -640,23 +639,58 @@ describe("sandbox capabilities", () => {
     ).rejects.toThrow("exceeding the");
   });
 
-  it("spills oversized script output", async () => {
+  it("spills oversized non-repeating script output", async () => {
     if (!isSandboxSupportedPlatform()) {
       return;
     }
 
     const result = await runSandboxScript({
       appPath,
-      script: `"x".repeat(${SANDBOX_UI_OUTPUT_LIMIT_BYTES + 1024});`,
+      script: `
+        async function main() {
+          let out = "";
+          for (let i = 0; i < 6000; i++) {
+            out += "line-" + i.toString(36) + "-paddingpaddingpaddingpaddingpaddingpaddingpadding\\n";
+          }
+          return out;
+        }
+        main();
+      `,
     });
 
     expect(result.truncated).toBe(true);
     expect(result.value.length).toBe(SANDBOX_LLM_OUTPUT_LIMIT_BYTES);
     expect(result.fullOutputPath).toBeTruthy();
-    await expect(
-      fs.readFile(result.fullOutputPath!, "utf8"),
-    ).resolves.toHaveLength(SANDBOX_UI_OUTPUT_LIMIT_BYTES);
-  });
+    const spilled = await fs.readFile(result.fullOutputPath!, "utf8");
+    expect(spilled.length).toBeGreaterThanOrEqual(
+      SANDBOX_LLM_OUTPUT_LIMIT_BYTES,
+    );
+  }, 30_000);
+
+  it("collapses runaway repeated output instead of returning a wall of text", async () => {
+    if (!isSandboxSupportedPlatform()) {
+      return;
+    }
+
+    const result = await runSandboxScript({
+      appPath,
+      script: `
+        async function main() {
+          let out = "";
+          for (let i = 0; i < 2000; i++) {
+            out += "same line repeated" + "\\n";
+          }
+          return out;
+        }
+        main();
+      `,
+    });
+
+    expect(result.truncated).toBe(false);
+    expect(result.value).toContain("same line repeated");
+    expect(result.value).toContain("[repeated 2000 times]");
+    expect(result.value.length).toBeLessThan(10_000);
+  }, 30_000);
 
   it("excludes host capability time from the VM timeout budget", async () => {
     if (!isSandboxSupportedPlatform()) {

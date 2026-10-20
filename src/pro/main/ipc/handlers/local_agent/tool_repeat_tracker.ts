@@ -140,6 +140,7 @@ export class ToolRepeatTracker {
       if (parsed === undefined) {
         this.lastKey = null;
         this.runLength = 0;
+        this.emitted.clear();
         continue;
       }
       const key = JSON.stringify([parsed.toolName, parsed.canonical]);
@@ -148,6 +149,9 @@ export class ToolRepeatTracker {
       } else {
         this.lastKey = key;
         this.runLength = 1;
+        // A new streak must be able to emit its own thresholds; otherwise the
+        // first streak permanently silences every later repeat in the turn.
+        this.emitted.clear();
       }
       if (
         this.thresholds.includes(this.runLength) &&

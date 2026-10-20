@@ -7,10 +7,11 @@ export const DEFAULT_SANDBOX_TIMEOUT_MS = 60_000;
 export const MAX_SANDBOX_TIMEOUT_MS = 60_000;
 export const SANDBOX_WALL_CLOCK_TIMEOUT_MS = 5 * 60_000;
 
-// Avoid running out of instructions (e.g. parsing large CSV file)
-// Note: we have a sandbox timeout and run it off main thread, so
-// this is not too problematic.
-export const SANDBOX_INSTRUCTION_BUDGET = Number.MAX_SAFE_INTEGER;
+// A finite step budget stops runaway `while` loops quickly instead of letting
+// them burn the full 60s timeout and emit megabytes of repeated output. Large
+// legitimate workloads (CSV parsing, big file transforms) still fit well
+// inside 50M instructions.
+export const SANDBOX_INSTRUCTION_BUDGET = 50_000_000;
 export const SANDBOX_HEAP_LIMIT_BYTES = 128 * 1024 * 1024;
 // V8 old-generation cap for the sandbox worker thread. Guest memory is bounded
 // separately by SANDBOX_HEAP_LIMIT_BYTES inside the interpreter; this bounds the

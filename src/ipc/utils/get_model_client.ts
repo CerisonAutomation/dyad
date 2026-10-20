@@ -34,6 +34,7 @@ import {
   openCodeSessionIdForChat,
 } from "@/ipc/shared/opencode_gateway";
 import { getLanguageModelProviders } from "../shared/language_model_helpers";
+import { DEEPSEEK_BASE_URL } from "@/ipc/shared/provider_registry";
 import { resolveBuiltinModelAlias } from "../shared/remote_language_model_catalog";
 import { LanguageModelProvider } from "@/ipc/types";
 import {
@@ -997,6 +998,22 @@ function getRegularModelClient(
         name: "minimax",
         includeUsage,
         baseURL: "https://api.minimax.io/v1",
+        apiKey,
+        ...getModelClientFetchOption(),
+      });
+      return {
+        modelClient: {
+          model: provider(model.name),
+          builtinProviderId: providerId,
+        },
+        backupModelClients: [],
+      };
+    }
+    case "deepseek": {
+      const provider = createOpenAICompatible({
+        name: "deepseek",
+        includeUsage,
+        baseURL: DEEPSEEK_BASE_URL,
         apiKey,
         ...getModelClientFetchOption(),
       });

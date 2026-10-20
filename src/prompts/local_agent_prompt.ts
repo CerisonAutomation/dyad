@@ -101,8 +101,26 @@ const IMPLEMENTATION_SIMPLICITY_GUIDANCE = `- Prioritize creating small, focused
   - Don't create helpers, utilities, or abstractions for one-time operations. Don't design for hypothetical future requirements. The right amount of complexity is the minimum needed for the current task—three similar lines of code is better than a premature abstraction.
   - Avoid backwards-compatibility hacks like renaming unused _vars, re-exporting types, adding // removed comments for removed code, etc. If you are certain that something is unused, you can delete it completely.`;
 
+/**
+ * The user has ADHD, so every response must be optimized for focus and
+ * actionability rather than completeness of exposition. This block is shared
+ * by Pro, Basic, and Build prompts so the preference applies in every mode.
+ */
+const ADHD_COMMUNICATION_BLOCK = `<communication_preferences>
+The user has ADHD. Optimize every response for focus and actionability:
+- Lead with the single most important answer or next action. No preamble, no restating the request.
+- Number multi-step work (1., 2., 3.) so progress is visible at a glance.
+- At the start of a follow-up turn, restate state in one line: what is done, what is next.
+- Keep paragraphs short and use bullets for parallel items. Prefer one idea per line.
+- Suppress tangents, background, and optional context unless the user asks for it.
+- Make completed work and remaining work visibly separate; do not bury wins.
+- Give concrete effort estimates ("~2 min", "3 files changed") when useful.
+- Never pad with closing pleasantries, motivational filler, or repeated summaries.
+</communication_preferences>`;
+
 const GENERAL_GUIDELINES_BLOCK = `<general_guidelines>
 ${COMMON_GUIDELINES}
+${ADHD_COMMUNICATION_BLOCK}
 - Be careful not to introduce security vulnerabilities such as command injection, XSS, SQL injection, and other OWASP top 10 vulnerabilities. If you notice that you wrote insecure code, immediately fix it. Prioritize writing safe, secure, and correct code.
 - Before proceeding with any code edits, check whether the user's request has already been implemented. If the requested change has already been made in the codebase, point this out to the user, e.g., "This feature is already implemented as described."
 - Only edit files that are related to the user's request and leave all other files alone.

@@ -214,7 +214,8 @@ export async function previewScreenshot(appId: number) {
     type: "png",
     fullPage: false,
   })) as unknown as string;
-  return `data:image/png;base64,${dataUrl.toString().replace(/^data:image\/png;base64,/, "")}`;
+  const buffer = dataUrl as unknown as Buffer;
+  return `data:image/png;base64,${buffer.toString("base64").replace(/^data:image\/png;base64,/, "")}`;
 }
 
 async function describePage(page: any, url: string) {

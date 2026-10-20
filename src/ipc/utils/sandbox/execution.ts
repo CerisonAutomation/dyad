@@ -74,6 +74,59 @@ async function loadMustard(): Promise<MustardModule> {
   return mustardModulePromise;
 }
 
+function collapseRepeatedBlock(text: string): string {
+  const divisors: number[] = [];
+  const maxPeriod = Math.min(1024, Math.floor(text.length / 5));
+  for (let p = 1; p <= maxPeriod; p++) {
+    if (text.length % p === 0) divisors.push(p);
+  }
+  for (const period of divisors) {
+    const block = text.slice(0, period);
+    if (block.repeat(text.length / period) === text) {
+      return `${block}  ... [repeated ${text.length / period} times]`;
+    }
+  }
+  return text;
+}
+
+/**
+ * Collapse pathological repetition before the output is truncated and handed
+ * to the model. A runaway loop can emit hundreds of thousands of identical
+ * lines; truncating that produces a useless wall of repeated text. Collapsing
+ * keeps the signal (the line that repeated) and drops the noise.
+ */
+function collapseRunawayOutput(text: string): string {
+  if (text.length < 4096) {
+    return text;
+  }
+  if (!text.includes("\n")) {
+    return collapseRepeatedBlock(text);
+  }
+  const lines = text.split("\n");
+  const collapsed: string[] = [];
+  let index = 0;
+  while (index < lines.length) {
+    let end = index + 1;
+    while (end < lines.length && lines[end] === lines[index]) {
+      end += 1;
+    }
+    const runLength = end - index;
+    if (runLength >= 5) {
+      collapsed.push(`${lines[index]}  ... [repeated ${runLength} times]`);
+    } else {
+      for (let cursor = index; cursor < end; cursor += 1) {
+        collapsed.push(lines[cursor]);
+      }
+    }
+    index = end;
+    if (collapsed.length > 20_000) {
+      collapsed.push("... [output collapsed: too many lines]");
+      break;
+    }
+  }
+  return collapsed.join("\n");
+}
+
 function stringifyStructuredValue(value: StructuredValue): string {
   if (typeof value === "string") {
     return value;
@@ -348,7 +401,7 @@ export async function executeSandboxScriptInProcess(
     }
     vmBudget.stop();
     const executionMs = vmBudget.getElapsedMs();
-    const output = stringifyStructuredValue(result);
+    const output = collapseRunawayOutput(stringifyStructuredValue(result));
     const truncated =
       Buffer.byteLength(output, "utf8") > SANDBOX_LLM_OUTPUT_LIMIT_BYTES;
     const fullOutputPath =

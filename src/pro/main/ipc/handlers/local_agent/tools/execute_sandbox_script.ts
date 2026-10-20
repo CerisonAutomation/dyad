@@ -40,6 +40,19 @@ import {
   type McpToolDef,
 } from "./mcp_type_defs";
 
+// The XML card is persisted to the DB, streamed to the renderer, and stored in
+// the model transcript. Embedding a 128 KB script plus a 256 KB output in one
+// card produced enormous, repetitive turns, so the card keeps only a readable
+// preview and points at the spill file for the full text.
+const SCRIPT_XML_SCRIPT_PREVIEW_CHARS = 20_000;
+const SCRIPT_XML_OUTPUT_PREVIEW_CHARS = 20_000;
+const SANDBOX_ERROR_SCRIPT_PREVIEW_CHARS = 4_000;
+
+function previewForXml(value: string, limit: number): string {
+  if (value.length <= limit) return value;
+  return `${value.slice(0, limit)}\n... [${value.length - limit} more characters not shown]`;
+}
+
 const executeSandboxScriptSchema = z.object({
   script: z
     .string()
@@ -86,7 +99,7 @@ function buildSandboxFailureMessage(params: {
     "This script contains unsupported syntax.",
     "",
     "Script:",
-    params.script,
+    previewForXml(params.script, SANDBOX_ERROR_SCRIPT_PREVIEW_CHARS),
     "",
     "Original error:",
     params.errorMessage,
@@ -102,8 +115,11 @@ function buildScriptXml(params: {
 }): string {
   const payload = JSON.stringify(
     {
-      script: params.args.script,
-      output: params.output,
+      script: previewForXml(
+        params.args.script,
+        SCRIPT_XML_SCRIPT_PREVIEW_CHARS,
+      ),
+      output: previewForXml(params.output, SCRIPT_XML_OUTPUT_PREVIEW_CHARS),
     },
     null,
     2,

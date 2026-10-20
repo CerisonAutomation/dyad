@@ -564,6 +564,29 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
       dollarSigns: 1,
     },
   ],
+  // https://api-docs.deepseek.com/quick_start/pricing
+  deepseek: [
+    {
+      name: "deepseek-chat",
+      displayName: "DeepSeek V3.2 Chat",
+      description:
+        "DeepSeek's fast general-purpose model with strong coding ability",
+      maxOutputTokens: 8_192,
+      contextWindow: 131_072,
+      temperature: 1.0,
+      dollarSigns: 1,
+    },
+    {
+      name: "deepseek-reasoner",
+      displayName: "DeepSeek V3.2 Reasoner",
+      description:
+        "DeepSeek's reasoning model with extended thinking for hard problems",
+      maxOutputTokens: 65_536,
+      contextWindow: 131_072,
+      temperature: 1.0,
+      dollarSigns: 2,
+    },
+  ],
   opencode: [
     {
       name: "longcat-2.5-preview-free",
@@ -593,6 +616,7 @@ export const PROVIDER_TO_ENV_VAR: Record<string, string> = {
   xai: "XAI_API_KEY",
   bedrock: "AWS_BEARER_TOKEN_BEDROCK",
   minimax: "MINIMAX_API_KEY",
+  deepseek: "DEEPSEEK_API_KEY",
 };
 
 export const CLOUD_PROVIDERS: Record<
@@ -668,6 +692,13 @@ export const CLOUD_PROVIDERS: Record<
     hasFreeTier: false,
     websiteUrl: "https://platform.minimax.io/",
     gatewayPrefix: "minimax/",
+    secondary: true,
+  },
+  deepseek: {
+    displayName: "DeepSeek",
+    hasFreeTier: false,
+    websiteUrl: "https://platform.deepseek.com/api_keys",
+    gatewayPrefix: "deepseek/",
     secondary: true,
   },
   opencode: {
