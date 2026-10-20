@@ -205,11 +205,13 @@ async function runRipgrep({
 
     args.push("--", query, ".");
 
-    const rg = spawnWithBadFdRetry(getRgExecutablePath(), args, { cwd: appPath });
+    const rg = spawnWithBadFdRetry(getRgExecutablePath(), args, {
+      cwd: appPath,
+    });
     let buffer = "";
     let stderr = "";
 
-    rg.stdout.on("data", (data) => {
+    rg.stdout?.on("data", (data) => {
       if (stoppedEarly) {
         return;
       }
@@ -264,7 +266,7 @@ async function runRipgrep({
       }
     });
 
-    rg.stderr.on("data", (data) => {
+    rg.stderr?.on("data", (data) => {
       const text = data.toString();
       stderr += text;
       logger.warn("ripgrep stderr", text);

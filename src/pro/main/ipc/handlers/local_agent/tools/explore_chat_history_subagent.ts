@@ -12,8 +12,6 @@ import {
   fastTextOutput,
 } from "@/ipc/utils/stream_text_utils";
 import { getMaxTokens, getTemperature } from "@/ipc/utils/token_utils";
-import type { UserSettings } from "@/lib/schemas";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import { searchChatsTool } from "./search_chats";
 import { readChatTool } from "./read_chat";
 import type { AgentContext, ToolDefinition } from "./types";
@@ -71,11 +69,7 @@ export async function runExploreChatHistorySubagent({
   });
   const settings = { ...storedSettings, selectedModel };
 
-  const modelInfo = await getModelClient(
-    historyModel,
-    settings,
-    selectedModel,
-  );
+  const modelInfo = await getModelClient(historyModel, settings, selectedModel);
   const maxOutputTokens = Math.min(
     (await getMaxTokens(historyModel)) ?? SUBAGENT_MAX_OUTPUT_TOKENS,
     SUBAGENT_MAX_OUTPUT_TOKENS,

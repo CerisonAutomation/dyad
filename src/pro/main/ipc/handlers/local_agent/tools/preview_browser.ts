@@ -29,7 +29,9 @@ const previewBrowserSchema = z.object({
   selector: z
     .string()
     .optional()
-    .describe("CSS selector for 'click' and 'type', e.g. 'button[type=submit]'."),
+    .describe(
+      "CSS selector for 'click' and 'type', e.g. 'button[type=submit]'.",
+    ),
   text: z.string().optional().describe("Text to type for 'type'."),
   submit: z
     .boolean()
@@ -65,13 +67,17 @@ export const previewBrowserTool: ToolDefinition = {
       case "navigate":
         return previewNavigate(ctx.appId, args.path ?? "/");
       case "click":
-        if (!args.selector)
-          throw new Error("'click' requires a CSS selector.");
+        if (!args.selector) throw new Error("'click' requires a CSS selector.");
         return previewClick(ctx.appId, args.selector);
       case "type":
         if (!args.selector || args.text === undefined)
           throw new Error("'type' requires a selector and text.");
-        return previewType(ctx.appId, args.selector, args.text, args.submit ?? false);
+        return previewType(
+          ctx.appId,
+          args.selector,
+          args.text,
+          args.submit ?? false,
+        );
       case "read":
         return previewRead(ctx.appId);
       case "console":

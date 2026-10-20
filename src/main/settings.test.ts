@@ -1059,9 +1059,7 @@ describe("preserving undecryptable secrets", () => {
     );
     mockPath.join.mockImplementation((first: string, ...rest: string[]) => {
       const joined = [first, ...rest].filter(Boolean).join("/");
-      return joined.endsWith("user-settings.json")
-        ? mockSettingsPath
-        : joined;
+      return joined.endsWith("user-settings.json") ? mockSettingsPath : joined;
     });
     // Unit tests are not an E2E build, so encrypt() only falls back to plaintext
     // when safeStorage reports encryption unavailable. Keep it unavailable so new

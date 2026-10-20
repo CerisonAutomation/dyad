@@ -30,7 +30,11 @@ if (!process.env.DYAD_PRO_API_KEY && process.env.DYAD_PRO_KEY) {
   process.env.DYAD_PRO_API_KEY = process.env.DYAD_PRO_KEY;
 }
 
-import { GPT_5_4, getEvalModel, hasEngineCredential } from "./helpers/get_eval_model";
+import {
+  GPT_5_4,
+  getEvalModel,
+  hasEngineCredential,
+} from "./helpers/get_eval_model";
 import {
   loadFixtures,
   loadSpecs,

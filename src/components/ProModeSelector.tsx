@@ -256,7 +256,8 @@ function SmartContextSelector({
   onValueChange: (value: "off" | "balanced" | "deep") => void;
 }) {
   const currentValue =
-    !settings?.enableProSmartFilesContextMode || !settings?.proSmartContextOption
+    !settings?.enableProSmartFilesContextMode ||
+    !settings?.proSmartContextOption
       ? "off"
       : settings.proSmartContextOption;
 

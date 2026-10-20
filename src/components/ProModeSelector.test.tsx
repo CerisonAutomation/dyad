@@ -25,9 +25,7 @@ it("opens the Agent2 panel and shows Agent2 features", async () => {
   await user.click(screen.getByRole("button", { name: "Agent2" }));
 
   expect(screen.getByText("Agent2 Mode")).toBeInTheDocument();
-  expect(
-    screen.getByRole("switch", { name: "Enable Agent2" }),
-  ).toBeChecked();
+  expect(screen.getByRole("switch", { name: "Enable Agent2" })).toBeChecked();
   expect(
     screen.getByRole("button", { name: /Agent2 features/i }),
   ).toBeInTheDocument();
@@ -62,7 +60,9 @@ it("exposes Web Access, Turbo Edits and Smart Context inside Agent2 features", a
   await user.click(screen.getByRole("button", { name: "Agent2" }));
   await user.click(screen.getByRole("button", { name: /Agent2 features/i }));
 
-  expect(screen.getByRole("switch", { name: "Web Access" })).toBeInTheDocument();
+  expect(
+    screen.getByRole("switch", { name: "Web Access" }),
+  ).toBeInTheDocument();
   expect(screen.getByTestId("turbo-edits-selector")).toBeInTheDocument();
   expect(screen.getByTestId("smart-context-selector")).toBeInTheDocument();
 });

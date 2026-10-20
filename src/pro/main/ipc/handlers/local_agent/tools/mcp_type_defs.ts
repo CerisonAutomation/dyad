@@ -227,7 +227,6 @@ export function buildMcpCapabilityMap(params: {
             : JSON.stringify(args).slice(0, 500);
 
       const autoApprove = buildMcpAutoApprove({
-        signal: params.ctx.abortSignal,
         settings: readSettings(),
         isDyadPro: params.ctx.isDyadPro,
         freeModelMode: params.ctx.freeModelMode,

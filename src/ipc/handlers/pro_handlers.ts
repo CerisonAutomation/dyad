@@ -1,15 +1,9 @@
-import fetch from "node-fetch"; // Electron main process might need node-fetch
 import { shell } from "electron";
 import log from "electron-log";
 import { createLoggedHandler } from "./safe_handle";
 import { createLoggedTypedHandler } from "./base";
 import { readSettings } from "../../main/settings"; // Assuming settings are read this way
-import {
-  SubscriptionStatusSchema,
-  systemContracts,
-  UserBudgetInfo,
-  UserBudgetInfoSchema,
-} from "@/ipc/types";
+import { systemContracts, UserBudgetInfo } from "@/ipc/types";
 import { IS_TEST_BUILD } from "../utils/test_utils";
 import {
   AUDIO_REQUEST_ID_PATTERN,
@@ -23,7 +17,6 @@ import { transcribeWithDyadEngine } from "../utils/llm_engine_provider";
 import { getDyadEngineBaseUrl } from "../utils/dyad_engine_url";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 
-import { fetchUserInfo } from "../services/user_budget_service";
 export {
   UserInfoResponseSchema,
   type UserInfoResponse,
@@ -66,33 +59,6 @@ function validateAudioTranscriptionRequest(input: TranscribeAudioParams) {
       DyadErrorKind.Validation,
     );
   }
-}
-
-function getSubscriptionStatusUrl() {
-  return (
-    process.env.DYAD_SUBSCRIPTION_STATUS_URL ??
-    "https://academy.dyad.sh/api/desktop/subscription-status"
-  );
-}
-
-function getSubscriptionStatusApiKey() {
-  const url = getSubscriptionStatusUrl();
-  const fixtureApiKey = process.env.DYAD_SUBSCRIPTION_STATUS_FIXTURE_API_KEY;
-  if (fixtureApiKey) {
-    try {
-      const hostname = new URL(url).hostname;
-      if (
-        hostname === "127.0.0.1" ||
-        hostname === "localhost" ||
-        hostname === "[::1]"
-      ) {
-        return fixtureApiKey;
-      }
-    } catch {
-      // The request path below will log and safely ignore an invalid URL.
-    }
-  }
-  return readSettings().providerSettings?.auto?.apiKey?.value;
 }
 
 export function parseBillingActionUrl(value: string) {

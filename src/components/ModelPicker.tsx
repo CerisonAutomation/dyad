@@ -13,7 +13,7 @@ import {
 } from "@/shared/execution_backend";
 import { useSelectChat } from "@/hooks/useSelectChat";
 import { isAgent2Enabled, type LargeLanguageModel } from "@/lib/schemas";
-import { isFreeModelName, routeFreeModelForProvider } from "@/lib/freeModel";
+import { isFreeModelName } from "@/lib/freeModel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -418,7 +418,8 @@ export function ModelPicker() {
   // two look identical and a changed default appears not to have applied.
   const defaultModelRef = settings?.selectedModel;
   const isGlobalDefault = (apiName: string, providerId: string) =>
-    defaultModelRef?.name === apiName && defaultModelRef?.provider === providerId;
+    defaultModelRef?.name === apiName &&
+    defaultModelRef?.provider === providerId;
 
   const matchesModelFilter = (apiName: string) => {
     if (modelSearchTerm && !apiName.toLowerCase().includes(modelSearchTerm)) {
@@ -470,9 +471,7 @@ export function ModelPicker() {
         if (
           modelSearchTerm &&
           !model.apiName.toLowerCase().includes(modelSearchTerm) &&
-          !(model.displayName ?? "")
-            .toLowerCase()
-            .includes(modelSearchTerm)
+          !(model.displayName ?? "").toLowerCase().includes(modelSearchTerm)
         ) {
           continue;
         }
@@ -718,10 +717,8 @@ export function ModelPicker() {
   // everyone using the local setup — so the gate hid all 18 free OpenRouter
   // models from the people who can actually reach them. It was also an upsell:
   // the only way to see a free model was to buy the tier.
-  const isVisibleCatalogModel = (
-    _providerId: string,
-    _model: LanguageModel,
-  ) => true;
+  const isVisibleCatalogModel = (_providerId: string, _model: LanguageModel) =>
+    true;
   const isOtherProvider = (providerId: string) => {
     const provider = providers?.find(
       (candidate) => candidate.id === providerId,
@@ -1836,7 +1833,8 @@ export function ModelPicker() {
                 className="px-2 pt-1.5 pb-1 text-[10px] uppercase tracking-wider font-medium text-muted-foreground"
                 data-testid="model-search-results"
               >
-                {freeOnly ? "Free models" : "Search results"} ({searchResults.length})
+                {freeOnly ? "Free models" : "Search results"} (
+                {searchResults.length})
                 {defaultModelRef ? (
                   <>
                     {" · default: "}
@@ -1848,14 +1846,13 @@ export function ModelPicker() {
                 <DropdownMenuItem
                   key={`search-${model.providerId}-${model.apiName}`}
                   onSelect={() =>
-                    handleCloudModelSelect(
-                      model.providerId,
-                      model.catalogModel,
-                    )
+                    handleCloudModelSelect(model.providerId, model.catalogModel)
                   }
                   className="flex items-center justify-between gap-2 cursor-pointer"
                 >
-                  <span className="truncate">{model.displayName ?? model.apiName}</span>
+                  <span className="truncate">
+                    {model.displayName ?? model.apiName}
+                  </span>
                   <span className="ml-auto flex shrink-0 items-center gap-1.5">
                     <span
                       className="rounded border border-border px-1 py-px text-[10px] font-medium text-muted-foreground"
@@ -1881,8 +1878,8 @@ export function ModelPicker() {
               ))}
               <DropdownMenuSeparator />
             </>
-               )}
-            <SubscriptionModelMenu>
+          )}
+          <SubscriptionModelMenu>
             <DropdownMenuSeparator />
             {/* Trial user upgrade banner */}
             {isTrial && (

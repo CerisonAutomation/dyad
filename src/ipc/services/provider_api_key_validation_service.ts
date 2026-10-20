@@ -11,14 +11,12 @@ import log from "electron-log";
 
 import { DyadError, DyadErrorKind, isDyadError } from "@/errors/dyad_error";
 import type { ProviderApiKeyValidationProvider } from "@/ipc/types";
-import { readEffectiveSettings } from "@/main/settings";
 import {
   findInvalidProviderApiKeyCharacter,
   formatInvalidProviderApiKeyMessage,
   normalizeProviderApiKeyInput,
 } from "@/lib/providerApiKey";
-import type { ModelSelection, UserSettings } from "@/lib/schemas";
-import { createDyadEngine } from "@/ipc/utils/llm_engine_provider";
+import type { ModelSelection } from "@/lib/schemas";
 import { fastTextOutput } from "@/ipc/utils/stream_text_utils";
 import { IS_TEST_BUILD } from "@/ipc/utils/test_utils";
 import { getTestFetchOption } from "@/ipc/utils/test_fetch_override";
@@ -35,7 +33,7 @@ const logger = log.scope("provider_api_key_validation");
 const VALIDATION_PROMPT =
   "What number is after four? Reply with only the number.";
 const VALIDATION_TIMEOUT_MS = 20_000;
-const DYAD_VALIDATION_MODEL = {
+const _DYAD_VALIDATION_MODEL = {
   provider: "openai",
   name: GPT_5_6_LUNA_MODEL_NAME,
   effortLevel: "low",

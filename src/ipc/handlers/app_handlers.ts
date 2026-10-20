@@ -330,10 +330,12 @@ async function searchAppFilesWithRipgrep({
       ".",
     ];
 
-    const rg = spawnWithBadFdRetry(getRgExecutablePath(), args, { cwd: appPath });
+    const rg = spawnWithBadFdRetry(getRgExecutablePath(), args, {
+      cwd: appPath,
+    });
     let buffer = "";
 
-    rg.stdout.on("data", (data) => {
+    rg.stdout?.on("data", (data) => {
       buffer += data.toString();
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
@@ -403,7 +405,7 @@ async function searchAppFilesWithRipgrep({
       }
     });
 
-    rg.stderr.on("data", (data) => {
+    rg.stderr?.on("data", (data) => {
       const message = data.toString();
       if (message.toLowerCase().includes("binary file skipped")) {
         return;

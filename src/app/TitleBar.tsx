@@ -41,7 +41,7 @@ export const TitleBar = () => {
   const { navigate } = useRouter();
   const { settings, refreshSettings } = useSettings();
   const queryClient = useQueryClient();
-  const [isSuccessDialogOpen, setIsSuccessDialogOpen] = useState(false);
+  const [_isSuccessDialogOpen, _setIsSuccessDialogOpen] = useState(false);
   const platform = useSystemPlatform();
   const showWindowControls = platform !== null && platform !== "darwin";
 
@@ -58,7 +58,7 @@ export const TitleBar = () => {
           );
           resumeFirstPrompt(refreshedSettings);
         } else {
-          setIsSuccessDialogOpen(true);
+          _setIsSuccessDialogOpen(true);
         }
         clearLastDeepLink();
       }

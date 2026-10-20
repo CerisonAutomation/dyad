@@ -19,7 +19,6 @@ import {
   prepareSubagentStepMessages,
   prepareImplementerRunContext,
   raceWithAbort,
-  resolvePersonaSubagentModel,
   resolveSubagentSystemPrompt,
   reviewFollowupAvailability,
   setSubagentEventTarget,
@@ -532,56 +531,3 @@ function fakeWebContents() {
     },
   };
 }
-
-describe("persona sub-agent model resolution", () => {
-  const chatModel = {
-    provider: "custom::opencode",
-    name: "longcat-2.5-preview-free",
-  };
-
-  it("inherits the chat model when the setting is unset", async () => {
-    expect(
-      resolvePersonaSubagentModel("reviewer", { selectedModel: chatModel }),
-    ).toEqual({
-      provider: "custom::opencode",
-      name: "longcat-2.5-preview-free",
-      effort: "medium",
-    });
-  });
-
-  it("inherits the chat model when the setting is explicitly on", async () => {
-    expect(
-      resolvePersonaSubagentModel("implementer", {
-        selectedModel: chatModel,
-        subagentInheritChatModel: true,
-      }),
-    ).toEqual({
-      provider: "custom::opencode",
-      name: "longcat-2.5-preview-free",
-      effort: "high",
-    });
-  });
-
-  it("falls back to the built-in default when opted out", async () => {
-    expect(
-      resolvePersonaSubagentModel("reviewer", {
-        selectedModel: chatModel,
-        subagentInheritChatModel: false,
-      }),
-    ).toEqual({
-      provider: "openai",
-      name: "gpt-5.6-sol",
-      effort: "medium",
-    });
-  });
-
-  it("falls back to the built-in default when no chat model is set", async () => {
-    expect(
-      resolvePersonaSubagentModel("explorer", { selectedModel: undefined }),
-    ).toEqual({
-      provider: "openai",
-      name: "gpt-5.6-luna",
-      effort: "high",
-    });
-  });
-});

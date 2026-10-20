@@ -107,7 +107,7 @@ export async function runBufferedProcess(
       };
       child = options.args
         ? spawnWithBadFdRetry(options.command, options.args, spawnOptions)
-        : spawnWithBadFdRetry(options.command, spawnOptions);
+        : spawnWithBadFdRetry(options.command, [] as any, spawnOptions);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       reject(new BufferedProcessSpawnError(message, "", ""));

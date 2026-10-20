@@ -25,9 +25,12 @@ function isBadFileDescriptorError(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | undefined)?.code;
   if (code === "EBADF") return true;
   // Some paths surface the message without the errno code attached.
-  return typeof error === "object" && error !== null &&
+  return (
+    typeof error === "object" &&
+    error !== null &&
     "code" in error === false &&
-    /EBADF|bad file descriptor/i.test(String((error as Error)?.message ?? ""));
+    /EBADF|bad file descriptor/i.test(String((error as Error)?.message ?? ""))
+  );
 }
 
 function delay(ms: number): Promise<void> {

@@ -2950,7 +2950,6 @@ async function getMcpTools(
                     : JSON.stringify(args).slice(0, 500);
 
               const autoApprove = buildMcpAutoApprove({
-                signal: ctx.abortSignal,
                 settings: ctx.inferenceSettings ?? readSettings(),
                 isDyadPro: ctx.isDyadPro,
                 freeModelMode: ctx.freeModelMode,

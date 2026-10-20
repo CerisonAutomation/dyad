@@ -82,8 +82,7 @@ export async function classifyMcpToolConsent(
   try {
     // Classify with the user's own model. A compiled-in OpenAI model made
     // auto-consent impossible for anyone without that key.
-    const classifierModel: LargeLanguageModel =
-      input.settings.selectedModel;
+    const classifierModel: LargeLanguageModel = input.settings.selectedModel;
     const { modelClient } = await getModelClient(
       classifierModel,
       input.settings,

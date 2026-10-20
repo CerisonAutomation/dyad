@@ -1,5 +1,4 @@
 import { Readable } from "node:stream";
-import fetch from "node-fetch";
 import { z } from "zod";
 
 export const UserInfoResponseSchema = z.object({

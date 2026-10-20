@@ -77,7 +77,15 @@ describe("isPrivateIp", () => {
   });
 
   it("does not throw on malformed input", () => {
-    for (const junk of ["", " ", "not-an-ip", "999.999.999.999", "::gg", "[", "]"]) {
+    for (const junk of [
+      "",
+      " ",
+      "not-an-ip",
+      "999.999.999.999",
+      "::gg",
+      "[",
+      "]",
+    ]) {
       expect(() => isPrivateIp(junk)).not.toThrow();
     }
   });

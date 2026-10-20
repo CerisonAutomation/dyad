@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ipc } from "@/ipc/types";
-import {
-  type UserSettings,
-  isAgent2Enabled,
-} from "@/lib/schemas";
+import { type UserSettings, isAgent2Enabled } from "@/lib/schemas";
 import {
   getInitialLoadTelemetryProperties,
   getSettingsPersonTelemetryProperties,

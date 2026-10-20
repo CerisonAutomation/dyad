@@ -1162,9 +1162,7 @@ describe("per-model free quota caps", () => {
   });
 
   it("still retries a generic 429 that is not model-scoped", () => {
-    const action = getFallbackFailureAction(
-      quotaError("Too Many Requests"),
-    );
+    const action = getFallbackFailureAction(quotaError("Too Many Requests"));
     expect(action).toBe("retry-same");
   });
 

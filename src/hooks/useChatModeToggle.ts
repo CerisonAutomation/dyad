@@ -1,11 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { useShortcut } from "./useShortcut";
 import { usePostHog } from "posthog-js/react";
-import {
-  ChatModeSchema,
-  isAgent2Enabled,
-  type ChatMode,
-} from "../lib/schemas";
+import { ChatModeSchema, isAgent2Enabled, type ChatMode } from "../lib/schemas";
 import { useChatMode } from "./useChatMode";
 import { useFreeAgentQuota } from "./useFreeAgentQuota";
 import { useRouterState } from "@tanstack/react-router";

@@ -23,9 +23,7 @@ describe("restricted_model_memory", () => {
   it("remembers a restricted model for later chain building", () => {
     noteRestrictedModel("thinkingmachines/inkling-small:free");
 
-    expect(isRestrictedModel("thinkingmachines/inkling-small:free")).toBe(
-      true,
-    );
+    expect(isRestrictedModel("thinkingmachines/inkling-small:free")).toBe(true);
     expect(listRestrictedModels()).toEqual([
       "thinkingmachines/inkling-small:free",
     ]);
@@ -42,9 +40,7 @@ describe("restricted_model_memory", () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     noteRestrictedModel("thinkingmachines/inkling-small:free");
-    expect(isRestrictedModel("thinkingmachines/inkling-small:free")).toBe(
-      true,
-    );
+    expect(isRestrictedModel("thinkingmachines/inkling-small:free")).toBe(true);
 
     vi.setSystemTime(60 * 60 * 1000 + 1);
     expect(isRestrictedModel("thinkingmachines/inkling-small:free")).toBe(

@@ -41,9 +41,9 @@ export function isFreeModel(input: {
  */
 export const KILO_FREE_ROUTER = "kilo-auto/free";
 
-export function routeFreeModelForProvider<T extends { provider: string; name: string }>(
-  model: T,
-): T {
+export function routeFreeModelForProvider<
+  T extends { provider: string; name: string },
+>(model: T): T {
   if (model.provider !== "kilocode") return model;
   if (model.name === KILO_FREE_ROUTER) return model;
   if (!isFreeModelName(model.name)) return model;

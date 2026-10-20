@@ -121,8 +121,10 @@ async function collectFiles(root: string): Promise<string[]> {
 async function describeStack(appPath: string): Promise<string> {
   const lines: string[] = [];
   try {
-    const pkg = JSON.parse(await fs.readFile(path.join(appPath, "package.json"), "utf8"));
-    const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
+    const pkg = JSON.parse(
+      await fs.readFile(path.join(appPath, "package.json"), "utf8"),
+    );
+    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
     lines.push(`Package: ${pkg.name ?? "?"} v${pkg.version ?? "?"}`);
     const frameworks = [
       "next",
@@ -142,14 +144,21 @@ async function describeStack(appPath: string): Promise<string> {
       "electron",
     ].filter((dep) => deps[dep]);
     if (frameworks.length) {
-      lines.push(`Key dependencies: ${frameworks.map((d) => `${d}@${deps[d]}`).join(", ")}`);
+      lines.push(
+        `Key dependencies: ${frameworks.map((d) => `${d}@${deps[d]}`).join(", ")}`,
+      );
     }
     const scripts = Object.keys(pkg.scripts ?? {}).slice(0, 12);
     if (scripts.length) lines.push(`Scripts: ${scripts.join(", ")}`);
   } catch {
     lines.push("No package.json found at the app root.");
   }
-  for (const cfg of ["vite.config.ts", "next.config.js", "next.config.mjs", "astro.config.mjs"]) {
+  for (const cfg of [
+    "vite.config.ts",
+    "next.config.js",
+    "next.config.mjs",
+    "astro.config.mjs",
+  ]) {
     try {
       await fs.access(path.join(appPath, cfg));
       lines.push(`Config: ${cfg}`);
@@ -160,7 +169,11 @@ async function describeStack(appPath: string): Promise<string> {
   return `## Stack\n${lines.join("\n")}`;
 }
 
-function describeTree(root: string, files: string[], displayRoot?: string): string {
+function describeTree(
+  root: string,
+  files: string[],
+  displayRoot?: string,
+): string {
   const byDir = new Map<string, string[]>();
   for (const file of files) {
     const rel = path.relative(root, file);
@@ -178,13 +191,21 @@ function describeTree(root: string, files: string[], displayRoot?: string): stri
     }
     const names = byDir.get(dir)!.sort();
     const shown = names.slice(0, 25);
-    const suffix = names.length > shown.length ? ` (+${names.length - shown.length} more)` : "";
-    lines.push(`${displayRoot ? path.join(displayRoot, dir) : dir}/  ${shown.join(", ")}${suffix}`);
+    const suffix =
+      names.length > shown.length
+        ? ` (+${names.length - shown.length} more)`
+        : "";
+    lines.push(
+      `${displayRoot ? path.join(displayRoot, dir) : dir}/  ${shown.join(", ")}${suffix}`,
+    );
   }
   return `## Structure (${files.length} source files)\n${lines.join("\n")}`;
 }
 
-async function describeExports(root: string, files: string[]): Promise<string | null> {
+async function describeExports(
+  root: string,
+  files: string[],
+): Promise<string | null> {
   // A map is a digest, not an analysis. This is a cheap lexical scan over the
   // file head; spawning a parser per file would take minutes on a real
   // codebase. Use ast_grep_search when structural matching is actually needed.

@@ -49,7 +49,7 @@ internal addresses (localhost, link-local, RFC1918) are refused.
 `;
 
 /** Extract absolute http(s) links from fetched content. */
-function extractLinks(content: string, baseUrl: string): string[] {
+function extractLinks(content: string, _baseUrl: string): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   const pattern = /https?:\/\/[^\s"'<>)\]]+/g;
@@ -140,9 +140,13 @@ export const webCrawlTool: ToolDefinition = {
       ctx.onXmlComplete(
         `<dyad-web-crawl url="${escapeXmlContent(args.url)}" error="${escapeXmlContent(message)}" />`,
       );
-      throw new DyadError(`Web crawl failed: ${message}`, DyadErrorKind.External, {
-        cause: error,
-      });
+      throw new DyadError(
+        `Web crawl failed: ${message}`,
+        DyadErrorKind.External,
+        {
+          cause: error,
+        },
+      );
     }
   },
 };

@@ -1,5 +1,5 @@
 import { spawnWithBadFdRetry } from "./spawn_retry";
-import { ChildProcess, spawn } from "node:child_process";
+import { ChildProcess } from "node:child_process";
 import treeKill from "tree-kill";
 import log from "electron-log";
 import type { Worker } from "node:worker_threads";
@@ -247,7 +247,9 @@ export function forceKillProcessTree(
  */
 export function stopDockerContainer(containerName: string): Promise<void> {
   return new Promise<void>((resolve) => {
-    const stop = spawnWithBadFdRetry("docker", ["stop", containerName], { stdio: "pipe" });
+    const stop = spawnWithBadFdRetry("docker", ["stop", containerName], {
+      stdio: "pipe",
+    });
     stop.on("close", () => resolve());
     stop.on("error", () => resolve());
   });
@@ -261,9 +263,13 @@ export function removeDockerVolumesForApp(appId: number): Promise<void> {
   return new Promise<void>((resolve) => {
     const pnpmVolume = `dyad-pnpm-${appId}`;
 
-    const rm = spawnWithBadFdRetry("docker", ["volume", "rm", "-f", pnpmVolume], {
-      stdio: "pipe",
-    });
+    const rm = spawnWithBadFdRetry(
+      "docker",
+      ["volume", "rm", "-f", pnpmVolume],
+      {
+        stdio: "pipe",
+      },
+    );
     rm.on("close", () => resolve());
     rm.on("error", () => resolve());
   });

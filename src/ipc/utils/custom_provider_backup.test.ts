@@ -38,9 +38,12 @@ describe("orderCustomBackupNames", () => {
 
   it("ranks recently successful models first, keeping registration order otherwise", () => {
     const siblings = ["space-bunny-free", "muse", "mimo", "beam"];
-    expect(
-      orderCustomBackupNames("longcat", siblings, [], new Map()),
-    ).toEqual(["space-bunny-free", "muse", "mimo", "beam"]);
+    expect(orderCustomBackupNames("longcat", siblings, [], new Map())).toEqual([
+      "space-bunny-free",
+      "muse",
+      "mimo",
+      "beam",
+    ]);
     expect(
       orderCustomBackupNames(
         "longcat",

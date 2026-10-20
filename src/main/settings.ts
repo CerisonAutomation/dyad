@@ -1237,11 +1237,16 @@ function encryptWithFileKey(plaintext: string): string {
 function decryptWithFileKey(payload: string): string {
   const raw = Buffer.from(payload, "base64");
   const key = loadOrCreateFileKey();
-  const decipher = crypto.createDecipheriv("aes-256-gcm", key, raw.subarray(0, 12));
-  decipher.setAuthTag(raw.subarray(12, 28));
-  return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString(
-    "utf8",
+  const decipher = crypto.createDecipheriv(
+    "aes-256-gcm",
+    key,
+    raw.subarray(0, 12),
   );
+  decipher.setAuthTag(raw.subarray(12, 28));
+  return Buffer.concat([
+    decipher.update(raw.subarray(28)),
+    decipher.final(),
+  ]).toString("utf8");
 }
 
 export function encrypt(data: string): Secret {
@@ -1251,9 +1256,15 @@ export function encrypt(data: string): Secret {
   }
   try {
     // File-backed by default: safeStorage is the component that fails here.
-    return { value: encryptWithFileKey(trimmed), encryptionType: FILE_KEY_TYPE };
+    return {
+      value: encryptWithFileKey(trimmed),
+      encryptionType: FILE_KEY_TYPE,
+    };
   } catch (error) {
-    logger.warn("File-key encryption failed, falling back to safeStorage", error);
+    logger.warn(
+      "File-key encryption failed, falling back to safeStorage",
+      error,
+    );
     if (safeStorage.isEncryptionAvailable()) {
       return {
         value: safeStorage.encryptString(trimmed).toString("base64"),

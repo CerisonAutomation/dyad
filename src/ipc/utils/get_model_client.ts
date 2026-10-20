@@ -7,7 +7,6 @@ import {
   type AutoModelCandidates,
   type ResolvedAliasModel,
 } from "../services/auto_model_candidates";
-import { wrapExternalModelBilling } from "./external_model_billing";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI as createGoogle } from "@ai-sdk/google";
 import { createAnthropic } from "@ai-sdk/anthropic";

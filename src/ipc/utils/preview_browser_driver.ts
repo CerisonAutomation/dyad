@@ -84,8 +84,10 @@ async function getSession(appId: number): Promise<Session | null> {
   }
 }
 
-async function launchSession(appId: number, baseUrl: string): Promise<Session | null> {
-
+async function launchSession(
+  appId: number,
+  baseUrl: string,
+): Promise<Session | null> {
   try {
     const { page, close } = await launchPage();
     const consoleLog: ConsoleEntry[] = [];
@@ -93,7 +95,8 @@ async function launchSession(appId: number, baseUrl: string): Promise<Session | 
       consoleLog.push({ type: msg.type(), text: msg.text() });
       // Keep the buffer bounded; long agent sessions otherwise grow it without
       // limit and the console read becomes unusable.
-      if (consoleLog.length > 200) consoleLog.splice(0, consoleLog.length - 200);
+      if (consoleLog.length > 200)
+        consoleLog.splice(0, consoleLog.length - 200);
     });
     page.on("pageerror", (err: Error) => {
       consoleLog.push({ type: "pageerror", text: err.message });
@@ -117,7 +120,9 @@ export async function closePreviewBrowserSession(appId: number): Promise<void> {
 }
 
 export async function closeAllPreviewBrowserSessions(): Promise<void> {
-  await Promise.all([...sessions.keys()].map((id) => closePreviewBrowserSession(id)));
+  await Promise.all(
+    [...sessions.keys()].map((id) => closePreviewBrowserSession(id)),
+  );
 }
 
 const NO_PREVIEW_MESSAGE =
@@ -133,8 +138,13 @@ export async function previewNavigate(appId: number, path: string) {
   const resolved = await currentPage(appId);
   if (!resolved) return NO_PREVIEW_MESSAGE;
   const { session, baseUrl } = resolved;
-  const target = /^https?:\/\//.test(path) ? path : new URL(path, baseUrl).toString();
-  await session.page.goto(target, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS });
+  const target = /^https?:\/\//.test(path)
+    ? path
+    : new URL(path, baseUrl).toString();
+  await session.page.goto(target, {
+    waitUntil: "domcontentloaded",
+    timeout: NAV_TIMEOUT_MS,
+  });
   session.consoleLog.length = 0;
   await settle(session.page);
   return describePage(session.page, target);
@@ -185,7 +195,8 @@ export async function previewConsole(appId: number) {
   const resolved = await currentPage(appId);
   if (!resolved) return NO_PREVIEW_MESSAGE;
   const { consoleLog } = resolved.session;
-  if (consoleLog.length === 0) return "The preview has logged no console output.";
+  if (consoleLog.length === 0)
+    return "The preview has logged no console output.";
   return consoleLog
     .map((entry) => `[${entry.type}] ${entry.text}`)
     .join("\n")

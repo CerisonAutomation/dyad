@@ -12,8 +12,6 @@ import {
   fastTextOutput,
 } from "@/ipc/utils/stream_text_utils";
 import { getMaxTokens, getTemperature } from "@/ipc/utils/token_utils";
-import type { UserSettings } from "@/lib/schemas";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import { grepTool } from "./grep";
 import { listFilesTool } from "./list_files";
 import { readFileTool } from "./read_file";
@@ -128,7 +126,11 @@ export async function runExploreCodeSubagent({
   });
   const settings = { ...storedSettings, selectedModel };
 
-  const modelInfo = await getModelClient(explorerModel, settings, selectedModel);
+  const modelInfo = await getModelClient(
+    explorerModel,
+    settings,
+    selectedModel,
+  );
   const maxOutputTokens = Math.min(
     (await getMaxTokens(explorerModel)) ?? SUBAGENT_MAX_OUTPUT_TOKENS,
     SUBAGENT_MAX_OUTPUT_TOKENS,

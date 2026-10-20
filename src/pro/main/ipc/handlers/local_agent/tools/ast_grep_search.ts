@@ -103,9 +103,7 @@ export const astGrepSearchTool: ToolDefinition = {
   getConsentPreview: (args) => `AST-search for ${args.pattern}`,
   execute: async (args, ctx) => {
     const target = args.path ? args.path : ".";
-    const absTarget = args.path
-      ? `${ctx.appPath}/${args.path}`
-      : ctx.appPath;
+    const absTarget = args.path ? `${ctx.appPath}/${args.path}` : ctx.appPath;
 
     const argv: string[] = ["run"];
     if (args.ruleFile) {
@@ -137,7 +135,10 @@ export const astGrepSearchTool: ToolDefinition = {
     } catch (error) {
       const message = (error as Error).message ?? String(error);
       // ast-grep exits non-zero when nothing matches, which is not a failure.
-      if (/No valid rules|exit status 1$/.test(message) && !message.includes("Error"))
+      if (
+        /No valid rules|exit status 1$/.test(message) &&
+        !message.includes("Error")
+      )
         return `No structural matches for that pattern in ${target}.`;
       logger.warn("ast-grep search failed", error);
       // A malformed pattern is the overwhelmingly common cause, and ast-grep's

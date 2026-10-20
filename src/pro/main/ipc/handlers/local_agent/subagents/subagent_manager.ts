@@ -24,7 +24,6 @@ import { collectMcpToolDefs } from "../tools/mcp_type_defs";
 import { getAiHeaders, getProviderOptions } from "@/ipc/utils/provider_options";
 import { withLock } from "@/ipc/utils/lock_utils";
 import { fastTextOutput } from "@/ipc/utils/stream_text_utils";
-import { getBuiltinLanguageModelCatalog } from "@/ipc/shared/remote_language_model_catalog";
 import {
   appOperationCoordinator,
   readAppResource,
@@ -1733,7 +1732,11 @@ async function runReview(
       appId,
       persona: "reviewer",
       assignment: `Review this exact diff. ${STRUCTURED_REVIEW_INSTRUCTIONS}${followup ? `\n\nFollow-up request: ${followup}` : ""}\n\nFiles: ${target.files.join(", ")}\nExcluded: ${target.exclusions.join(", ") || "none"}\n\n${target.diff}`,
-      tools: await buildSubagentVerificationTools({ appId, appPath, chatId: thread.chatId }),
+      tools: await buildSubagentVerificationTools({
+        appId,
+        appPath,
+        chatId: thread.chatId,
+      }),
       abortSignal: controller.signal,
     });
     const report = reviewResult.text;

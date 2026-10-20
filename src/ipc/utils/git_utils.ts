@@ -229,9 +229,7 @@ async function execWithBadFdRetry(
       lastError = error;
       const code = (error as NodeJS.ErrnoException)?.code;
       if (code !== "EBADF" || attempt === EBADF_RETRIES) throw error;
-      log.warn(
-        `git spawn hit EBADF; retry ${attempt + 1}/${EBADF_RETRIES}`,
-      );
+      log.warn(`git spawn hit EBADF; retry ${attempt + 1}/${EBADF_RETRIES}`);
       await new Promise((resolve) =>
         setTimeout(resolve, EBADF_BACKOFF_MS[attempt] ?? 3000),
       );
@@ -247,7 +245,7 @@ export async function execGit(
 ): Promise<IGitStringResult> {
   const env = getSanitizedGitEnv(options?.env);
   try {
-    return await execWithBadFdRetry(args, path, { ...options, env });
+    return (await execWithBadFdRetry(args, path, { ...options, env })) as any;
   } catch (error) {
     if (error instanceof ExecError && error.code === "ENOENT") {
       try {

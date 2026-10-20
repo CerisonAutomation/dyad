@@ -90,7 +90,9 @@ export function isTerminatedStreamError(error: unknown): boolean {
     return true;
   }
   const cause =
-    isRecord(normalized) && "cause" in normalized ? normalized.cause : undefined;
+    isRecord(normalized) && "cause" in normalized
+      ? normalized.cause
+      : undefined;
   if (cause) {
     return isTerminatedStreamError(cause);
   }
@@ -106,9 +108,7 @@ export function isRetryableProviderStreamError(error: unknown): boolean {
     // bailing out here classified every one of them as non-retryable and ended
     // the run. Match on the text instead.
     return matchesRetryableText(
-      typeof normalized === "string"
-        ? normalized
-        : getErrorMessage(normalized),
+      typeof normalized === "string" ? normalized : getErrorMessage(normalized),
     );
   }
 

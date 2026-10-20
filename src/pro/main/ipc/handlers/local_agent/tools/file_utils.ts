@@ -2,7 +2,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import log from "electron-log";
 
-const logger = log.scope("file_utils");
+const _logger = log.scope("file_utils");
 
 /**
  * Shared exclude directories for all file tree walks.

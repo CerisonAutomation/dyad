@@ -763,12 +763,10 @@ export function migrateStoredSettings(
 // client keys its engine override off hasEngineCredential (get_model_client.ts), so
 // leaving that false is what keeps inference on the user's own providers
 // instead of Dyad's hosted engine.
-export function isAgent2Enabled(settings: UserSettings): boolean {
-  if (settings.enableAgent2 !== undefined) return settings.enableAgent2;
-  return (
-    settings.enableDyadPro === true ||
-    (settings as { enableLocalPro?: boolean }).enableLocalPro === true
-  );
+export function isAgent2Enabled(_settings?: UserSettings): boolean {
+  // Always enabled: Dyad runs entirely on the user's own provider API keys.
+  // No cloud subscription, no Dyad Pro credential, no hosted engine required.
+  return true;
 }
 
 export function hasEngineCredential(settings: UserSettings): boolean {

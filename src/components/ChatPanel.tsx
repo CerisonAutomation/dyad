@@ -34,7 +34,6 @@ import { useSettings } from "@/hooks/useSettings";
 import { useFreeAgentQuota } from "@/hooks/useFreeAgentQuota";
 import { useChatMode } from "@/hooks/useChatMode";
 import { isAgent2Enabled } from "@/lib/schemas";
-import { isFreeProModel } from "@/lib/freeProModel";
 import { terminalOpenByChatIdAtom } from "@/atoms/terminalAtoms";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { useReducedMotionPref } from "@/hooks/useReducedMotion";
@@ -98,9 +97,9 @@ export function ChatPanel({
   const streamState = useChatStreamState(chatId) ?? { type: "idle" };
   const chatStreamManager = useChatStreamManager();
   const { settings } = useSettings();
-  const { selectedMode, selectedModel, setChatMode } = useChatMode(chatId);
+  const { selectedMode } = useChatMode(chatId);
   const { isQuotaExceeded } = useFreeAgentQuota();
-  const showFreeAgentQuotaBanner =
+  const _showFreeAgentQuotaBanner =
     settings &&
     !isAgent2Enabled(settings) &&
     selectedMode === "local-agent" &&

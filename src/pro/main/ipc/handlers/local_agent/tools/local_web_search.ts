@@ -178,12 +178,13 @@ async function searchDuckDuckGoLite(
       const redirect = url.match(/uddg=([^&]+)/);
       if (redirect) url = decodeURIComponent(redirect[1]);
       if (!url.startsWith("http")) continue;
-      const snippet = (html
-        .slice(match.index, match.index + 900)
-        .replace(/<[^>]+>/g, " ")
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 300) || "");
+      const snippet =
+        html
+          .slice(match.index, match.index + 900)
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 300) || "";
       results.push({
         title: match[2].replace(/<[^>]+>/g, " ").trim(),
         url,
@@ -213,7 +214,7 @@ async function searchDuckDuckGoHtml(
           "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         },
-        signal: AbortSignal.timeout(10000),
+        signal: abortSignal ?? AbortSignal.timeout(10000),
       },
     );
 
@@ -289,7 +290,7 @@ async function searchSearXNG(
           "User-Agent": "Mozilla/5.0 (Macintosh)",
           Accept: "text/html",
         },
-        signal: AbortSignal.timeout(10_000),
+        signal: abortSignal ?? AbortSignal.timeout(10_000),
       },
     );
 
@@ -311,10 +312,16 @@ async function searchSearXNG(
       const tail = html.slice(match.index, match.index + 1200);
       const snippetMatch = tail.match(/class="content"[^>]*>([\s\S]*?)<\/p>/i);
       const snippet = snippetMatch
-        ? snippetMatch[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+        ? snippetMatch[1]
+            .replace(/<[^>]+>/g, " ")
+            .replace(/\s+/g, " ")
+            .trim()
         : "";
       results.push({
-        title: match[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(),
+        title: match[2]
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim(),
         url,
         snippet,
         provider: "searxng-local",
@@ -328,35 +335,6 @@ async function searchSearXNG(
     logger.error(`SearXNG ${instance} search failed:`, error);
     return [];
   }
-}
-
-/**
- * Parse SearXNG JSON results
- */
-function parseSearXNGResults(
-  data: any,
-  instance: string,
-  maxResults: number,
-): SearchResult[] {
-  const results: SearchResult[] = [];
-
-  if (!data.results || !Array.isArray(data.results)) {
-    return results;
-  }
-
-  for (const item of data.results.slice(0, maxResults)) {
-    if (item.url && item.title) {
-      results.push({
-        title: item.title,
-        url: item.url,
-        snippet: item.content || "",
-        provider: `searxng:${new URL(instance).hostname}`,
-        score: calculateRelevanceScore(item.title, item.content || "", ""),
-      });
-    }
-  }
-
-  return results;
 }
 
 /**

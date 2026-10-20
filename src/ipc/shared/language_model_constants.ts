@@ -563,7 +563,7 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
       temperature: 1.0,
       dollarSigns: 1,
     },
-    ],
+  ],
   opencode: [
     {
       name: "longcat-2.5-preview-free",
