@@ -907,6 +907,9 @@ describe("ModelPicker", () => {
 
     await waitFor(() => {
       expect(mocks.updateSettings).toHaveBeenCalledWith({
+        // The pick is also promoted to the global default, so a new chat
+        // starts on the model the user just chose.
+        selectedModel: { provider: "auto", name: "auto" },
         recentModels: [{ provider: "openai", name: "gpt-5" }],
       });
     });
@@ -929,15 +932,19 @@ describe("ModelPicker", () => {
     }
   });
 
-  it("filters hidden Pro models out of Recent", () => {
+  it("keeps free models visible in Recent", () => {
+    // Free-tier models are not hidden behind the paid tier. The flag that used
+    // to hide them is the Agent2 feature flag, which is on for everyone
+    // running on their own provider keys — so the gate hid all 18 free
+    // OpenRouter models from the only people who could reach them.
     mocks.settings.recentModels = [
       { provider: "openrouter", name: "openrouter/free" },
     ];
 
     render(<ModelPicker />);
 
-    expect(screen.queryByText("Recent")).toBeNull();
-    expect(screen.queryByText("Free (OpenRouter)")).toBeNull();
+    expect(screen.queryByText("Recent")).not.toBeNull();
+    expect(screen.queryByText("Free (OpenRouter)")).not.toBeNull();
   });
 
   it("uses custom model ids for Recent keys and selection", () => {
@@ -1356,6 +1363,8 @@ describe("ModelPicker", () => {
       modelEffortPreferences: {
         '["openai","gpt-5",null]': "xhigh",
       },
+      // The resolved model is persisted as the global default too.
+      selectedModel: { name: "gpt-5", provider: "openai" },
       recentModels: [{ name: "gpt-5", provider: "openai" }],
     });
     expect(mocks.updateChat).not.toHaveBeenCalled();

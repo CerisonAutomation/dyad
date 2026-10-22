@@ -12,7 +12,7 @@ import {
   requiresNewChatForModel,
 } from "@/shared/execution_backend";
 import { useSelectChat } from "@/hooks/useSelectChat";
-import { isAgent2Enabled, type LargeLanguageModel } from "@/lib/schemas";
+import { hasDyadProEntitlement, type LargeLanguageModel } from "@/lib/schemas";
 import { isFreeModelName } from "@/lib/freeModel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -439,7 +439,7 @@ export function ModelPicker() {
     setOpen(nextOpen);
     if (nextOpen) {
       posthog.capture("model-picker:open", {
-        isDyadPro: settings ? isAgent2Enabled(settings) : false,
+        isDyadPro: hasDyadProEntitlement(settings),
       });
     }
   };
@@ -494,7 +494,7 @@ export function ModelPicker() {
   } = useLanguageModelProviders();
 
   const loading = modelsByProvidersLoading || providersLoading;
-  const dyadProEnabled = settings ? isAgent2Enabled(settings) : false;
+  const dyadProEnabled = hasDyadProEntitlement(settings);
   // Ollama Models Hook
   const {
     models: ollamaModels,
@@ -713,10 +713,11 @@ export function ModelPicker() {
         )
       : [];
   // Free-tier models are always listed. They were previously hidden for
-  // "Pro" users, but that flag is now `isAgent2Enabled()`, which is true for
-  // everyone using the local setup — so the gate hid all 18 free OpenRouter
-  // models from the people who can actually reach them. It was also an upsell:
-  // the only way to see a free model was to buy the tier.
+  // "Pro" users, but that gate keyed off the Agent2 feature flag, which is
+  // true for everyone running on their own provider keys — so it hid all 18
+  // free OpenRouter models from the people who can actually reach them. It
+  // was also an upsell: the only way to see a free model was to buy a tier
+  // that no longer gates anything.
   const isVisibleCatalogModel = (_providerId: string, _model: LanguageModel) =>
     true;
   const isOtherProvider = (providerId: string) => {

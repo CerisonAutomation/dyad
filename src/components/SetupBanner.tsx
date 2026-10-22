@@ -26,7 +26,7 @@ import openrouterLogo from "../../assets/ai-logos/openrouter-logo.png";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSubscriptionAccount } from "@/hooks/useSubscriptionAccount";
 import { useSettings } from "@/hooks/useSettings";
-import { isAgent2Enabled } from "@/lib/schemas";
+import { hasDyadProEntitlement } from "@/lib/schemas";
 import { queryKeys } from "@/lib/queryKeys";
 import { ProviderIcon } from "./ProviderIcon";
 
@@ -43,7 +43,7 @@ export function SetupBanner({
   const client = useQueryClient();
   const subscription = useSubscriptionAccount();
   const { settings } = useSettings();
-  const hasPro = settings && isAgent2Enabled(settings);
+  const hasPro = hasDyadProEntitlement(settings);
   const connection = useMutation({
     mutationFn: (cancel: boolean) =>
       cancel

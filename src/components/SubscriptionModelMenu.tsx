@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useSubscriptionAccount } from "@/hooks/useSubscriptionAccount";
 import { useSettings } from "@/hooks/useSettings";
-import { isAgent2Enabled } from "@/lib/schemas";
+import { hasDyadProEntitlement } from "@/lib/schemas";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, ChevronRight, Unplug } from "lucide-react";
 import { Badge } from "./ui/badge";
@@ -35,7 +35,7 @@ export function SubscriptionModelMenu({ children }: { children?: ReactNode }) {
     mutationFn: (checked: boolean) =>
       updateSettings({ chatgptFastMode: checked }),
   });
-  const hasPro = settings && isAgent2Enabled(settings);
+  const hasPro = hasDyadProEntitlement(settings);
   const action = useMutation({
     onMutate: () => fastMode.reset(),
     mutationFn: (kind: "connect" | "disconnect") =>

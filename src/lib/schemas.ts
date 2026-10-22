@@ -765,6 +765,18 @@ export function hasEngineCredential(settings: UserSettings): boolean {
   return !!settings.providerSettings?.auto?.apiKey?.value;
 }
 
+/**
+ * Whether the user holds the paid Dyad Pro entitlement.
+ *
+ * Agent2 itself is always on (see `isAgent2Enabled`), but the paid tier still
+ * drives the upsell surfaces: which cloud models are locked, the "Get Dyad
+ * Pro" dialog, and the subscription menu. Those read the entitlement, not the
+ * Agent2 feature flag — reading the feature flag made all of them unreachable.
+ */
+export function hasDyadProEntitlement(settings?: UserSettings | null): boolean {
+  return Boolean(settings?.enableDyadPro);
+}
+
 type PnpmMinimumReleaseAgeWarningSettings = Pick<
   UserSettings,
   "enablePnpmMinimumReleaseAgeWarning" | "hidePnpmMinimumReleaseAgeWarning"
