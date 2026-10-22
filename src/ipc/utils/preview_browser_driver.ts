@@ -1434,6 +1434,26 @@ export interface PreviewDomOptions {
 }
 
 /**
+ * The tabs of this preview session.
+ *
+ * Comet returns the tab context with every browser result, so the model
+ * always knows which tab it acted on and what else is open. The agent can
+ * otherwise act on a stale page after the preview switched tabs.
+ */
+async function tabContext(session: Session): Promise<string> {
+  const pages = session.context.pages();
+  const activeIndex = pages.indexOf(session.page);
+  const lines: string[] = [];
+  for (const [index, page] of pages.entries()) {
+    const title = await page.title().catch(() => "");
+    lines.push(
+      `${index}: ${page.url()} - ${title}${page === session.page ? " (active)" : ""}`,
+    );
+  }
+  return `Tabs (${pages.length}, active=${activeIndex}):\n${lines.join("\n")}`;
+}
+
+/**
  * The accessibility outline of the preview.
  *
  * Each line carries the role, the accessible name, a stable `ref` handle the
@@ -1475,6 +1495,7 @@ export async function previewDom(
     `Title: ${title}`,
     `DOM outline (${filter}, ${nodes.length} nodes):`,
     formatDomOutline(nodes, { maxDepth: depth, maxElements: MAX_DOM_ELEMENTS }),
+    await tabContext(session),
   ].join("\n");
 }
 
