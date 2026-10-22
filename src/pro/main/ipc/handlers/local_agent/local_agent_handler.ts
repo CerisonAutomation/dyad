@@ -106,6 +106,12 @@ import {
   type MutationActivityOwner,
 } from "./subagents/mutation_activity_tracker";
 import { buildImplementerFailureReport } from "./subagents/subagent_failure_reporting";
+import {
+  boundChatHistoryForModel,
+  boundSubagentSummariesForParent,
+  MAX_ROOT_TOOL_RESULT_CHARS,
+  pruneRootMessages,
+} from "./subagents/subagent_context_budget";
 import { isImplementerSubagentEnabled } from "@/lib/autoSidekick";
 import { COMPLETED_PLANNING_QUESTIONNAIRE_RESULT_PREFIX } from "./tools/planning_questionnaire";
 
@@ -452,7 +458,7 @@ export function buildChatMessageHistory(
     }
   }
 
-  return history;
+  return boundChatHistoryForModel(history);
 }
 
 export function hasCompletedAppBlueprintQuestionnaire(
@@ -1653,6 +1659,21 @@ export async function handleLocalAgentStream(
                 };
               }
 
+              // The step loop re-sends the whole transcript on every step, so a
+              // single oversized tool result (a large file read, a wide grep)
+              // would otherwise be paid for again on every following request.
+              const budgetedMessages = pruneRootMessages(
+                result?.messages ?? stepOptions.messages,
+              );
+              if (
+                budgetedMessages !== (result?.messages ?? stepOptions.messages)
+              ) {
+                result = {
+                  ...(result ?? stepOptions),
+                  messages: budgetedMessages,
+                };
+              }
+
               return result;
             },
             onStepFinish: async (step) => {
@@ -1717,6 +1738,7 @@ export async function handleLocalAgentStream(
               const toolResultTokens = estimateToolResultTokens(
                 step.toolResults ?? [],
                 toolErrors,
+                MAX_ROOT_TOOL_RESULT_CHARS,
               );
               const projectedNextRequestTokens =
                 step.usage.totalTokens + toolResultTokens;
@@ -2879,16 +2901,13 @@ function stepOnlyCalledTool(
 export function buildExplorerSynthesisMessage(
   explorers: SubagentThreadSummary[],
 ): string {
-  const maxReportChars = 100_000;
-  const reports = explorers.map((explorer) => {
+  const boundedExplorers = boundSubagentSummariesForParent(explorers);
+  const reports = boundedExplorers.map((explorer) => {
     const rawReport =
       typeof explorer.result?.report === "string"
         ? explorer.result.report
         : "No report was produced.";
-    const report =
-      rawReport.length > maxReportChars
-        ? `${rawReport.slice(0, maxReportChars)}\n[Explorer report truncated]`
-        : rawReport;
+    const report = rawReport;
     const error = explorer.error ? `\nError: ${explorer.error}` : "";
     return `### Explorer: ${explorer.taskName}\nStatus: ${explorer.status}${error}\n\n${report}`.replaceAll(
       "<",
