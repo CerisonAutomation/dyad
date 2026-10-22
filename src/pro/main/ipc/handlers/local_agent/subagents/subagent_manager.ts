@@ -1735,6 +1735,8 @@ async function runReview(
     if (!(await updateStatus(threadId, "running"))) return;
     const boundedDiff = boundReviewDiff(target.diff);
     const diffExcerpt = boundedDiff.text;
+    const boundedDiff = boundReviewDiff(target.diff);
+    const diffExcerpt = boundedDiff.text;
     const reviewResult = await runModel({
       threadId,
       chatId: thread.chatId,
@@ -1767,7 +1769,7 @@ async function runReview(
           `Re-review the same diff. Reply with a single raw JSON object and no ` +
           `prose, no code fence, and nothing before or after it.\n\n` +
           `${STRUCTURED_REVIEW_INSTRUCTIONS}\n\nFiles: ${target.files.join(", ")}\n` +
-          `Excluded: ${target.exclusions.join(", ") || "none"}\n\n${target.diff}`,
+          `Excluded: ${target.exclusions.join(", ") || "none"}\n\n${diffExcerpt}`,
         tools: await buildSubagentVerificationTools({
           appId,
           appPath,
