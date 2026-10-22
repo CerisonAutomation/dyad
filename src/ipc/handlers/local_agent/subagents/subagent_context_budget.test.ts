@@ -5,6 +5,8 @@ import type { SubagentThreadSummary } from "@/ipc/types";
 
 import {
   MAX_PARENT_REPORT_CHARS,
+  MAX_ROOT_TOOL_CALL_INPUT_VALUE_CHARS,
+  MAX_ROOT_TOOL_RESULT_CHARS,
   MAX_SUBAGENT_ASSIGNMENT_CHARS,
   MAX_SUBAGENT_CURRENT_ASSIGNMENT_CHARS,
   MAX_SUBAGENT_TOTAL_ASSISTANT_TEXT_CHARS,
@@ -13,10 +15,13 @@ import {
   boundReportForParent,
   boundSubagentAssignmentsForModel,
   boundSubagentSummariesForParent,
+  pruneAssistantToolCallInputs,
+  pruneRootMessages,
   pruneSubagentAssistantText,
   pruneSubagentMessages,
   pruneSubagentToolResults,
   toolResultOutputToText,
+  boundChatHistoryForModel,
 } from "./subagent_context_budget";
 
 function toolMessage(
@@ -394,5 +399,149 @@ describe("sub-agent context budget", () => {
         }),
       ).toEqual({ originalAssignment: "one", currentAssignment: "two" });
     });
+  });
+});
+
+function assistantToolCall(
+  toolCallId: string,
+  input: Record<string, unknown>,
+  toolName = "write_file",
+): ModelMessage {
+  return {
+    role: "assistant",
+    content: [
+      {
+        type: "tool-call",
+        toolCallId,
+        toolName,
+        input,
+      },
+    ],
+  };
+}
+
+function toolCallInput(message: ModelMessage, key = "content"): unknown {
+  const content = (
+    message as unknown as {
+      content: Array<{ type: string; input?: Record<string, unknown> }>;
+    }
+  ).content;
+  return content[0]?.input?.[key];
+}
+
+describe("pruneAssistantToolCallInputs", () => {
+  it("returns the original array when nothing needs pruning", () => {
+    const messages = [assistantToolCall("1", { content: "small" })];
+    expect(pruneAssistantToolCallInputs(messages)).toBe(messages);
+  });
+
+  it("caps an oversized tool-call input value but keeps the other keys", () => {
+    const messages = [
+      assistantToolCall("1", { content: "x".repeat(50_000), path: "a.ts" }),
+    ];
+    const pruned = pruneAssistantToolCallInputs(messages, {
+      maxInputValueChars: 1_000,
+    });
+    const value = String(toolCallInput(pruned[0]));
+    expect(value.length).toBeLessThanOrEqual(1_000);
+    expect(value).toContain("tool input truncated");
+    expect(toolCallInput(pruned[0], "path")).toBe("a.ts");
+  });
+
+  it("drops older tool-call inputs once the total budget is exhausted", () => {
+    const messages = [
+      assistantToolCall("1", { content: "a".repeat(5_000) }),
+      assistantToolCall("2", { content: "b".repeat(5_000) }),
+    ];
+    const pruned = pruneAssistantToolCallInputs(messages, {
+      maxInputValueChars: 5_000,
+      maxTotalInputChars: 5_000,
+    });
+    expect(String(toolCallInput(pruned[0]))).toContain("omitted");
+    expect(String(toolCallInput(pruned[1]))).toBe("b".repeat(5_000));
+  });
+
+  it("never mutates the messages it is given", () => {
+    const messages = [assistantToolCall("1", { content: "x".repeat(5_000) })];
+    pruneAssistantToolCallInputs(messages, { maxInputValueChars: 100 });
+    expect(String(toolCallInput(messages[0]))).toHaveLength(5_000);
+  });
+
+  it("leaves non-string tool-call inputs alone", () => {
+    const messages = [assistantToolCall("1", { line: 42, nested: { a: 1 } })];
+    expect(pruneAssistantToolCallInputs(messages)).toBe(messages);
+  });
+
+  it("is applied by the sub-agent umbrella budget", () => {
+    const messages = [assistantToolCall("1", { content: "x".repeat(50_000) })];
+    const pruned = pruneSubagentMessages(messages, {
+      maxToolCallInputValueChars: 1_000,
+    });
+    expect(String(toolCallInput(pruned[0])).length).toBeLessThanOrEqual(1_000);
+  });
+});
+
+describe("pruneRootMessages", () => {
+  it("bounds tool results, tool-call inputs and assistant prose together", () => {
+    const messages: ModelMessage[] = [
+      assistantText("p".repeat(30_000)),
+      assistantToolCall("1", { content: "c".repeat(60_000) }),
+      toolMessage("1", "r".repeat(60_000)),
+    ];
+    const pruned = pruneRootMessages(messages);
+    expect(String(toolCallInput(pruned[1])).length).toBeLessThanOrEqual(
+      MAX_ROOT_TOOL_CALL_INPUT_VALUE_CHARS,
+    );
+    expect(firstToolResultText(pruned[2]).length).toBeLessThanOrEqual(
+      MAX_ROOT_TOOL_RESULT_CHARS,
+    );
+  });
+
+  it("returns the original array when everything is within budget", () => {
+    const messages: ModelMessage[] = [
+      assistantText("short"),
+      assistantToolCall("1", { content: "small" }),
+      toolMessage("1", "small result"),
+    ];
+    expect(pruneRootMessages(messages)).toBe(messages);
+  });
+});
+
+describe("boundChatHistoryForModel", () => {
+  it("leaves a history that fits untouched", () => {
+    const history: ModelMessage[] = [
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "hi" },
+    ];
+    expect(boundChatHistoryForModel(history, 1_000)).toBe(history);
+  });
+
+  it("drops the oldest messages first", () => {
+    const history: ModelMessage[] = [
+      { role: "user", content: "old" },
+      { role: "assistant", content: "middle" },
+      { role: "user", content: "new" },
+    ];
+    const bounded = boundChatHistoryForModel(history, 10);
+    expect(bounded.length).toBeLessThan(history.length);
+    expect(bounded.some((message) => message.content === "new")).toBe(true);
+    expect(bounded.some((message) => message.content === "old")).toBe(false);
+  });
+
+  it("never drops a system message", () => {
+    const history: ModelMessage[] = [
+      { role: "system", content: "rules" },
+      { role: "user", content: "x".repeat(500) },
+    ];
+    const bounded = boundChatHistoryForModel(history, 10);
+    expect(bounded.some((message) => message.role === "system")).toBe(true);
+  });
+
+  it("measures structured content parts", () => {
+    const history: ModelMessage[] = [
+      { role: "assistant", content: [{ type: "text", text: "y".repeat(400) }] },
+    ];
+    const bounded = boundChatHistoryForModel(history, 50);
+    expect(bounded.length).toBe(0);
   });
 });

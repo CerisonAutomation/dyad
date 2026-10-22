@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { getLogs } from "@/lib/log_store";
 import { formatLogsForAI } from "@/shared/format_logs";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import { boundToolOutput, MAX_LOG_OUTPUT_CHARS } from "./tool_output_limits";
 
 // The window used to be hardcoded to 5 minutes, which hid older errors.
 const DEFAULT_LOG_WINDOW_MINUTES = 30;
@@ -143,10 +144,12 @@ ${summary}
     );
 
     // Format logs for display
-    const formattedLogs =
+    const formattedLogs = boundToolOutput(
       recentLogs.length === 0
         ? "No logs found matching the specified filters."
-        : formatLogsForAI(filtered, recentLogs.length);
+        : formatLogsForAI(filtered, recentLogs.length),
+      MAX_LOG_OUTPUT_CHARS,
+    );
 
     // Build the query summary for display
     const parts: string[] = [

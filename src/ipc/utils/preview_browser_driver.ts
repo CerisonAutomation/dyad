@@ -592,7 +592,7 @@ export async function previewNetwork(appId: number) {
  * exhausted the context window after a couple of screenshots and pushed the
  * stored transcript past the 10 MB limit that drops the structured history.
  */
-const MAX_PREVIEW_SCREENSHOT_CHARS = 200_000;
+const MAX_PREVIEW_SCREENSHOT_CHARS = 60_000;
 
 /** JPEG quality ladder used when the PNG is over budget. */
 const SCREENSHOT_JPEG_QUALITIES = [70, 50, 30, 15];

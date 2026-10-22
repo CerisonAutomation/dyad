@@ -4,6 +4,7 @@
  */
 
 import type { ModelMessage, UserModelMessage } from "ai";
+import { pruneRootMessages } from "./subagents/subagent_context_budget";
 
 export type RetryReplayEvent =
   | { type: "injected-user-message"; message: UserModelMessage }
@@ -51,7 +52,7 @@ const serializedToolOutputs = new WeakMap<
  * the array could retain well over 100 MB for the life of the attempt - in
  * the main process, whose V8 heap cage is shared with every worker thread.
  */
-const MAX_REPLAY_EVENT_BYTES = 8 * 1024 * 1024;
+const MAX_REPLAY_EVENT_BYTES = 2 * 1024 * 1024;
 
 /** Running retained size per replay-event array. */
 const replayEventBytes = new WeakMap<RetryReplayEvent[], { bytes: number }>();
@@ -385,15 +386,22 @@ export function maybeAppendRetryReplayForRetry(params: {
     return;
   }
 
+  // The replay carries the raw tool call inputs and tool outputs of the
+  // attempt. Append it with the same context budget the turn uses, otherwise a
+  // retried pass re-sends an unbounded transcript on every following step.
+  const boundedReplayMessages = pruneRootMessages(replayMessages);
+
   onCurrentMessageHistoryUpdate([
     ...currentMessageHistoryRef,
-    ...replayMessages,
+    ...boundedReplayMessages,
   ]);
   // Injections include synthetic instructions that belong only to this turn.
   accumulatedAiMessagesRef.push(
-    ...buildRetryReplayMessages(
-      retryReplayEvents.filter(
-        (event) => event.type !== "injected-user-message",
+    ...pruneRootMessages(
+      buildRetryReplayMessages(
+        retryReplayEvents.filter(
+          (event) => event.type !== "injected-user-message",
+        ),
       ),
     ),
   );

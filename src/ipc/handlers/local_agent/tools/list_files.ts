@@ -17,6 +17,7 @@ import {
   filterDyadInternalFiles,
   resolveTargetAppPath,
 } from "./resolve_app_context";
+import { boundToolOutput, MAX_FILE_LIST_CHARS } from "./tool_output_limits";
 
 const MAX_PATHS_TO_RETURN = 1_000;
 
@@ -353,9 +354,12 @@ export const listFilesTool: ToolDefinition<ListFilesArgs> = {
     const allFilesList =
       cappedPaths.map((entry) => " - " + getDisplayPath(entry)).join("\n") ||
       "";
-    const resultText = wasTruncated
-      ? `${allFilesList}\n\n[TRUNCATED: Showing ${cappedPaths.length} of ${totalCount} paths. Use directory to narrow the listing.]`
-      : allFilesList;
+    const resultText = boundToolOutput(
+      wasTruncated
+        ? `${allFilesList}\n\n[TRUNCATED: Showing ${cappedPaths.length} of ${totalCount} paths. Use directory to narrow the listing.]`
+        : allFilesList,
+      MAX_FILE_LIST_CHARS,
+    );
 
     // Build abbreviated list for UI display
     const MAX_FILES_TO_SHOW = 20;

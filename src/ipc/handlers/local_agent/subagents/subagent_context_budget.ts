@@ -394,8 +394,192 @@ export function pruneSubagentAssistantText(
 }
 
 /**
+ * Maximum characters kept for a single string value inside a tool-call input
+ * (for example the `content` of a `write_file` call, or the `old_string` of a
+ * `search_replace` call). The tool already ran with the full value; this only
+ * bounds what is re-sent on later steps of the same turn.
+ */
+export const MAX_TOOL_CALL_INPUT_VALUE_CHARS = 12_000;
+
+/**
+ * Maximum characters kept for ALL tool-call inputs combined in one turn.
+ */
+export const MAX_TOTAL_TOOL_CALL_INPUT_CHARS = 40_000;
+
+/** Maximum characters kept for a single tool-call input value in the root agent. */
+export const MAX_ROOT_TOOL_CALL_INPUT_VALUE_CHARS = 20_000;
+
+/** Maximum characters kept for ALL root-agent tool-call inputs combined. */
+export const MAX_ROOT_TOTAL_TOOL_CALL_INPUT_CHARS = 60_000;
+
+const TRUNCATED_TOOL_INPUT_MARKER = "[tool input truncated]";
+const OMITTED_TOOL_INPUT_MARKER =
+  "[earlier tool input omitted to fit the context budget]";
+
+interface ToolCallPartLike {
+  type: "tool-call";
+  toolCallId: string;
+  toolName: string;
+  input: unknown;
+}
+
+function isToolCallPart(part: unknown): part is ToolCallPartLike {
+  if (typeof part !== "object" || part === null) {
+    return false;
+  }
+  const candidate = part as {
+    type?: unknown;
+    toolCallId?: unknown;
+    input?: unknown;
+  };
+  return (
+    candidate.type === "tool-call" &&
+    typeof candidate.toolCallId === "string" &&
+    typeof candidate.input === "object" &&
+    candidate.input !== null
+  );
+}
+
+interface ToolCallInputEntry {
+  messageIndex: number;
+  partIndex: number;
+  key: string;
+  value: string;
+  chars: number;
+}
+
+/**
+ * Bounds the assistant side of the transcript: the arguments the model passed
+ * to its tools.
+ *
+ * A `write_file` call carries the whole file body, a `search_replace` call
+ * carries both the old and the new text, and a sandbox script carries its
+ * entire source. None of that is bounded by the tool-result budget because it
+ * lives in an assistant message, and it is re-sent on every step of the turn.
+ */
+export function pruneAssistantToolCallInputs(
+  messages: ModelMessage[],
+  options: {
+    maxInputValueChars?: number;
+    maxTotalInputChars?: number;
+  } = {},
+): ModelMessage[] {
+  const maxInputValueChars =
+    options.maxInputValueChars ?? MAX_TOOL_CALL_INPUT_VALUE_CHARS;
+  const maxTotalInputChars =
+    options.maxTotalInputChars ?? MAX_TOTAL_TOOL_CALL_INPUT_CHARS;
+
+  const entries: ToolCallInputEntry[] = [];
+  messages.forEach((message, messageIndex) => {
+    if (message.role !== "assistant") {
+      return;
+    }
+    const content = (message as AssistantModelMessage).content;
+    if (!Array.isArray(content)) {
+      return;
+    }
+    content.forEach((part, partIndex) => {
+      if (!isToolCallPart(part)) {
+        return;
+      }
+      const input = part.input as Record<string, unknown>;
+      for (const [key, value] of Object.entries(input)) {
+        if (typeof value !== "string") {
+          continue;
+        }
+        entries.push({
+          messageIndex,
+          partIndex,
+          key,
+          value,
+          chars: value.length,
+        });
+      }
+    });
+  });
+
+  if (entries.length === 0) {
+    return messages;
+  }
+
+  // Newest first: the most recent tool call keeps its input, older ones are
+  // dropped from the budget once it is exhausted.
+  const keep = Array.from({ length: entries.length }, () => false);
+  let used = 0;
+  for (let index = entries.length - 1; index >= 0; index--) {
+    const chars = Math.min(entries[index].chars, maxInputValueChars);
+    const isNewest = index === entries.length - 1;
+    if (isNewest || used + chars <= maxTotalInputChars) {
+      keep[index] = true;
+      used += chars;
+    }
+  }
+
+  // messageIndex -> partIndex -> key -> replacement value
+  const replacements = new Map<number, Map<number, Map<string, string>>>();
+  let changed = false;
+  entries.forEach((entry, index) => {
+    let replacement: string;
+    if (!keep[index]) {
+      replacement = OMITTED_TOOL_INPUT_MARKER;
+    } else if (entry.chars > maxInputValueChars) {
+      replacement = truncateWithMarker(
+        entry.value,
+        maxInputValueChars,
+        TRUNCATED_TOOL_INPUT_MARKER,
+      );
+    } else {
+      return;
+    }
+    changed = true;
+    let byPart = replacements.get(entry.messageIndex);
+    if (!byPart) {
+      byPart = new Map<number, Map<string, string>>();
+      replacements.set(entry.messageIndex, byPart);
+    }
+    let byKey = byPart.get(entry.partIndex);
+    if (!byKey) {
+      byKey = new Map<string, string>();
+      byPart.set(entry.partIndex, byKey);
+    }
+    byKey.set(entry.key, replacement);
+  });
+
+  if (!changed) {
+    return messages;
+  }
+
+  return messages.map((message, messageIndex) => {
+    const byPart = replacements.get(messageIndex);
+    if (!byPart) {
+      return message;
+    }
+    const assistantMessage = message as AssistantModelMessage;
+    if (!Array.isArray(assistantMessage.content)) {
+      return message;
+    }
+    const content = assistantMessage.content.map((part, partIndex) => {
+      const byKey = byPart.get(partIndex);
+      if (!byKey) {
+        return part;
+      }
+      const toolCall = part as ToolCallPartLike;
+      const input = {
+        ...(toolCall.input as Record<string, unknown>),
+      };
+      for (const [key, value] of byKey) {
+        input[key] = value;
+      }
+      return { ...toolCall, input };
+    });
+    return { ...assistantMessage, content };
+  });
+}
+
+/**
  * Applies the full sub-agent context budget to a step's messages: tool
- * results are bounded and older assistant prose is dropped.
+ * results are bounded, tool-call inputs are bounded and older assistant prose
+ * is dropped.
  */
 export function pruneSubagentMessages(
   messages: ModelMessage[],
@@ -403,14 +587,59 @@ export function pruneSubagentMessages(
     maxToolResultChars?: number;
     maxTotalToolResultChars?: number;
     maxTotalAssistantTextChars?: number;
+    maxToolCallInputValueChars?: number;
+    maxTotalToolCallInputChars?: number;
   } = {},
 ): ModelMessage[] {
   const afterToolResults = pruneSubagentToolResults(messages, {
     maxToolResultChars: options.maxToolResultChars,
     maxTotalToolResultChars: options.maxTotalToolResultChars,
   });
-  return pruneSubagentAssistantText(afterToolResults, {
+  const afterInputs = pruneAssistantToolCallInputs(afterToolResults, {
+    maxInputValueChars: options.maxToolCallInputValueChars,
+    maxTotalInputChars: options.maxTotalToolCallInputChars,
+  });
+  return pruneSubagentAssistantText(afterInputs, {
     maxTotalTextChars: options.maxTotalAssistantTextChars,
+  });
+}
+
+/**
+ * The root agent's context budget.
+ *
+ * The root agent already compacts mid-turn, but compaction is reactive: it
+ * happens *after* an oversized payload has already gone out. This bounds what
+ * every single request carries: tool results, the arguments the model passed
+ * to its tools, and the assistant's own prose.
+ */
+export function pruneRootMessages(
+  messages: ModelMessage[],
+  options: {
+    maxToolResultChars?: number;
+    maxTotalToolResultChars?: number;
+    maxTotalAssistantTextChars?: number;
+    maxToolCallInputValueChars?: number;
+    maxTotalToolCallInputChars?: number;
+  } = {},
+): ModelMessage[] {
+  const afterToolResults = pruneSubagentToolResults(messages, {
+    maxToolResultChars:
+      options.maxToolResultChars ?? MAX_ROOT_TOOL_RESULT_CHARS,
+    maxTotalToolResultChars:
+      options.maxTotalToolResultChars ?? MAX_ROOT_TOTAL_TOOL_RESULT_CHARS,
+  });
+  const afterInputs = pruneAssistantToolCallInputs(afterToolResults, {
+    maxInputValueChars:
+      options.maxToolCallInputValueChars ??
+      MAX_ROOT_TOOL_CALL_INPUT_VALUE_CHARS,
+    maxTotalInputChars:
+      options.maxTotalToolCallInputChars ??
+      MAX_ROOT_TOTAL_TOOL_CALL_INPUT_CHARS,
+  });
+  return pruneSubagentAssistantText(afterInputs, {
+    maxTotalTextChars:
+      options.maxTotalAssistantTextChars ??
+      MAX_SUBAGENT_TOTAL_ASSISTANT_TEXT_CHARS,
   });
 }
 
@@ -569,4 +798,72 @@ export function boundSubagentAssignmentsForModel(params: {
       maxCurrentChars,
     ),
   };
+}
+
+/**
+ * Hard ceiling on the characters of chat history that is handed to the model.
+ *
+ * The compaction threshold is a token budget that can legitimately reach a
+ * million characters before compaction fires. This is a much smaller hard
+ * bound, applied to the history that is actually sent, so a long-running chat
+ * cannot ship an unbounded transcript on every step.
+ */
+export const MAX_ROOT_HISTORY_CHARS = 200_000;
+
+function measureMessageChars(message: ModelMessage): number {
+  const content = message.content;
+  if (typeof content === "string") {
+    return content.length;
+  }
+  if (!Array.isArray(content)) {
+    return 0;
+  }
+  let chars = 0;
+  // Providers can send plain strings inside the content array even though the
+  // SDK types only describe object parts, so measure the parts untyped.
+  for (const part of content as unknown[]) {
+    if (typeof part === "string") {
+      chars += part.length;
+      continue;
+    }
+    if (part && typeof part === "object" && "text" in part) {
+      chars += String((part as { text?: unknown }).text ?? "").length;
+    }
+  }
+  return chars;
+}
+
+/**
+ * Drops the oldest messages of a chat history until it fits the budget.
+ *
+ * System messages are never dropped: they carry the rules the model must
+ * follow. Everything else is dropped oldest-first.
+ */
+export function boundChatHistoryForModel(
+  history: ModelMessage[],
+  maxChars: number = MAX_ROOT_HISTORY_CHARS,
+): ModelMessage[] {
+  if (history.length === 0) {
+    return history;
+  }
+
+  let total = history.reduce(
+    (sum, message) => sum + measureMessageChars(message),
+    0,
+  );
+  if (total <= maxChars) {
+    return history;
+  }
+
+  const keep = Array.from({ length: history.length }, () => true);
+  for (let index = 0; index < history.length && total > maxChars; index++) {
+    const message = history[index];
+    if (message.role === "system") {
+      continue;
+    }
+    keep[index] = false;
+    total -= measureMessageChars(message);
+  }
+
+  return history.filter((_, index) => keep[index]);
 }

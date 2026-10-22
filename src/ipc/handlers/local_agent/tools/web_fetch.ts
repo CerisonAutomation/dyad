@@ -21,7 +21,7 @@ function validateHttpUrl(url: string): void {
   }
 }
 
-const MAX_CONTENT_LENGTH = 500_000;
+const MAX_CONTENT_LENGTH = 60_000;
 
 function truncateContent(value: string): string {
   if (value.length <= MAX_CONTENT_LENGTH) return value;

@@ -8,6 +8,7 @@ import {
 import { getSupabaseProjectInfo } from "../../../../supabase_admin/supabase_context";
 import { classifyManagementApiError } from "../../../../supabase_admin/supabase_management_client";
 import { DyadError, DyadErrorKind, isDyadError } from "@/errors/dyad_error";
+import { boundToolOutput, MAX_PROJECT_INFO_CHARS } from "./tool_output_limits";
 
 /**
  * A Management API failure must not escape as a raw SupabaseManagementAPIError:
@@ -78,6 +79,8 @@ export const getSupabaseProjectInfoTool: ToolDefinition<
       `<dyad-supabase-project-info>\n${escapeXmlContent(info)}\n</dyad-supabase-project-info>`,
     );
 
-    return info;
+    // The project info can be arbitrarily large (db functions, schemas, keys).
+    // It is re-sent on every step of the turn, so bound the model-facing copy.
+    return boundToolOutput(info, MAX_PROJECT_INFO_CHARS);
   },
 };

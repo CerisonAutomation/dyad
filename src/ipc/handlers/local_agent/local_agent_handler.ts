@@ -110,10 +110,10 @@ import {
 } from "./subagents/mutation_activity_tracker";
 import { buildImplementerFailureReport } from "./subagents/subagent_failure_reporting";
 import {
+  boundChatHistoryForModel,
   boundSubagentSummariesForParent,
   MAX_ROOT_TOOL_RESULT_CHARS,
-  MAX_ROOT_TOTAL_TOOL_RESULT_CHARS,
-  pruneSubagentToolResults,
+  pruneRootMessages,
 } from "./subagents/subagent_context_budget";
 import { isImplementerSubagentEnabled } from "@/lib/autoSidekick";
 import { COMPLETED_PLANNING_QUESTIONNAIRE_RESULT_PREFIX } from "./tools/planning_questionnaire";
@@ -481,7 +481,7 @@ export function buildChatMessageHistory(
     }
   }
 
-  return history;
+  return boundChatHistoryForModel(history);
 }
 
 export function hasCompletedAppBlueprintQuestionnaire(
@@ -1663,12 +1663,8 @@ export async function handleLocalAgentStream(
               // Cap the tool results the provider actually receives. The root
               // agent still compacts mid-turn, but only *after* an oversized
               // payload has already gone out once.
-              const budgetedMessages = pruneSubagentToolResults(
+              const budgetedMessages = pruneRootMessages(
                 result?.messages ?? stepOptions.messages,
-                {
-                  maxToolResultChars: MAX_ROOT_TOOL_RESULT_CHARS,
-                  maxTotalToolResultChars: MAX_ROOT_TOTAL_TOOL_RESULT_CHARS,
-                },
               );
               if (
                 budgetedMessages !== (result?.messages ?? stepOptions.messages)

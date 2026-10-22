@@ -48,6 +48,7 @@ import {
 import type { AgentContext } from "../tools/types";
 import { runExploreCodeSubagent } from "../tools/explore_code_subagent";
 import { buildReviewTarget, type ReviewTarget } from "./review_target";
+import { boundReviewDiff } from "./review_diff_budget";
 import {
   closeAndDisposeTurnsForChat,
   closeMutationActor,
@@ -1737,12 +1738,17 @@ async function runReview(
   const entitlementWatcher = watchEntitlement(threadId, controller);
   try {
     if (!(await updateStatus(threadId, "running"))) return;
+    // The diff is re-sent on every step of the review turn, and a plain
+    // head/tail truncation would silently drop whole files from the middle.
+    // Bound it per whole file and name the files that did not fit.
+    const boundedDiff = boundReviewDiff(target.diff);
+    const diffExcerpt = boundedDiff.text;
     const reviewResult = await runModel({
       threadId,
       chatId: thread.chatId,
       appId,
       persona: "reviewer",
-      assignment: `Review this exact diff. ${STRUCTURED_REVIEW_INSTRUCTIONS}${followup ? `\n\nFollow-up request: ${followup}` : ""}\n\nFiles: ${target.files.join(", ")}\nExcluded: ${target.exclusions.join(", ") || "none"}\n\n${target.diff}`,
+      assignment: `Review this exact diff. ${STRUCTURED_REVIEW_INSTRUCTIONS}${followup ? `\n\nFollow-up request: ${followup}` : ""}\n\nFiles: ${target.files.join(", ")}\nExcluded: ${target.exclusions.join(", ") || "none"}\n\n${diffExcerpt}`,
       tools: await buildSubagentVerificationTools({
         appId,
         appPath,
@@ -1773,7 +1779,7 @@ async function runReview(
           `Re-review the same diff. Reply with a single raw JSON object and no ` +
           `prose, no code fence, and nothing before or after it.\n\n` +
           `${STRUCTURED_REVIEW_INSTRUCTIONS}\n\nFiles: ${target.files.join(", ")}\n` +
-          `Excluded: ${target.exclusions.join(", ") || "none"}\n\n${target.diff}`,
+          `Excluded: ${target.exclusions.join(", ") || "none"}\n\n${diffExcerpt}`,
         tools: await buildSubagentVerificationTools({
           appId,
           appPath,

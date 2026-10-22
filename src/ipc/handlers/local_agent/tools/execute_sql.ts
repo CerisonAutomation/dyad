@@ -19,6 +19,11 @@ import {
   doesSqlDeleteData,
   doesSqlMutateSchema,
 } from "@/lib/sqlSchemaMutation";
+import {
+  boundToolOutput,
+  MAX_SQL_QUERY_CHARS,
+  MAX_SQL_RESULT_CHARS,
+} from "./tool_output_limits";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -174,7 +179,10 @@ function doesSqlLikelyMutateState(sql: string): boolean {
 }
 
 const executeSqlSchema = z.object({
-  query: z.string().describe("The SQL query to execute"),
+  query: z
+    .string()
+    .max(MAX_SQL_QUERY_CHARS)
+    .describe("The SQL query to execute"),
   description: z.string().optional().describe("Brief description of the query"),
 });
 
@@ -218,14 +226,17 @@ export const executeSqlTool: ToolDefinition<z.infer<typeof executeSqlSchema>> =
       });
 
       if (provider === "supabase" && canUseSupabaseTools(ctx)) {
-        const sqlResult = await executeSupabaseSql({
-          supabaseProjectId: ctx.supabaseProjectId,
-          query: args.query,
-          organizationSlug: ctx.supabaseOrganizationSlug ?? null,
-          // Forward the turn signal so a cancelled turn does not leave the
-          // statement (and its retry loop) running.
-          signal: ctx.abortSignal,
-        });
+        const sqlResult = boundToolOutput(
+          await executeSupabaseSql({
+            supabaseProjectId: ctx.supabaseProjectId,
+            query: args.query,
+            organizationSlug: ctx.supabaseOrganizationSlug ?? null,
+            // Forward the turn signal so a cancelled turn does not leave the
+            // statement (and its retry loop) running.
+            signal: ctx.abortSignal,
+          }),
+          MAX_SQL_RESULT_CHARS,
+        );
 
         const settings = readSettings();
         let migrationFileWritten = false;
@@ -247,11 +258,14 @@ export const executeSqlTool: ToolDefinition<z.infer<typeof executeSqlSchema>> =
       }
 
       if (provider === "neon" && canUseNeonTools(ctx)) {
-        const sqlResult = await executeNeonSql({
-          projectId: ctx.neonProjectId,
-          branchId: ctx.neonActiveBranchId,
-          query: args.query,
-        });
+        const sqlResult = boundToolOutput(
+          await executeNeonSql({
+            projectId: ctx.neonProjectId,
+            branchId: ctx.neonActiveBranchId,
+            query: args.query,
+          }),
+          MAX_SQL_RESULT_CHARS,
+        );
         return `Successfully executed SQL query.\n\nSQL result:\n${sqlResult}`;
       }
 
