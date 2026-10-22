@@ -187,6 +187,15 @@ type FakeStreamResult = {
 // Mocks
 // ============================================================================
 
+// The self-heal prompt interceptor is fail-closed and shells out to the
+// decision layer, so it is stubbed here: the wiring around it is what this
+// test covers.
+const mockInterceptPrompt = vi.hoisted(() => vi.fn());
+vi.mock("./self_heal", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./self_heal")>()),
+  interceptPrompt: mockInterceptPrompt,
+}));
+
 // Mock electron-log
 vi.mock("electron-log", () => ({
   default: {
@@ -420,6 +429,7 @@ import {
   buildImplementerOutcomeNotices,
   handleLocalAgentStream as handleLocalAgentStreamImpl,
   hasCompletedAppBlueprintQuestionnaire,
+  interceptUserPrompt,
   shouldStopAfterAppBlueprintWrite,
 } from "@/ipc/handlers/local_agent/local_agent_handler";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
@@ -5333,5 +5343,105 @@ describe("handleLocalAgentStream", () => {
       expect(approvalUpdates).toHaveLength(1);
       expect(approvalUpdates[0].data.approvalState).toBe("approved");
     });
+  });
+});
+
+// ============================================================================
+// Self-heal prompt interceptor wiring
+// ============================================================================
+
+describe("interceptUserPrompt", () => {
+  const history: ModelMessage[] = [
+    { role: "user", content: "Please fix src/foo.ts" },
+    { role: "assistant", content: "On it" },
+    { role: "user", content: "Also update src/bar.ts" },
+  ];
+
+  const noopResult = {
+    improvedPrompt: "",
+    injectedMcpTools: [],
+    injectedSkills: [],
+    injectedRuleIds: [],
+    researchRequests: [],
+    applied: false,
+    reason: "decision layer declined",
+  };
+
+  beforeEach(() => {
+    mockInterceptPrompt.mockReset();
+  });
+
+  it("keeps the original prompt when the interceptor declines", async () => {
+    mockInterceptPrompt.mockResolvedValue(noopResult);
+
+    const result = await interceptUserPrompt({
+      messageHistory: history,
+      settings: {} as never,
+      appPath: "/tmp/dyad-self-heal-not-a-real-dir",
+    });
+
+    expect(result).toBe(history);
+    expect(mockInterceptPrompt).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the original prompt when the interceptor throws", async () => {
+    mockInterceptPrompt.mockRejectedValue(new Error("boom"));
+
+    const result = await interceptUserPrompt({
+      messageHistory: history,
+      settings: {} as never,
+      appPath: "/tmp/dyad-self-heal-not-a-real-dir",
+    });
+
+    expect(result).toBe(history);
+  });
+
+  it("uses the improved prompt verbatim when the interceptor applies", async () => {
+    const improvedPrompt =
+      "Please fix src/foo.ts\n\n<dyad-interceptor-guidance>\nGuidance</dyad-interceptor-guidance>";
+    mockInterceptPrompt.mockResolvedValue({
+      ...noopResult,
+      improvedPrompt,
+      applied: true,
+      reason: "applied",
+      injectedMcpTools: ["read-file"],
+    });
+
+    const result = await interceptUserPrompt({
+      messageHistory: history,
+      settings: {} as never,
+      appPath: "/tmp/dyad-self-heal-not-a-real-dir",
+    });
+
+    expect(result).not.toBe(history);
+    const lastUserMessage = [...result]
+      .reverse()
+      .find((message) => message.role === "user");
+    expect(lastUserMessage?.content).toBe(improvedPrompt);
+    // The rest of the history is untouched.
+    expect(result[0]).toEqual(history[0]);
+  });
+
+  it("never rewrites a multi-part user message", async () => {
+    const multiPart: ModelMessage[] = [
+      {
+        role: "user",
+        content: [{ type: "text", text: "Please fix src/foo.ts" }],
+      },
+    ];
+    mockInterceptPrompt.mockResolvedValue({
+      ...noopResult,
+      improvedPrompt: "rewritten",
+      applied: true,
+    });
+
+    const result = await interceptUserPrompt({
+      messageHistory: multiPart,
+      settings: {} as never,
+      appPath: "/tmp/dyad-self-heal-not-a-real-dir",
+    });
+
+    expect(result).toBe(multiPart);
+    expect(mockInterceptPrompt).not.toHaveBeenCalled();
   });
 });

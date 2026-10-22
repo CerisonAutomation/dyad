@@ -199,8 +199,11 @@ import {
   toRendererMessages,
   type RendererMessageRow,
 } from "@/ipc/utils/renderer_chat_message";
-import { buildPreventionPromptBlock, loadPreventionRules } from "./self_heal";
-import { interceptPrompt } from "./self_heal";
+import {
+  buildPreventionPromptBlock,
+  interceptPrompt,
+  loadPreventionRules,
+} from "./self_heal";
 import {
   PREVENTION_PROMPT_PLACEHOLDER,
   renderPreventionPromptBlock,
