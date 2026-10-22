@@ -3,19 +3,25 @@ import {
   previewClick,
   previewClickRef,
   previewConsole,
+  previewContent,
   previewEval,
   previewFind,
   previewFormInput,
+  previewGoBack,
   previewHover,
   previewNavigate,
+  previewNetwork,
   previewPressKey,
   previewRead,
+  previewReload,
   previewScroll,
+  previewScrollToRef,
   previewScreenshot,
   previewSnapshot,
   previewTabs,
   previewType,
   previewTypeRef,
+  previewWait,
 } from "@/ipc/utils/preview_browser_driver";
 import { getRunningTestBaseUrl } from "@/ipc/handlers/tests_handlers";
 import type { ToolDefinition } from "./types";
@@ -29,13 +35,19 @@ const previewBrowserSchema = z.object({
       "click",
       "type",
       "read",
+      "content",
       "console",
+      "network",
       "screenshot",
       "snapshot",
       "find",
       "hover",
       "scroll",
+      "scroll_to",
       "press_key",
+      "wait",
+      "back",
+      "reload",
       "form_input",
       "evaluate",
       "tabs",
@@ -46,13 +58,19 @@ const previewBrowserSchema = z.object({
         "click: click an element, addressed either by a CSS selector or by a 'ref' handle from 'snapshot'/'find'. " +
         "type: fill an input (selector or 'ref'), optionally pressing Enter afterwards. " +
         "read: return the page title, url, and the text a user would see. " +
+        "content: return the full readable content of the page (headings, text, links). " +
         "console: return console output and uncaught errors from the preview. " +
+        "network: return the requests the preview failed, that errored, or that are still pending. " +
         "screenshot: capture the preview as a PNG data URL. " +
         "snapshot: list the interactive elements of the page as an accessibility outline, each with a 'ref' handle. " +
         "find: locate an element by visible text (or CSS selector) and return its 'ref' handle. " +
         "hover: hover an element addressed by a 'ref'. " +
         "scroll: scroll the page by a pixel delta. " +
+        "scroll_to: scroll an element addressed by a 'ref' into view. " +
         "press_key: press a key such as Enter, Escape or Tab. " +
+        "wait: wait for a selector, some text, a URL or the network to settle instead of guessing with a pause. " +
+        "back: go back to the previous page. " +
+        "reload: reload the current page. " +
         "form_input: fill a text field, select, checkbox, radio or file input addressed by a 'ref'. " +
         "evaluate: evaluate a JavaScript expression in the preview page and return the serialized result. " +
         "tabs: list, open, switch to or close preview tabs.",
@@ -137,12 +155,36 @@ const previewBrowserSchema = z.object({
     .string()
     .optional()
     .describe("URL to open when the 'tabs' action creates a new tab."),
+  state: z
+    .enum(["visible", "hidden", "attached", "detached"])
+    .optional()
+    .describe(
+      "The state to wait for in the 'wait' action. Defaults to 'visible'.",
+    ),
+  timeout_ms: z
+    .number()
+    .optional()
+    .describe(
+      "How long the 'wait' action may block, in milliseconds. Defaults to 10000.",
+    ),
+  full_page: z
+    .boolean()
+    .optional()
+    .describe(
+      "Capture the whole scrollable page in the 'screenshot' action. Defaults to false.",
+    ),
+  selectors: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "CSS selectors to scope the 'content' action to. Selectors that match nothing are reported back.",
+    ),
 });
 
 export const previewBrowserTool: ToolDefinition = {
   name: "preview_browser",
   description:
-    "Inspect and drive the app running in the preview pane. Use this to verify your changes actually work: take an accessibility snapshot of the page, navigate to a route, click or type into an element, fill a form, hover, scroll, press a key, read what the user would see, check the console for errors, evaluate JavaScript in the page, manage preview tabs, or capture a screenshot. Works with any dev server. The app must already be running.",
+    "Inspect and drive the app running in the preview pane. Use this to verify your changes actually work: take an accessibility snapshot of the page, navigate to a route, click or type into an element, fill a form, hover, scroll, press a key, read what the user would see, wait for the page to settle, check the console and the network for errors, evaluate JavaScript in the page, manage preview tabs, or capture a screenshot. Works with any dev server. The app must already be running.",
   inputSchema: previewBrowserSchema,
   defaultConsent: "always",
   // Reading and clicking the user's own dev app is inspection of what they
@@ -170,6 +212,20 @@ export const previewBrowserTool: ToolDefinition = {
         return `Press ${args.key} in the preview`;
       case "scroll":
         return `Scroll the preview by (${args.delta_x ?? 0}, ${args.delta_y ?? 600})`;
+      case "content":
+        return `Read the full content of the preview page`;
+      case "network":
+        return `Read the preview network failures`;
+      case "wait":
+        return `Wait for ${
+          args.selector ?? args.text ?? args.url ?? "the page"
+        } in the preview`;
+      case "scroll_to":
+        return `Scroll ${args.ref} into view in the preview`;
+      case "back":
+        return `Go back to the previous page in the preview`;
+      case "reload":
+        return `Reload the preview page`;
       default:
         return `Read ${args.action} from the running preview`;
     }
@@ -229,10 +285,17 @@ export const previewBrowserTool: ToolDefinition = {
       }
       case "read":
         return previewRead(ctx.appId);
+      case "content":
+        return previewContent(ctx.appId, args.selectors);
       case "console":
         return previewConsole(ctx.appId);
+      case "network":
+        return previewNetwork(ctx.appId);
       case "screenshot":
-        return previewScreenshot(ctx.appId);
+        return previewScreenshot(ctx.appId, {
+          ref: args.ref,
+          fullPage: args.full_page,
+        });
       case "snapshot":
         return previewSnapshot(ctx.appId);
       case "find": {
@@ -258,6 +321,18 @@ export const previewBrowserTool: ToolDefinition = {
       }
       case "scroll":
         return previewScroll(ctx.appId, args.delta_x ?? 0, args.delta_y ?? 600);
+      case "scroll_to": {
+        if (!args.ref)
+          throw new DyadError(
+            "'scroll_to' requires a 'ref' handle from 'snapshot' or 'find'.",
+            DyadErrorKind.Validation,
+          );
+        return previewScrollToRef(ctx.appId, args.ref);
+      }
+      case "back":
+        return previewGoBack(ctx.appId);
+      case "reload":
+        return previewReload(ctx.appId);
       case "press_key": {
         if (!args.key)
           throw new DyadError(
@@ -265,6 +340,20 @@ export const previewBrowserTool: ToolDefinition = {
             DyadErrorKind.Validation,
           );
         return previewPressKey(ctx.appId, args.key);
+      }
+      case "wait": {
+        if (!args.selector && !args.text && !args.url)
+          throw new DyadError(
+            "'wait' requires a 'selector', 'text' or 'url' to wait for.",
+            DyadErrorKind.Validation,
+          );
+        return previewWait(ctx.appId, {
+          selector: args.selector,
+          text: args.text,
+          url: args.url,
+          state: args.state,
+          timeoutMs: args.timeout_ms,
+        });
       }
       case "form_input": {
         if (!args.ref)

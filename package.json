@@ -14,6 +14,7 @@
   },
   "main": ".vite/build/main_bootstrap.js",
   "scripts": {
+    "postinstall": "node scripts/patch-electron-packager.mjs",
     "bump": "node scripts/bump-version.mjs",
     "clean": "rimraf out scaffold/node_modules",
     "start": "node scripts/start-supervisor.mjs",

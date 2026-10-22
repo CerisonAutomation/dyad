@@ -3,6 +3,12 @@ import { getRunningTestBaseUrl } from "@/ipc/handlers/tests_handlers";
 import { setPreviewBrowserReleaser } from "./preview_browser_cleanup";
 import { detectSystemBrowserChannel } from "./playwright_bootstrap";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  formatNetworkEntries,
+  formatPageContent,
+  formatScopedSections,
+  type NetworkEntry,
+} from "./preview_browser_content";
 
 const logger = log.scope("preview_browser_driver");
 
@@ -16,11 +22,22 @@ const logger = log.scope("preview_browser_driver");
 
 type ConsoleEntry = { type: string; text: string };
 
+interface PendingRequest {
+  method: string;
+  url: string;
+}
+
 interface Session {
   page: any;
   /** Browser context, so the agent can open/switch/close preview tabs. */
   context: any;
   consoleLog: ConsoleEntry[];
+  /** Requests that failed or came back with an error status. */
+  networkLog: NetworkEntry[];
+  /** Requests that are still in flight, keyed by the Playwright request. */
+  pending: Map<unknown, PendingRequest>;
+  /** Pages visited in this session, oldest first. */
+  visited: { url: string; title: string }[];
   close: () => Promise<void>;
 }
 
@@ -132,13 +149,88 @@ function attachConsole(page: any, consoleLog: ConsoleEntry[]) {
   });
 }
 
+/**
+ * Track the requests the preview makes so the agent can see what broke:
+ * requests that failed outright, responses with an error status, and requests
+ * that are still in flight (a hung API call is the usual cause of a preview
+ * that never becomes ready).
+ */
+const networkAttached = new WeakSet<any>();
+
+function attachNetwork(
+  page: any,
+  networkLog: NetworkEntry[],
+  pending: Map<unknown, PendingRequest>,
+) {
+  if (networkAttached.has(page)) return;
+  networkAttached.add(page);
+  page.on("request", (request: any) => {
+    pending.set(request, {
+      method: request.method?.() ?? "GET",
+      url: request.url?.() ?? "",
+    });
+  });
+  const settle = (request: any) => pending.delete(request);
+  page.on("requestfinished", settle);
+  page.on("requestfailed", (request: any) => {
+    settle(request);
+    networkLog.push({
+      kind: "failed",
+      method: request.method?.() ?? "GET",
+      url: request.url?.() ?? "",
+      failure: request.failure?.()?.errorText ?? "request failed",
+    });
+    if (networkLog.length > 200) networkLog.splice(0, networkLog.length - 200);
+  });
+  page.on("response", (response: any) => {
+    const status = response.status?.() ?? 0;
+    if (status < 400) return;
+    networkLog.push({
+      kind: "error",
+      method: response.request?.().method?.() ?? "GET",
+      url: response.url?.() ?? "",
+      status,
+    });
+    if (networkLog.length > 200) networkLog.splice(0, networkLog.length - 200);
+  });
+}
+
+/**
+ * Accept JavaScript dialogs automatically.
+ *
+ * An `alert()` in the preview blocks the page until something clicks it, and
+ * a headless browser has nobody to click it - the whole preview wedges until
+ * the session is torn down. Accepting keeps the preview alive.
+ */
+const dialogsAttached = new WeakSet<any>();
+
+function attachDialogs(page: any) {
+  if (dialogsAttached.has(page)) return;
+  dialogsAttached.add(page);
+  page.on("dialog", (dialog: any) => {
+    dialog.accept().catch(() => undefined);
+  });
+}
+
 async function launchSession(appId: number, baseUrl: string): Promise<Session> {
   try {
     const { page, context, close } = await launchPage();
     const consoleLog: ConsoleEntry[] = [];
+    const networkLog: NetworkEntry[] = [];
+    const pending = new Map<unknown, PendingRequest>();
     attachConsole(page, consoleLog);
+    attachNetwork(page, networkLog, pending);
+    attachDialogs(page);
 
-    const session: Session = { page, context, consoleLog, close };
+    const session: Session = {
+      page,
+      context,
+      consoleLog,
+      networkLog,
+      pending,
+      visited: [],
+      close,
+    };
     sessions.set(appId, session);
     logger.info("Preview browser session opened for app", appId, baseUrl);
     return session;
@@ -198,6 +290,25 @@ async function currentPage(appId: number) {
   return { session, baseUrl };
 }
 
+/**
+ * Remember the pages this preview session visited.
+ *
+ * Comet lets its assistant search its own browsing history before acting;
+ * the preview's own history is the same idea on a smaller scale - the agent
+ * can see where it has been instead of guessing a URL.
+ */
+async function recordVisit(session: Session) {
+  const url = session.page.url();
+  if (!url) return;
+  const last = session.visited[session.visited.length - 1];
+  if (last?.url === url) return;
+  const title = await session.page.title().catch(() => "");
+  session.visited.push({ url, title });
+  if (session.visited.length > 50) {
+    session.visited.splice(0, session.visited.length - 50);
+  }
+}
+
 export async function previewNavigate(appId: number, path: string) {
   const resolved = await currentPage(appId);
   if (!resolved) return NO_PREVIEW_MESSAGE;
@@ -211,6 +322,7 @@ export async function previewNavigate(appId: number, path: string) {
   });
   session.consoleLog.length = 0;
   await settle(session.page);
+  await recordVisit(session);
   return describePage(session.page, target);
 }
 
@@ -268,6 +380,161 @@ export async function previewConsole(appId: number) {
 }
 
 /**
+ * Wait for a condition instead of guessing with a fixed pause.
+ *
+ * The agent used to click and then read the page right away, which is flaky
+ * for anything asynchronous. Waiting on the real condition - an element, some
+ * text, a URL, or the network going quiet - makes a chain of actions
+ * reliable.
+ */
+export interface PreviewWaitOptions {
+  selector?: string;
+  text?: string;
+  url?: string;
+  state?: "visible" | "hidden" | "attached" | "detached";
+  timeoutMs?: number;
+}
+
+export async function previewWait(appId: number, options: PreviewWaitOptions) {
+  const resolved = await currentPage(appId);
+  if (!resolved) return NO_PREVIEW_MESSAGE;
+  const { session } = resolved;
+  const timeout = Math.min(
+    Math.max(options.timeoutMs ?? ACTION_TIMEOUT_MS, 1_000),
+    60_000,
+  );
+  const state = options.state ?? "visible";
+  const selector = options.selector;
+  const text = options.text;
+  const urlNeedle = options.url;
+  try {
+    if (selector) {
+      await session.page.locator(selector).first().waitFor({ state, timeout });
+      return `Selector "${selector}" is now ${state}. ${await describePage(
+        session.page,
+        session.page.url(),
+      )}`;
+    }
+    if (text) {
+      await session.page
+        .getByText(text, { exact: false })
+        .first()
+        .waitFor({ state, timeout });
+      return `Text "${text}" is now ${state}. ${await describePage(
+        session.page,
+        session.page.url(),
+      )}`;
+    }
+    if (urlNeedle) {
+      await session.page.waitForURL(
+        (candidate: URL) => candidate.toString().includes(urlNeedle),
+        { timeout },
+      );
+      return `The URL now matches "${urlNeedle}". ${await describePage(
+        session.page,
+        session.page.url(),
+      )}`;
+    }
+    await session.page.waitForLoadState("networkidle", { timeout });
+    return `The preview finished loading. ${await describePage(
+      session.page,
+      session.page.url(),
+    )}`;
+  } catch (error) {
+    return `The wait did not complete within ${timeout}ms: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+  }
+}
+
+/**
+ * The full readable content of the page: headings, text and links.
+ *
+ * `read` returns a short summary of the visible text; this returns the whole
+ * thing, which is what the agent needs when it has to reason about a page
+ * that a snapshot cannot describe.
+ */
+export async function previewContent(appId: number, selectors?: string[]) {
+  const resolved = await currentPage(appId);
+  if (!resolved) return NO_PREVIEW_MESSAGE;
+  const { session } = resolved;
+  await settle(session.page);
+
+  if (selectors && selectors.length > 0) {
+    const scoped = await session.page.evaluate((wanted: string[]) => {
+      return wanted.map((selector) => {
+        const nodes = Array.from(document.querySelectorAll(selector));
+        const text = nodes
+          .map((node) =>
+            ((node as HTMLElement).innerText ?? node.textContent ?? "")
+              .replace(/\s+/g, " ")
+              .trim(),
+          )
+          .filter(Boolean)
+          .join("\n\n")
+          .trim();
+        return { selector, count: nodes.length, text };
+      });
+    }, selectors);
+    return formatScopedSections(
+      scoped
+        .filter((section) => section.count > 0)
+        .map((section) => ({ selector: section.selector, text: section.text })),
+      scoped
+        .filter((section) => section.count === 0)
+        .map((section) => section.selector),
+    );
+  }
+
+  const extracted = await session.page.evaluate(() => {
+    const root = (document.querySelector("main, article, [role=main]") ??
+      document.body) as HTMLElement;
+    const clean = (value: string | null | undefined) =>
+      (value ?? "").replace(/\s+/g, " ").trim();
+    return {
+      title: document.title ?? "",
+      headings: Array.from(document.querySelectorAll("h1, h2, h3"))
+        .map((element) => clean(element.textContent))
+        .filter(Boolean)
+        .slice(0, 40),
+      text: (root.innerText ?? "")
+        .replace(/[ \t]+/g, " ")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim(),
+      links: Array.from(document.querySelectorAll("a[href]"))
+        .slice(0, 60)
+        .map((element) => ({
+          text: clean(element.textContent).slice(0, 80),
+          href: (element as HTMLAnchorElement).href,
+        }))
+        .filter((link) => link.text || link.href),
+    };
+  });
+  return formatPageContent({
+    url: session.page.url(),
+    title: extracted.title,
+    headings: extracted.headings,
+    text: extracted.text,
+    links: extracted.links,
+  });
+}
+
+/** The requests the preview made that failed, errored or are still pending. */
+export async function previewNetwork(appId: number) {
+  const resolved = await currentPage(appId);
+  if (!resolved) return NO_PREVIEW_MESSAGE;
+  const { session } = resolved;
+  const pending: NetworkEntry[] = Array.from(session.pending.values()).map(
+    (request) => ({
+      kind: "pending",
+      method: request.method,
+      url: request.url,
+    }),
+  );
+  return formatNetworkEntries([...session.networkLog, ...pending]);
+}
+
+/**
  * Screenshots are returned as a data URL and saved through the same path the
  * test-runner uses, so the agent can attach them without a new transport.
  */
@@ -288,13 +555,29 @@ const MAX_PREVIEW_SCREENSHOT_CHARS = 200_000;
 /** JPEG quality ladder used when the PNG is over budget. */
 const SCREENSHOT_JPEG_QUALITIES = [70, 50, 30, 15];
 
-export async function previewScreenshot(appId: number) {
+export interface PreviewScreenshotOptions {
+  /** Element handle to capture instead of the whole viewport. */
+  ref?: string;
+  /** Capture the entire scrollable page. */
+  fullPage?: boolean;
+}
+
+export async function previewScreenshot(
+  appId: number,
+  options: PreviewScreenshotOptions = {},
+) {
   const resolved = await currentPage(appId);
   if (!resolved) return NO_PREVIEW_MESSAGE;
 
-  const png = (await resolved.session.page.screenshot({
+  const { session } = resolved;
+  const target = options.ref
+    ? refLocator(session.page, options.ref)
+    : session.page;
+  const fullPage = options.fullPage === true && !options.ref;
+
+  const png = (await target.screenshot({
     type: "png",
-    fullPage: false,
+    fullPage,
   })) as unknown as Buffer;
   const pngDataUrl = `data:image/png;base64,${png.toString("base64")}`;
   if (pngDataUrl.length <= MAX_PREVIEW_SCREENSHOT_CHARS) {
@@ -304,10 +587,10 @@ export async function previewScreenshot(appId: number) {
   // A PNG screenshot of a detailed UI is mostly noise for a model. Re-take it
   // as JPEG at decreasing quality until it fits the budget.
   for (const quality of SCREENSHOT_JPEG_QUALITIES) {
-    const jpeg = (await resolved.session.page.screenshot({
+    const jpeg = (await target.screenshot({
       type: "jpeg",
       quality,
-      fullPage: false,
+      fullPage,
     })) as unknown as Buffer;
     const jpegDataUrl = `data:image/jpeg;base64,${jpeg.toString("base64")}`;
     if (jpegDataUrl.length <= MAX_PREVIEW_SCREENSHOT_CHARS) {
@@ -373,14 +656,6 @@ const INTERACTIVE_SELECTOR = [
 /** Cap on snapshot size so a huge page cannot flood the context. */
 const MAX_SNAPSHOT_ELEMENTS = 200;
 
-/** Refs are handed out per session; this counter keeps them unique. */
-let refCounter = 0;
-
-function nextRef(): string {
-  refCounter += 1;
-  return `ref_${refCounter}`;
-}
-
 interface SnapshotOptions {
   selector: string;
   attribute: string;
@@ -403,16 +678,22 @@ interface SnapshotElement {
  *
  * Refs live on the DOM node (`data-dyad-ref`), so a later call can address
  * the element again without re-running the whole snapshot - as long as the
- * app did not re-render that node.
+ * app did not re-render that node. Handles are allocated by a counter that
+ * lives on the page, so a handle is never reused for a different element and
+ * a handle handed out by an earlier snapshot stays valid.
  */
 async function collectSnapshot(page: any): Promise<SnapshotElement[]> {
   return await page.evaluate(
     (options: SnapshotOptions) => {
-      for (const stale of Array.from(
-        document.querySelectorAll(`[${options.attribute}]`),
-      )) {
-        stale.removeAttribute(options.attribute);
-      }
+      const scope = window as unknown as { __dyadRefCounter?: number };
+      const allocateRef = (element: Element): string => {
+        const existing = element.getAttribute(options.attribute);
+        if (existing) return existing;
+        scope.__dyadRefCounter = (scope.__dyadRefCounter ?? 0) + 1;
+        const ref = `ref_${scope.__dyadRefCounter}`;
+        element.setAttribute(options.attribute, ref);
+        return ref;
+      };
 
       const describe = (element: Element): string => {
         const ariaLabel = element.getAttribute("aria-label");
@@ -448,8 +729,7 @@ async function collectSnapshot(page: any): Promise<SnapshotElement[]> {
         if (!rect || rect.width <= 0 || rect.height <= 0) continue;
         const style = window.getComputedStyle(element);
         if (style.visibility === "hidden" || style.display === "none") continue;
-        const ref = `ref_${elements.length + 1}`;
-        element.setAttribute(options.attribute, ref);
+        const ref = allocateRef(element);
         const tag = element.tagName.toLowerCase();
         const input = element as HTMLInputElement;
         elements.push({
@@ -564,15 +844,22 @@ export async function previewFind(
       selector ?? text
     }" is not visible.`;
   }
-  const ref = nextRef();
-  await target
-    .evaluate(
-      (element: any, value: { attribute: string; ref: string }) => {
-        element.setAttribute(value.attribute, value.ref);
-      },
-      { attribute: REF_ATTRIBUTE, ref },
-    )
-    .catch(() => undefined);
+  const ref = await target
+    .evaluate((element: any, attribute: string) => {
+      const scope = window as unknown as { __dyadRefCounter?: number };
+      const existing = element.getAttribute(attribute);
+      if (existing) return existing;
+      scope.__dyadRefCounter = (scope.__dyadRefCounter ?? 0) + 1;
+      const ref = `ref_${scope.__dyadRefCounter}`;
+      element.setAttribute(attribute, ref);
+      return ref;
+    }, REF_ATTRIBUTE)
+    .catch(() => "");
+  if (!ref) {
+    return `Found ${count} match(es) for "${
+      selector ?? text
+    }", but the element could not be tagged with a handle.`;
+  }
   const description = await target
     .evaluate((element: any) => ({
       tag: element.tagName.toLowerCase(),
@@ -646,6 +933,52 @@ export async function previewScroll(
   await session.page.mouse.wheel(deltaX, deltaY);
   await settle(session.page);
   return `Scrolled by (${deltaX}, ${deltaY}). ${await describePage(
+    session.page,
+    session.page.url(),
+  )}`;
+}
+
+/** Go back to the previous page in the preview's history. */
+export async function previewGoBack(appId: number) {
+  const resolved = await currentPage(appId);
+  if (!resolved) return NO_PREVIEW_MESSAGE;
+  const { session } = resolved;
+  const response = await session.page
+    .goBack({ waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS })
+    .catch(() => null);
+  await settle(session.page);
+  if (!response) {
+    return "There is no previous page to go back to.";
+  }
+  await recordVisit(session);
+  return `Went back. ${await describePage(session.page, session.page.url())}`;
+}
+
+/** Reload the current preview page. */
+export async function previewReload(appId: number) {
+  const resolved = await currentPage(appId);
+  if (!resolved) return NO_PREVIEW_MESSAGE;
+  const { session } = resolved;
+  await session.page.reload({
+    waitUntil: "domcontentloaded",
+    timeout: NAV_TIMEOUT_MS,
+  });
+  await settle(session.page);
+  return `Reloaded the preview. ${await describePage(
+    session.page,
+    session.page.url(),
+  )}`;
+}
+
+/** Scroll an element addressed by a `ref_N` handle into view. */
+export async function previewScrollToRef(appId: number, ref: string) {
+  const resolved = await currentPage(appId);
+  if (!resolved) return NO_PREVIEW_MESSAGE;
+  const { session } = resolved;
+  const locator = refLocator(session.page, ref);
+  await locator.scrollIntoViewIfNeeded({ timeout: ACTION_TIMEOUT_MS });
+  await settle(session.page);
+  return `Scrolled ${ref} into view. ${await describePage(
     session.page,
     session.page.url(),
   )}`;
@@ -769,6 +1102,8 @@ export async function previewTabs(
     case "new": {
       const page = await context.newPage();
       attachConsole(page, session.consoleLog);
+      attachNetwork(page, session.networkLog, session.pending);
+      attachDialogs(page);
       session.page = page;
       if (url) {
         await page.goto(url, {
@@ -798,6 +1133,11 @@ export async function previewTabs(
       if (!target) {
         return `No preview tab at index ${index ?? 0}.`;
       }
+      // Closing the tab the agent is currently driving would leave it without
+      // a page to work with, so the active tab is never closed.
+      if (target === session.page) {
+        return "Refusing to close the active preview tab. Switch to another tab first and close that one instead.";
+      }
       const remaining = context.pages().filter((page: any) => page !== target);
       await target.close().catch(() => undefined);
       if (remaining.length > 0) {
@@ -805,6 +1145,7 @@ export async function previewTabs(
       } else {
         const page = await context.newPage();
         attachConsole(page, session.consoleLog);
+        attachNetwork(page, session.networkLog, session.pending);
         session.page = page;
       }
       return "Closed the preview tab.";
