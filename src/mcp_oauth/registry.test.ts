@@ -217,6 +217,35 @@ describe("MCP OAuth registry", () => {
     expect(settled).toHaveBeenCalledTimes(1);
   });
 
+  it("times out while the token exchange is in flight", async () => {
+    const { registry, bindings, clock } = createHarness();
+    // The token exchange is a second network round trip to the authorization
+    // server. A server that accepts the connection but never answers must
+    // not leave the Connect button spinning forever.
+    const authorize = vi.fn(
+      (code?: string): Promise<"AUTHORIZED" | "REDIRECT"> =>
+        code === undefined
+          ? Promise.resolve("REDIRECT")
+          : new Promise<"AUTHORIZED">(() => {}),
+    );
+    const result = registry.connect(request(21, "exchange-timeout", authorize));
+    await flush();
+    const listener = bindings[0];
+    listener.onCallback({
+      invocationRef: listener.invocationRef,
+      state: "state-21",
+      code: "code",
+    });
+    await flush();
+    expect(registry.getState(53682).status).toBe("exchanging");
+
+    // The deadline is re-armed for the exchange, so it still fires.
+    clock.advanceBy(6 * 60_000);
+    await flush();
+
+    await expect(result).resolves.toMatchObject({ success: false });
+  });
+
   it("rejects a stale typed callback without consuming the active flow", async () => {
     const { registry, bindings } = createHarness();
     const result = registry.connect(request(3));

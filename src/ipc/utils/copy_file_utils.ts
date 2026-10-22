@@ -152,10 +152,10 @@ export async function executeCopyFile({
 
       // Ensure destination directory exists
       const dirPath = path.dirname(toFullPath);
-      fs.mkdirSync(dirPath, { recursive: true });
+      await fs.promises.mkdir(dirPath, { recursive: true });
 
       // Copy the file (do not follow symlinks at destination)
-      fs.copyFileSync(fromFullPath, toFullPath);
+      await fs.promises.copyFile(fromFullPath, toFullPath);
       logger.log(`Successfully copied file: ${fromFullPath} -> ${toFullPath}`);
 
       // Add to git

@@ -1,7 +1,9 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import path from "node:path";
 import { z } from "zod";
 import log from "electron-log/main";
+import { DyadError, DyadErrorKind, isDyadError } from "@/errors/dyad_error";
 import type { ToolDefinition } from "./types";
 
 const execFileAsync = promisify(execFile);
@@ -40,11 +42,12 @@ const astGrepSearchSchema = z.object({
   pattern: z
     .string()
     .min(1)
+    .optional()
     .describe(
       "Structural search pattern written as ordinary code with $METAVARIABLES, " +
         "e.g. 'function $NAME($$$ARGS) { $$$BODY }' or " +
         "'await $PROMISE' or 'console.log($$$)'. Metavariables match any node; " +
-        "$$$ matches any sequence of nodes.",
+        "$$$ matches any sequence of nodes. Required unless `ruleFile` is set.",
     ),
   language: z
     .string()
@@ -100,16 +103,26 @@ export const astGrepSearchTool: ToolDefinition = {
   inputSchema: astGrepSearchSchema,
   defaultConsent: "always",
   modifiesState: false,
-  getConsentPreview: (args) => `AST-search for ${args.pattern}`,
+  getConsentPreview: (args) =>
+    `AST-search for ${args.pattern ?? args.ruleFile ?? "structural pattern"}`,
   execute: async (args, ctx) => {
+    const pattern = args.pattern?.trim() ? args.pattern : undefined;
+    const ruleFile = args.ruleFile?.trim() ? args.ruleFile : undefined;
+    if (!pattern && !ruleFile) {
+      throw new DyadError(
+        "ast_grep_search needs either an inline `pattern` or a `ruleFile` path.",
+        DyadErrorKind.Validation,
+      );
+    }
+
     const target = args.path ? args.path : ".";
-    const absTarget = args.path ? `${ctx.appPath}/${args.path}` : ctx.appPath;
+    const absTarget = resolveAppRelativePath(ctx.appPath, args.path);
 
     const argv: string[] = ["run"];
-    if (args.ruleFile) {
-      argv.push("--rule", args.ruleFile);
-    } else {
-      argv.push("--pattern", args.pattern);
+    if (ruleFile) {
+      argv.push("--rule", ruleFile);
+    } else if (pattern) {
+      argv.push("--pattern", pattern);
       if (args.language) argv.push("--lang", args.language);
     }
     argv.push("--json=compact");
@@ -133,7 +146,21 @@ export const astGrepSearchTool: ToolDefinition = {
       });
       return formatMatches(stdout, target);
     } catch (error) {
+      if (isDyadError(error)) {
+        // Already classified (e.g. an ast-grep error payload): keep the kind
+        // instead of flattening it into an untyped string.
+        throw error;
+      }
       const message = (error as Error).message ?? String(error);
+      if (isMissingBinaryError(error, message)) {
+        throw new DyadError(
+          "The ast-grep binary is not available on this machine, so structural " +
+            "search is disabled. Install it (for example `npm install -g " +
+            "@ast-grep/cli`) and retry, or use the `grep` tool for plain-text " +
+            "search.",
+          DyadErrorKind.Precondition,
+        );
+      }
       // ast-grep exits non-zero when nothing matches, which is not a failure.
       if (
         /No valid rules|exit status 1$/.test(message) &&
@@ -184,14 +211,26 @@ interface AstGrepMatch {
 function formatMatches(stdout: string, target: string): string {
   if (!stdout.trim()) return `No structural matches in ${target}.`;
 
-  let matches: AstGrepMatch[];
+  let parsed: unknown;
   try {
-    matches = JSON.parse(stdout);
+    parsed = JSON.parse(stdout);
   } catch {
     // ast-grep emits a non-JSON diagnostic on some error paths.
     return stdout.slice(0, MAX_OUTPUT_CHARS);
   }
-  if (!Array.isArray(matches) || matches.length === 0) {
+  if (!Array.isArray(parsed)) {
+    // Only an empty list means "no matches". Any other payload is ast-grep
+    // reporting a failure, and reporting it as "no matches" would hide it.
+    throw new DyadError(
+      `ast-grep returned an unexpected payload instead of a match list: ${stdout.slice(
+        0,
+        200,
+      )}`,
+      DyadErrorKind.External,
+    );
+  }
+  const matches = parsed as AstGrepMatch[];
+  if (matches.length === 0) {
     return `No structural matches in ${target}.`;
   }
 
@@ -214,7 +253,47 @@ function formatMatches(stdout: string, target: string): string {
   });
 
   const header = `Found ${matches.length} structural match${matches.length === 1 ? "" : "es"}${truncated ? ` (showing first ${MAX_MATCHES})` : ""}:\n`;
-  return header + parts.join("\n---\n").slice(0, MAX_OUTPUT_CHARS);
+  const body = parts.join("\n---\n");
+  if (body.length <= MAX_OUTPUT_CHARS) {
+    return header + body;
+  }
+  return (
+    header +
+    body.slice(0, MAX_OUTPUT_CHARS) +
+    `\n\n[TRUNCATED: output exceeded ${MAX_OUTPUT_CHARS} characters. Narrow the search (a more specific pattern, language, or path) to see the rest.]`
+  );
+}
+
+/**
+ * Resolve a model-supplied path against the app root and refuse anything that
+ * escapes it, so a tool call cannot read files outside the app.
+ */
+function resolveAppRelativePath(
+  appPath: string,
+  relativePath?: string,
+): string {
+  const root = path.resolve(appPath);
+  if (!relativePath) {
+    return root;
+  }
+  const resolved = path.resolve(root, relativePath);
+  const relative = path.relative(root, resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new DyadError(
+      `Path "${relativePath}" is outside the app directory. Use a path relative to the app root.`,
+      DyadErrorKind.Validation,
+    );
+  }
+  return resolved;
+}
+
+/**
+ * True when the spawn failed because the executable does not exist (ast-grep is
+ * not bundled with Dyad and has to be installed separately).
+ */
+function isMissingBinaryError(error: unknown, message: string): boolean {
+  const code = (error as { code?: unknown })?.code;
+  return code === "ENOENT" || /\bENOENT\b/.test(message);
 }
 
 function summarizeMetaVariables(

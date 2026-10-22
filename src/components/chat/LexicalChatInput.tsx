@@ -37,6 +37,7 @@ import {
 import { useLoadApp } from "@/hooks/useLoadApp";
 import { HistoryNavigation, HISTORY_TRIGGER } from "./HistoryNavigation";
 import { slugForPrompt } from "@/ipc/utils/replaceSlashSkillReference";
+import { BUILTIN_SKILL_CATALOG } from "@/prompts/builtin_skills/catalog";
 
 // Define the theme for mentions
 const beautifulMentionsTheme: BeautifulMentionsTheme = {
@@ -390,15 +391,25 @@ export function LexicalChatInput({
       }));
     result[HISTORY_TRIGGER] = historyItems;
 
-    // Skills (slash commands): all prompts by slug
-    const skillItems = (prompts || [])
+    // Skills (slash commands): the built-in skills, then all prompts by slug.
+    // A user's own prompt with the same slug wins, because that is the one
+    // the user wrote and expects to run.
+    const userSkillItems = (prompts || [])
       .map((p) => ({
         value: slugForPrompt(p),
         type: "skill",
         id: p.id,
       }))
       .filter((item) => item.value != null && item.value !== "");
-    result["/"] = skillItems;
+    const userSlugs = new Set(userSkillItems.map((item) => item.value));
+    const builtinSkillItems = BUILTIN_SKILL_CATALOG.filter(
+      (skill) => !userSlugs.has(skill.slug),
+    ).map((skill) => ({
+      value: skill.slug,
+      type: "skill",
+      id: `builtin:${skill.slug}`,
+    }));
+    result["/"] = [...builtinSkillItems, ...userSkillItems];
 
     if (!apps) return result;
 

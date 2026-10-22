@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { searchReplaceTool } from "./search_replace";
 import type { AgentContext } from "./types";
 import { assertMutationPathAllowed } from "@/ipc/utils/path_utils";
+import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 
 // Mock fs module
 vi.mock("node:fs", async () => {
@@ -437,6 +438,58 @@ describe("searchReplaceTool", () => {
         "/test/app/test.ts",
         "function test() {\n  if (!found) {\n    rollback();\n  }\n}",
       );
+    });
+
+    it("reports the closest match in the error so the agent can fix its old_string", async () => {
+      const originalContent = [
+        "function greet() {",
+        "  console.log('Hello');",
+        "  return true;",
+        "}",
+      ].join("\n");
+
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.promises.readFile).mockResolvedValue(originalContent);
+
+      await expect(
+        searchReplaceTool.execute(
+          {
+            file_path: "test.ts",
+            old_string:
+              "function greet() {\n  console.log('Hi there');\n  return true;\n}",
+            new_string:
+              "function greet() {\n  console.log('Hello World');\n  return true;\n}",
+          },
+          mockContext,
+        ),
+      ).rejects.toThrow(/3\/4/);
+    });
+
+    it("reports a failed match as a validation error the model can fix", async () => {
+      const originalContent = [
+        "function greet() {",
+        "  return true;",
+        "}",
+      ].join("\n");
+
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.promises.readFile).mockResolvedValue(originalContent);
+
+      const error = await searchReplaceTool
+        .execute(
+          {
+            file_path: "src/greet.ts",
+            old_string: "function greet() {\n  return false;\n}",
+            new_string: "function greet() {\n  return true;\n}",
+          },
+          mockContext,
+        )
+        .catch((thrown: unknown) => thrown);
+
+      expect(error).toBeInstanceOf(DyadError);
+      expect((error as DyadError).kind).toBe(DyadErrorKind.Validation);
+      expect((error as DyadError).message).toContain("src/greet.ts");
+      expect((error as DyadError).message).toContain("byte-for-byte");
     });
 
     it("preserves a blank line the terminated args genuinely matched", async () => {

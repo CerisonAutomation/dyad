@@ -1,9 +1,11 @@
 /**
  * Per-app preview iframe identity, navigation, and picker state.
  *
- * The machine has no timers or async operations. Events are processed in
- * arrival order; none are dropped as stale. Iframe DOM access and the selected
- * component list remain adapter-owned and are deliberately absent here.
+ * The machine has no timers of its own. Events are processed in arrival order;
+ * none are dropped as stale. The one delayed effect — the reload that recovers
+ * the preview from a stale dev-server chunk — is scheduled through a command
+ * the adapter runs. Iframe DOM access and the selected component list remain
+ * adapter-owned and are deliberately absent here.
  *
  * Machine dependency graph: preview_iframe -> none.
  */
@@ -35,6 +37,14 @@ export interface PreviewIframeState {
   readonly restoreQueued: boolean;
   readonly preserveHistoryOnNextReplacement: boolean;
   readonly error: PreviewError | undefined;
+  /**
+   * How many automatic recoveries this preview has already spent on a stale
+   * dev-server chunk. It bounds the reload loop: a chunk that never comes
+   * back would otherwise reload the iframe forever.
+   */
+  readonly chunkRecoveryAttempts: number;
+  /** Whether a chunk recovery is waiting for its delayed reload. */
+  readonly chunkRecoveryPending: boolean;
 }
 
 export interface PreviewError {
@@ -54,6 +64,8 @@ export const INITIAL_PREVIEW_IFRAME_STATE: PreviewIframeState = {
   restoreQueued: false,
   preserveHistoryOnNextReplacement: false,
   error: undefined,
+  chunkRecoveryAttempts: 0,
+  chunkRecoveryPending: false,
 };
 
 export type PreviewIframeEvent =
@@ -110,6 +122,7 @@ export type PreviewIframeEvent =
       message: string;
       source: "preview-app" | "dyad-app";
     }
+  | { type: "CHUNK_RECOVERY_APPLIED" }
   | { type: "SYNC_ERROR"; message: string }
   | { type: "SYNC_RECOVERED" }
   | { type: "APP_ERROR"; message: string }
@@ -129,10 +142,19 @@ export type PreviewIframePostMessage =
   | { type: "cleanup-all-text-editing" }
   | { type: "restore-overlays" };
 
-export type PreviewIframeCommand = {
-  type: "post-to-iframe";
-  message: PreviewIframePostMessage;
-};
+export type PreviewIframeCommand =
+  | {
+      type: "post-to-iframe";
+      message: PreviewIframePostMessage;
+    }
+  | {
+      /**
+       * Reload the iframe after a short delay so a dev server that is still
+       * coming back can answer it. The adapter owns the timer and reports the
+       * reload back as `CHUNK_RECOVERY_APPLIED`.
+       */
+      type: "schedule-chunk-recovery";
+    };
 
 export type PreviewIframeIgnoreReason =
   | "already-current-app-url"
@@ -150,6 +172,7 @@ export type PreviewIframeIgnoreReason =
   | "higher-priority-error"
   | "no-sync-error"
   | "same-preview-error"
+  | "no-pending-chunk-recovery"
   | "no-preview-error";
 
 export const selectCanGoBack = (state: PreviewIframeState): boolean =>

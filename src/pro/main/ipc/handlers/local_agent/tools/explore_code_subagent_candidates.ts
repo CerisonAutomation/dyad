@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import type { CodeExplorerResult } from "../../../../../../../shared/code_explorer_types";
 
 // Shared evidence model for the explore_code sub-agent. A "candidate" is one
@@ -8,7 +9,7 @@ import type { CodeExplorerResult } from "../../../../../../../shared/code_explor
 // id, which is what keeps the final report grounded in real tool output.
 
 export const MAX_OBSERVATION_CHARS = 20_000;
-export const MAX_TOTAL_OBSERVATION_CHARS = 150_000;
+export const MAX_TOTAL_OBSERVATION_CHARS = 60_000;
 export const MAX_RANGE_LINES = 120;
 export const MAX_INTERNAL_CANDIDATES = 80;
 const OBSERVATION_BUDGET_EXHAUSTED_MESSAGE =
@@ -608,8 +609,11 @@ export function getRankedCandidates(
     .slice(0, MAX_INTERNAL_CANDIDATES)
     .map((candidate) => {
       if (!candidate.id) {
-        throw new Error(
+        // The registry assigns every observed candidate an id, so losing one
+        // breaks report grounding — an internal invariant violation.
+        throw new DyadError(
           `Ranked candidate missing stable id: ${candidate.path}`,
+          DyadErrorKind.Internal,
         );
       }
       return candidate;
@@ -697,7 +701,11 @@ function rangeWidth(range: CandidateRange | null): number {
 
 export function requireCandidateId(candidate: ExplorerCandidate): CandidateId {
   if (!candidate.id) {
-    throw new Error(`Candidate missing id: ${candidate.path}`);
+    // Malformed candidate: it was never registered, so it cannot be cited.
+    throw new DyadError(
+      `Candidate missing id: ${candidate.path}`,
+      DyadErrorKind.Validation,
+    );
   }
   return candidate.id;
 }

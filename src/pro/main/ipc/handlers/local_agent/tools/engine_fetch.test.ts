@@ -281,4 +281,42 @@ describe("engineFetch", () => {
     expect(vi.getTimerCount()).toBe(0);
     expect(removeListener).toHaveBeenCalledWith("abort", expect.any(Function));
   });
+
+  it("types a mid-stream network failure as an External error", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        new ReadableStream({
+          start(streamController) {
+            streamController.error(new TypeError("terminated"));
+          },
+        }),
+      ),
+    );
+
+    const response = await engineFetch(
+      { dyadRequestId: "request-stream-error" },
+      "/tools/test",
+    );
+
+    await expect(response.text()).rejects.toMatchObject({
+      kind: DyadErrorKind.External,
+    });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("types a non-JSON response body as an External error", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("<html>proxy error</html>"),
+    );
+
+    const response = await engineFetch(
+      { dyadRequestId: "request-not-json" },
+      "/tools/test",
+    );
+
+    await expect(response.json()).rejects.toMatchObject({
+      kind: DyadErrorKind.External,
+    });
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

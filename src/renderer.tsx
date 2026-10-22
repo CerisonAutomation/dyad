@@ -45,6 +45,7 @@ import { clearTestRuntimeForAppAtom } from "./atoms/testRuntimeAtoms";
 import {
   ensureRecentViewedChatIdAtom,
   initializeChatTabSessionStorageAtom,
+  removeChatIdFromAllTrackingAtom,
 } from "./atoms/chatAtoms";
 import {
   configureChatTabWindowSession,
@@ -204,6 +205,18 @@ function RendererServices() {
     [store],
   );
   useRegisterEntityDisposer("app", clearAppRuntime);
+
+  // A chat deleted from another window (or by the agent) must release the
+  // renderer's cached copy of its transcript, plan and annotations too. The
+  // local delete path does this through `removeChatIdFromAllTrackingAtom`;
+  // without this registration the remote path pruned nothing.
+  const clearChatRuntime = useCallback(
+    (chatId: number) => {
+      store.set(removeChatIdFromAllTrackingAtom, chatId);
+    },
+    [store],
+  );
+  useRegisterEntityDisposer("chat", clearChatRuntime);
 
   // Fetch user budget on app load
   useEffect(() => {

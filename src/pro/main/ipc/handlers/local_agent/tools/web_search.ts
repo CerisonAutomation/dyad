@@ -55,8 +55,10 @@ export const webSearchTool: ToolDefinition<z.infer<typeof webSearchSchema>> = {
     ctx.onXmlStream(`<dyad-web-search query="${escapeXmlAttr(args.query)}">`);
 
     try {
-      // Use local web search (DuckDuckGo + SearXNG)
-      const results = await localWebSearch(args.query, 10);
+      // Use local web search (DuckDuckGo + SearXNG).
+      // The abort signal lets a cancelled turn stop the in-flight provider
+      // requests instead of leaving them running against an abandoned turn.
+      const results = await localWebSearch(args.query, 10, ctx.abortSignal);
 
       if (results.length === 0) {
         throw new DyadError(

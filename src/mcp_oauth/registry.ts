@@ -269,22 +269,29 @@ export function createMcpOAuthRegistry(options: McpOAuthRegistryOptions) {
     }
   }
 
+  function armTimeout(
+    port: number,
+    invocationRef: McpOAuthInvocationRef,
+  ): void {
+    timeoutHandles.set(
+      keyOf(invocationRef),
+      clock.schedule(
+        () =>
+          dispatch(port, {
+            type: "TIMEOUT",
+            invocationRef,
+          }),
+        timeoutMs,
+      ),
+    );
+  }
+
   function startAwaitingEffects(
     port: number,
     identity: McpOAuthFlowIdentity,
   ): void {
     const key = keyOf(identity.invocationRef);
-    timeoutHandles.set(
-      key,
-      clock.schedule(
-        () =>
-          dispatch(port, {
-            type: "TIMEOUT",
-            invocationRef: identity.invocationRef,
-          }),
-        timeoutMs,
-      ),
-    );
+    armTimeout(port, identity.invocationRef);
     const runtime = runtimes.get(key);
     if (!runtime) return;
     trackEffect(
@@ -314,7 +321,15 @@ export function createMcpOAuthRegistry(options: McpOAuthRegistryOptions) {
     code: string,
   ): void {
     cancelTimeout(invocationRef);
+    // Closing the callback listener is what ends the browser round trip.
+    // NOTE: closeListener() cancels the pending timeout as a side effect, so
+    // the deadline has to be re-armed *after* it, not before.
     void closeListener(port, invocationRef);
+    // The token exchange is another network round trip to the authorization
+    // server and can hang if the endpoint accepts the connection but never
+    // answers. Re-arm the deadline so the flow always settles instead of
+    // leaving the Connect button spinning and the runtime entry leaked.
+    armTimeout(port, invocationRef);
     const runtime = runtimes.get(keyOf(invocationRef));
     if (!runtime) return;
     trackEffect(

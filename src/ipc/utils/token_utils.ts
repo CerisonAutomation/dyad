@@ -26,35 +26,213 @@ type ToolErrorForTokenEstimate = {
  * Estimate the tokens that completed tool results will add to the next model
  * request. Tool inputs are intentionally excluded because the engine's usage
  * for the completed step already counted them.
+ *
+ * Only the SIZE of each result matters, so the payload is measured by walking
+ * it rather than by serializing it. `JSON.stringify` over the whole step
+ * re-materialized every tool output as one giant string purely to take its
+ * `.length` - up to 20 MB of transient allocation (and a main-thread stall)
+ * for a step whose results were already in memory.
+ *
+ * `jsonSerializedLength` reproduces `JSON.stringify(...).length` exactly, so
+ * the estimate is unchanged - only the allocation is gone.
  */
 export const estimateToolResultTokens = (
   toolResults: readonly ToolResultForTokenEstimate[],
   toolErrors: readonly ToolErrorForTokenEstimate[] = [],
+  maxCharsPerResult?: number,
 ): number => {
   if (toolResults.length === 0 && toolErrors.length === 0) {
     return 0;
   }
 
-  const serializedResults = JSON.stringify(
-    [
-      ...toolResults.map(({ toolCallId, toolName, output }) => ({
-        type: "tool-result",
-        toolCallId,
-        toolName,
-        output,
-      })),
-      ...toolErrors.map(({ toolCallId, toolName, error }) => ({
-        type: "tool-result",
-        toolCallId,
-        toolName,
-        output: { type: "error-text", value: getErrorMessage(error) },
-      })),
-    ],
-    (_key, value) => (typeof value === "bigint" ? value.toString() : value),
-  );
+  // The previous implementation serialized an ARRAY of envelopes, so the
+  // brackets and the separating commas are part of the measured size. Keep
+  // them so the estimate is bit-for-bit identical to the old one.
+  let totalChars = 2; // "[" and "]"
+  let count = 0;
+  for (const { toolCallId, toolName, output } of toolResults) {
+    if (count > 0) {
+      totalChars += 1; // comma between envelopes
+    }
+    count += 1;
+    totalChars += toolResultEnvelopeLength(
+      toolCallId,
+      toolName,
+      output,
+      maxCharsPerResult,
+    );
+  }
+  for (const { toolCallId, toolName, error } of toolErrors) {
+    if (count > 0) {
+      totalChars += 1; // comma between envelopes
+    }
+    count += 1;
+    totalChars += toolResultEnvelopeLength(
+      toolCallId,
+      toolName,
+      {
+        type: "error-text",
+        value: getErrorMessage(error),
+      },
+      maxCharsPerResult,
+    );
+  }
 
-  return estimateTokens(serializedResults);
+  // Same 4-characters-per-token rule as `estimateTokens`, applied to the
+  // measured size without materializing a string of that size.
+  return Math.ceil(totalChars / 4);
 };
+
+/**
+ * The serialized length of one tool-result envelope:
+ * `{"type":"tool-result","toolCallId":..,"toolName":..,"output":..}`
+ */
+function toolResultEnvelopeLength(
+  toolCallId: string,
+  toolName: string,
+  output: unknown,
+  maxCharsPerResult?: number,
+): number {
+  const outputLength =
+    maxCharsPerResult == null
+      ? jsonSerializedLength(output)
+      : Math.min(jsonSerializedLength(output), maxCharsPerResult);
+  return (
+    2 + // "{" and "}"
+    jsonStringLength("type") +
+    1 + // ":"
+    jsonStringLength("tool-result") +
+    1 + // ","
+    jsonStringLength("toolCallId") +
+    1 + // ":"
+    jsonStringLength(toolCallId) +
+    1 + // ","
+    jsonStringLength("toolName") +
+    1 + // ":"
+    jsonStringLength(toolName) +
+    1 + // ","
+    jsonStringLength("output") +
+    1 + // ":"
+    outputLength
+  );
+}
+
+/**
+ * The length of `JSON.stringify(value)`, without building the string.
+ *
+ * Mirrors the JSON.stringify rules that matter for tool payloads: string
+ * escaping, number formatting, null/true/false, and the omission of
+ * `undefined` object properties.
+ */
+export function jsonSerializedLength(value: unknown): number {
+  switch (typeof value) {
+    case "string":
+      return jsonStringLength(value);
+    case "number":
+      return jsonNumberLength(value);
+    case "boolean":
+      return value ? 4 : 5;
+    case "bigint":
+      // JSON.stringify throws on bigint; the previous implementation
+      // converted it to a string via the replacer.
+      return jsonStringLength(value.toString());
+    case "undefined":
+      // At the top level JSON.stringify returns undefined; inside an array it
+      // becomes null. Treat the value as "null" so callers get a usable size.
+      return 4;
+    case "function":
+    case "symbol":
+      return 0;
+    default:
+      break;
+  }
+  if (value === null) {
+    return 4;
+  }
+  if (Array.isArray(value)) {
+    let total = 2; // "[" and "]"
+    let count = 0;
+    for (const item of value) {
+      if (count > 0) {
+        total += 1; // comma between elements
+      }
+      count += 1;
+      total += jsonSerializedLength(item === undefined ? null : item);
+    }
+    return total;
+  }
+  if (value instanceof Date) {
+    return jsonStringLength(value.toISOString());
+  }
+  const record = value as Record<string, unknown>;
+  let total = 2; // "{" and "}"
+  let count = 0;
+  for (const [key, item] of Object.entries(record)) {
+    if (
+      item === undefined ||
+      typeof item === "function" ||
+      typeof item === "symbol"
+    ) {
+      // JSON.stringify omits these properties entirely.
+      continue;
+    }
+    if (count > 0) {
+      total += 1; // comma
+    }
+    count += 1;
+    total += jsonStringLength(key);
+    total += 1; // colon
+    total += jsonSerializedLength(item);
+  }
+  return total;
+}
+
+/** The length of `JSON.stringify(text)` including the surrounding quotes. */
+export function jsonStringLength(text: string): number {
+  let length = 2; // quotes
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    switch (code) {
+      case 0x22: // "
+      case 0x5c: // backslash
+      case 0x08: // backspace
+      case 0x09: // tab
+      case 0x0a: // newline
+      case 0x0c: // form feed
+      case 0x0d: // carriage return
+        length += 2;
+        break;
+      default:
+        if (code < 0x20) {
+          length += 6; // \u00XX
+        } else if (code >= 0xd800 && code <= 0xdfff) {
+          // A lone surrogate is escaped as \uXXXX; a valid pair is emitted
+          // as-is by JSON.stringify (well-formed stringify, ES2019).
+          const isHighSurrogate =
+            code >= 0xd800 && code <= 0xdbff && i + 1 < text.length;
+          const next = isHighSurrogate ? text.charCodeAt(i + 1) : 0;
+          if (isHighSurrogate && next >= 0xdc00 && next <= 0xdfff) {
+            length += 2; // the pair is emitted as two UTF-16 units
+            i += 1;
+          } else {
+            length += 6; // \uXXXX
+          }
+        } else {
+          length += 1;
+        }
+        break;
+    }
+  }
+  return length;
+}
+
+/** The length of `JSON.stringify(number)`. */
+function jsonNumberLength(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 4; // JSON.stringify(NaN) === "null"
+  }
+  return String(value).length;
+}
 
 export const estimateMessagesTokens = (messages: Message[]): number => {
   return messages.reduce(

@@ -97,3 +97,35 @@ export function cancelOrphanedBaseStream(streamResult: unknown): void {
     logger.warn("Failed to cancel orphaned streamText baseStream branch", err);
   });
 }
+
+/**
+ * Neutralize `<dyad-*` tags that a model wrote as prose.
+ *
+ * On the local-agent path tools are structured AI SDK tool calls, so a
+ * `<dyad-list-files>` tag in the text channel is the model hallucinating a
+ * tool call. The renderer parses those tags as app cards, which is why a
+ * hallucinated call shows up as an empty card. Escaping only the opening
+ * bracket keeps the text readable but stops the renderer from building a card.
+ *
+ * `<dyad-command>` is exempt: the agent prompt asks the model to emit it as
+ * text.
+ */
+export function escapeModelAuthoredDyadTags(text: string): string {
+  return text.replace(
+    /<(\/?)dyad-(?!command(?![a-z0-9-]))/gi,
+    (_match: string, slash: string) => `＜${slash}dyad-`,
+  );
+}
+
+/**
+ * Number of `<think>` openings that never got a matching `</think>`.
+ *
+ * A model that writes `<think>` into the text channel (the prompt asks for it)
+ * can leave the block open. The renderer then folds the rest of the message
+ * into the Thought card, so the answer disappears.
+ */
+export function countUnclosedThinkTags(text: string): number {
+  const openings = text.match(/<think>/gi)?.length ?? 0;
+  const closings = text.match(/<\/think>/gi)?.length ?? 0;
+  return Math.max(0, openings - closings);
+}

@@ -896,11 +896,19 @@ export const SecurityPanel = () => {
     setDetailsOpen(true);
   };
 
+  // A click burst (or key auto-repeat) can start several reviews before
+  // the button's `disabled` flag lands on the next render, and every run
+  // creates its own chat. Latch synchronously so only the first wins.
+  const securityReviewInFlightRef = useRef(false);
+
   const handleRunSecurityReview = async () => {
     if (!selectedAppId) {
       showError("No app selected");
       return;
     }
+
+    if (securityReviewInFlightRef.current) return;
+    securityReviewInFlightRef.current = true;
 
     try {
       setIsRunningReview(true);
@@ -926,6 +934,8 @@ export const SecurityPanel = () => {
     } catch (err) {
       showError(`Failed to run security review: ${err}`);
       setIsRunningReview(false);
+    } finally {
+      securityReviewInFlightRef.current = false;
     }
   };
 

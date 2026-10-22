@@ -45,7 +45,11 @@ export const readGuideTool: ToolDefinition<z.infer<typeof readGuideSchema>> = {
   },
 
   execute: async (args, ctx) => {
-    const content = GUIDES[args.guide];
+    // `Object.hasOwn` keeps inherited members ("constructor", "toString", ...)
+    // from being served as guides.
+    const content = Object.hasOwn(GUIDES, args.guide)
+      ? GUIDES[args.guide]
+      : undefined;
     if (!content) {
       const available = Object.keys(GUIDES).join(", ");
       throw new DyadError(

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
+import type { Dirent } from "node:fs";
 
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import type { Problem, ProblemReport } from "@/ipc/types";
@@ -101,7 +102,9 @@ export async function getTypeCheckPreconditionGuidance({
   agentInstructionMode?: "dyad-command" | "local-agent-tool";
 }): Promise<string> {
   if (kind === "tsconfig-not-found") {
-    return "Type checking could not run: TypeScript is installed but no tsconfig was found (expected `tsconfig.app.json` or `tsconfig.json`). You can create a suitable tsconfig for this project and retry.";
+    // The tsconfig lookup also searches the app's immediate subdirectories, and
+    // nothing here proves that TypeScript is installed — don't claim it is.
+    return "Type checking could not run: no tsconfig was found for this app (expected `tsconfig.app.json` or `tsconfig.json` in the app folder or in one of its immediate subdirectories). You can create a suitable tsconfig for this project and retry.";
   }
 
   const declaresTypeScript = await packageJsonDeclaresTypeScript(appPath);
@@ -354,10 +357,51 @@ async function findTypeScriptConfig(appPath: string): Promise<string> {
     }
   }
 
+  // Workspace-style apps point at a pnpm workspace root while the real app
+  // lives in a subfolder, so look one level down. Only accept an unambiguous
+  // candidate: in a multi-package repo guessing would type-check the wrong code.
+  const subdirectoryConfigs =
+    await findTypeScriptConfigsInSubdirectories(appPath);
+  if (subdirectoryConfigs.length === 1) {
+    return subdirectoryConfigs[0];
+  }
+
   throw new TypeCheckPreconditionError(
     "tsconfig-not-found",
-    `No TypeScript configuration file found in ${appPath}. Expected one of: ${CONFIG_NAMES.join(", ")}`,
+    subdirectoryConfigs.length > 1
+      ? `No TypeScript configuration file found in ${appPath}, and ${subdirectoryConfigs.length} subdirectories contain one: ${subdirectoryConfigs
+          .map((configPath) => path.relative(appPath, configPath))
+          .join(", ")}. Point the app at the package to type check.`
+      : `No TypeScript configuration file found in ${appPath} or its immediate subdirectories. Expected one of: ${CONFIG_NAMES.join(", ")}`,
   );
+}
+
+async function findTypeScriptConfigsInSubdirectories(
+  appPath: string,
+): Promise<string[]> {
+  const found: string[] = [];
+  const entries: Dirent[] = await fs
+    .readdir(appPath, { withFileTypes: true })
+    .catch(() => []);
+  for (const entry of entries) {
+    if (entry.name === "node_modules" || entry.name.startsWith(".")) {
+      continue;
+    }
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) {
+      continue;
+    }
+    for (const configName of CONFIG_NAMES) {
+      const configPath = path.join(appPath, entry.name, configName);
+      try {
+        await fs.access(configPath);
+        found.push(configPath);
+        break;
+      } catch {
+        // This subdirectory has no supported config.
+      }
+    }
+  }
+  return found.sort();
 }
 
 async function resolveTypeScriptCli(appPath: string): Promise<TypeScriptCli> {
@@ -422,6 +466,7 @@ async function runCli(
   cli: TypeScriptCli,
   appPath: string,
   args: string[],
+  signal?: AbortSignal,
 ): Promise<BufferedProcessResult> {
   // Run the TypeScript JS entry point with the user's selected Node runtime,
   // resolved from PATH like every other app child process (reloadNodePath
@@ -435,6 +480,9 @@ async function runCli(
     cwd: appPath,
     env: getTypeScriptCommandEnv(appPath),
     shell: false,
+    // A cancelled turn must stop the compiler instead of leaving it running
+    // until the timeout while it holds the exclusive scheduler slot.
+    signal,
     timeoutMs: TSC_TIMEOUT_MS,
     maxOutputBytes: TSC_MAX_OUTPUT_BYTES,
     // The scheduler must not release its memory-heavy-work slot until the
@@ -446,6 +494,7 @@ async function runCli(
 async function getTypeScriptVersion(
   cli: TypeScriptCli,
   appPath: string,
+  signal?: AbortSignal,
 ): Promise<string> {
   const realEntryPath = await fs.realpath(cli.entryPath);
   const stats = await fs.stat(realEntryPath);
@@ -455,7 +504,7 @@ async function getTypeScriptVersion(
     return cached;
   }
 
-  const result = await runCli(cli, appPath, ["--version"]);
+  const result = await runCli(cli, appPath, ["--version"], signal);
   if (
     result.code !== 0 ||
     result.signal ||
@@ -494,14 +543,17 @@ function getBuildInfoPath({
 
 export async function runTypeScriptCheck({
   appPath,
+  signal,
 }: {
   appPath: string;
+  /** Cancels the compiler child process when the caller's turn is cancelled. */
+  signal?: AbortSignal;
 }): Promise<ProblemReport> {
   return typescriptUtilityProcessScheduler.runExclusive("tsc", async () => {
     try {
       const cli = await resolveTypeScriptCli(appPath);
       const configPath = await findTypeScriptConfig(appPath);
-      const version = await getTypeScriptVersion(cli, appPath);
+      const version = await getTypeScriptVersion(cli, appPath, signal);
       const buildInfoPath = getBuildInfoPath({
         appPath,
         configPath,
@@ -540,15 +592,19 @@ export async function runTypeScriptCheck({
         args.push("--incremental", "--tsBuildInfoFile", buildInfoPath);
       }
       args.push("--project", configPath);
-      const result = await runCli(cli, appPath, args);
+      const result = await runCli(cli, appPath, args, signal);
 
       if (result.timedOut) {
         throw new Error(`Type check timed out after ${TSC_TIMEOUT_MS / 1000}s`);
       }
-      if (result.aborted || result.signal) {
-        throw new Error(
-          `Type check process terminated${result.signal ? ` with ${result.signal}` : ""}`,
+      if (result.aborted) {
+        throw new DyadError(
+          "Type check cancelled.",
+          DyadErrorKind.UserCancelled,
         );
+      }
+      if (result.signal) {
+        throw new Error(`Type check process terminated with ${result.signal}`);
       }
       if (result.stdoutTruncated || result.stderrTruncated) {
         throw new Error(

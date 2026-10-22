@@ -498,3 +498,36 @@ export async function removeUnusedCopiedResources(
     ]),
   ]);
 }
+
+/**
+ * The ripgrep binary is downloaded by `@vscode/ripgrep`'s postinstall script.
+ * When that script is skipped (npm's `allowScripts` gate, `--ignore-scripts`,
+ * or an offline install) the package is still copied into the bundle - but
+ * without `bin/rg`, so every grep-backed tool fails at spawn time with a bare
+ * `ENOENT`. Fail the package step instead of shipping an app whose search
+ * tools cannot run.
+ */
+export async function assertRipgrepBundled(
+  buildPath: string,
+  platform: PackagerPlatform,
+): Promise<void> {
+  const { appResourcesPath } = getResourcePaths(buildPath, platform);
+  const executableName = platform === "win32" ? "rg.exe" : "rg";
+  const rgPath = path.join(
+    appResourcesPath,
+    "@vscode",
+    "ripgrep",
+    "bin",
+    executableName,
+  );
+  try {
+    await fs.access(rgPath);
+  } catch {
+    throw new Error(
+      `The ripgrep binary is missing from the packaged app (${rgPath}). ` +
+        "`@vscode/ripgrep` must be allowed to run its postinstall script " +
+        "(add it to `allowScripts` in package.json) so the `rg` binary is " +
+        "downloaded before packaging.",
+    );
+  }
+}

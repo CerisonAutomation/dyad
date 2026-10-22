@@ -33,10 +33,6 @@ function isBadFileDescriptorError(error: unknown): boolean {
   );
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 type StreamName = "stdin" | "stdout" | "stderr";
 
 /**
@@ -69,6 +65,24 @@ export function spawnWithBadFdRetry(
   let child: ChildProcess | null = null;
   let settled = false; // a real (non-EBADF) outcome has been observed
   let attempt = 0;
+  let retryTimer: NodeJS.Timeout | undefined;
+
+  const clearRetryTimer = () => {
+    if (retryTimer) {
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
+    }
+  };
+
+  const wait = (ms: number) =>
+    new Promise<void>((resolve) => {
+      retryTimer = setTimeout(() => {
+        retryTimer = undefined;
+        resolve();
+      }, ms);
+      // A pending retry must not keep the process alive on its own.
+      retryTimer.unref?.();
+    });
 
   const wire = (real: ChildProcess) => {
     child = real;
@@ -101,7 +115,12 @@ export function spawnWithBadFdRetry(
     let attemptErrored = false;
     for (const event of ["close", "exit"] as const) {
       real.on(event, (...rest: unknown[]) => {
-        if (!attemptErrored) settled = true;
+        if (!attemptErrored) {
+          settled = true;
+          // The attempt is over: drop any pending EBADF backoff timer so it
+          // cannot fire later and keep this proxy and its streams alive.
+          clearRetryTimer();
+        }
         (proxy.emit as (...a: unknown[]) => void)(event, ...rest);
       });
     }
@@ -135,7 +154,7 @@ export function spawnWithBadFdRetry(
       );
       // The descriptors are still closed, so retrying immediately would fail
       // identically. Wait for the app to finish resuming first.
-      void delay(RETRY_BACKOFF_MS[attempt - 1] ?? 3000).then(() => {
+      void wait(RETRY_BACKOFF_MS[attempt - 1] ?? 3000).then(() => {
         if (settled) return;
         launch();
       });

@@ -184,7 +184,13 @@ export const runTypeChecksTool: ToolDefinition<
 
     let problemReport: ProblemReport;
     try {
-      problemReport = await runTypeScriptCheck({ appPath: ctx.appPath });
+      // Pass the turn's abort signal so a cancelled turn stops the compiler
+      // instead of leaving it running until the type-check timeout while it
+      // holds the exclusive TypeScript scheduler slot.
+      problemReport = await runTypeScriptCheck({
+        appPath: ctx.appPath,
+        signal: ctx.abortSignal,
+      });
     } catch (error) {
       if (!isDyadError(error) || error.kind !== DyadErrorKind.Precondition) {
         throw error;

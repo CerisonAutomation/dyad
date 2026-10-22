@@ -183,6 +183,16 @@ vi.mock("@/ipc/utils/mcp_manager", () => ({
     dispose: disposeMock,
     listToolsWithin: listToolsWithinMock,
   },
+  // The list-tools handler branches on the timeout error type, so the mock
+  // has to expose the same class the real module exports.
+  McpListToolsTimeoutError: class McpListToolsTimeoutError extends Error {
+    constructor(serverId: number, timeoutMs: number) {
+      super(
+        `Timed out after ${timeoutMs / 1000}s waiting for tools from server ${serverId}.`,
+      );
+      this.name = "McpListToolsTimeoutError";
+    }
+  },
 }));
 
 const runOAuthFlowMock = vi.fn();
@@ -578,6 +588,31 @@ describe("mcp listTools handler", () => {
     const result = await invoke("mcp:list-tools", 2);
     expect(result).toEqual({ tools: [], status: "unauthorized" });
     expect(failingTools).toHaveBeenCalled();
+  });
+
+  it("does not dispose the client when listing tools times out", async () => {
+    // A list-tools timeout only means "we stopped waiting". The client may
+    // still be a slow-starting stdio server (e.g. `npx` on a cold cache), so
+    // disposing it here would kill that server and restart it on every poll
+    // until it never lists its tools at all.
+    const { McpListToolsTimeoutError } =
+      await import("@/ipc/utils/mcp_manager");
+    listToolsWithinMock.mockRejectedValueOnce(
+      new McpListToolsTimeoutError(9, 8_000),
+    );
+
+    const result = await invoke("mcp:list-tools", 9);
+    expect(result).toEqual({ tools: [], status: "error" });
+    expect(disposeMock).not.toHaveBeenCalled();
+  });
+
+  it("disposes the client when the transport is genuinely broken", async () => {
+    listToolsWithinMock.mockRejectedValueOnce(
+      new Error("Attempted to send a request from a closed client"),
+    );
+
+    await invoke("mcp:list-tools", 9);
+    expect(disposeMock).toHaveBeenCalledWith(9);
   });
 });
 

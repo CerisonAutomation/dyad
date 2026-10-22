@@ -13,7 +13,13 @@ import {
   chatAnnotationsAtom,
   clearChatAnnotations,
 } from "@/atoms/chatAnnotationAtoms";
-import { planAcceptInNewChatByChatIdAtom } from "@/atoms/planAtoms";
+import {
+  planAcceptInNewChatByChatIdAtom,
+  planStateAtom,
+  planAnnotationsAtom,
+  clearPlanAnnotations,
+} from "@/atoms/planAtoms";
+import { appBlueprintStateAtom } from "@/atoms/appBlueprintAtoms";
 import { createChatTabSessionStorage } from "@/window_infrastructure/chat_tab_session_storage";
 
 // Per-chat atoms implemented with maps keyed by chatId
@@ -536,6 +542,64 @@ export const removeChatIdFromAllTrackingAtom = atom(
     const annotations = get(chatAnnotationsAtom);
     if (annotations.has(chatId)) {
       set(chatAnnotationsAtom, clearChatAnnotations(annotations, chatId));
+    }
+    // Drop the cached message transcript. The renderer keeps a full copy of
+    // every chat it has opened; without this the deleted chat's messages stay
+    // resident for the life of the window.
+    const cachedMessages = get(chatMessagesByIdAtom);
+    if (cachedMessages.has(chatId)) {
+      const nextMessages = new Map(cachedMessages);
+      nextMessages.delete(chatId);
+      set(chatMessagesByIdAtom, nextMessages);
+    }
+    // Plan documents are cached in their own atom and were never pruned.
+    const planState = get(planStateAtom);
+    if (
+      planState.plansByChatId.has(chatId) ||
+      planState.acceptedChatIds.has(chatId)
+    ) {
+      const nextPlans = new Map(planState.plansByChatId);
+      nextPlans.delete(chatId);
+      const nextAccepted = new Set(planState.acceptedChatIds);
+      nextAccepted.delete(chatId);
+      set(planStateAtom, {
+        ...planState,
+        plansByChatId: nextPlans,
+        acceptedChatIds: nextAccepted,
+      });
+    }
+    // Plan annotations live in their own atom; prune them too.
+    const planAnnotations = get(planAnnotationsAtom);
+    if (planAnnotations.has(chatId)) {
+      set(planAnnotationsAtom, clearPlanAnnotations(planAnnotations, chatId));
+    }
+    // App blueprints and their approval/timeout flags are cached per chat.
+    const blueprintState = get(appBlueprintStateAtom);
+    if (
+      blueprintState.plansByChatId.has(chatId) ||
+      blueprintState.approvedChatIds.has(chatId) ||
+      blueprintState.timedOutChatIds.has(chatId)
+    ) {
+      const nextPlans = new Map(blueprintState.plansByChatId);
+      nextPlans.delete(chatId);
+      const nextApproved = new Set(blueprintState.approvedChatIds);
+      nextApproved.delete(chatId);
+      const nextTimedOut = new Set(blueprintState.timedOutChatIds);
+      nextTimedOut.delete(chatId);
+      set(appBlueprintStateAtom, {
+        ...blueprintState,
+        plansByChatId: nextPlans,
+        approvedChatIds: nextApproved,
+        timedOutChatIds: nextTimedOut,
+      });
+    }
+    // Agent todos are only cleared when a new stream starts in the same chat,
+    // so a deleted chat kept its todo list forever.
+    const todos = get(agentTodosByChatIdAtom);
+    if (todos.has(chatId)) {
+      const nextTodos = new Map(todos);
+      nextTodos.delete(chatId);
+      set(agentTodosByChatIdAtom, nextTodos);
     }
   },
 );

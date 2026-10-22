@@ -231,6 +231,7 @@ export function buildMcpCapabilityMap(params: {
         isDyadPro: params.ctx.isDyadPro,
         freeModelMode: params.ctx.freeModelMode,
         chatId: params.ctx.chatId,
+        signal: params.ctx.abortSignal,
         serverName: def.serverName,
         toolName: def.toolName,
         toolDescription: def.description,

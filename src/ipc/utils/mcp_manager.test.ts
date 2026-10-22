@@ -428,6 +428,43 @@ describe("McpManager.listToolsWithin", () => {
       await new Promise((resolve) => server.close(resolve));
     }
   });
+
+  it("replaces a cached client whose transport already closed", async () => {
+    seedStdioServer(26);
+    const toolSet = { search: { description: "Search" } };
+    const dead = {
+      close: vi.fn(async () => {}),
+      isClosed: true,
+      tools: vi.fn(async () => {
+        throw new Error("Attempted to send a request from a closed client");
+      }),
+    } as unknown as MCPClient;
+    mocks.createMCPClient
+      .mockResolvedValueOnce(dead)
+      .mockResolvedValueOnce(clientWithTools(async () => toolSet));
+    const manager = new McpManager();
+
+    await expect(manager.listToolsWithin(26)).resolves.toBe(toolSet);
+    expect(mocks.createMCPClient).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries once with a fresh client when the cached one closes mid-request", async () => {
+    seedStdioServer(27);
+    const toolSet = { search: { description: "Search" } };
+    const dying = {
+      close: vi.fn(async () => {}),
+      tools: vi.fn(async () => {
+        throw new Error("Attempted to send a request from a closed client");
+      }),
+    } as unknown as MCPClient;
+    mocks.createMCPClient
+      .mockResolvedValueOnce(dying)
+      .mockResolvedValueOnce(clientWithTools(async () => toolSet));
+    const manager = new McpManager();
+
+    await expect(manager.listToolsWithin(27)).resolves.toBe(toolSet);
+    expect(mocks.createMCPClient).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("McpManager unreadable secrets", () => {

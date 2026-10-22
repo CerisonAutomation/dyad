@@ -4,7 +4,7 @@ import path from "node:path";
 import log from "electron-log/main";
 import { z } from "zod";
 
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import { DyadError, DyadErrorKind, isDyadError } from "@/errors/dyad_error";
 import {
   appOperationCoordinator,
   readAppResource,
@@ -367,6 +367,33 @@ async function runBuildProcess({
   });
 }
 
+/**
+ * A missing package manager surfaces as a spawn failure (`spawn pnpm ENOENT`).
+ * Other ENOENT failures (a missing file during snapshot setup) are not package
+ * manager problems.
+ */
+function isMissingPackageManagerError(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null | undefined)?.code;
+  const syscall = (error as { syscall?: unknown } | null | undefined)?.syscall;
+  if (
+    code === "ENOENT" &&
+    typeof syscall === "string" &&
+    syscall.startsWith("spawn")
+  ) {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /\bspawn\b[^\n]*\bENOENT\b/.test(message);
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { name?: unknown }).name === "AbortError"
+  );
+}
+
 interface BuildAbortScope {
   signal: AbortSignal;
   deadlineAt: number;
@@ -621,7 +648,32 @@ export const runBuildTool: ToolDefinition<z.infer<typeof runBuildSchema>> = {
               completeStatus(ctx, "Build timed out", body, "warning");
               return body;
             }
-            throw error;
+            // Classify the failure so telemetry filtering and the rendered
+            // error are meaningful instead of leaking a raw spawn/abort error.
+            if (isDyadError(error)) {
+              throw error;
+            }
+            const message =
+              error instanceof Error ? error.message : String(error);
+            if (ctx.abortSignal?.aborted || isAbortError(error)) {
+              throw new DyadError(
+                "Production build cancelled.",
+                DyadErrorKind.UserCancelled,
+                { cause: error },
+              );
+            }
+            if (isMissingPackageManagerError(error)) {
+              throw new DyadError(
+                `The package manager required to run the production build is not available: ${message}`,
+                DyadErrorKind.Precondition,
+                { cause: error },
+              );
+            }
+            throw new DyadError(
+              `Production build failed during ${phase}: ${message}`,
+              DyadErrorKind.Internal,
+              { cause: error },
+            );
           } finally {
             abortScope.dispose();
             if (snapshot) {

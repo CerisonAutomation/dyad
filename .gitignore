@@ -122,3 +122,6 @@ storybook-static/
 eval-results/
 benchmark-results/
 benchmarks/code-explorer/repos/
+
+# Local Node toolchain (never commit)
+.toolchain/

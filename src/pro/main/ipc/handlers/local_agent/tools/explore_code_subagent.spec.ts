@@ -295,7 +295,7 @@ describe("runExploreCodeSubagent", () => {
     expect(report).not.toContain("```json");
   });
 
-  it("drains usage promises before cancelling the orphaned base stream", async () => {
+  it("cancels the orphaned base stream before the response is drained", async () => {
     let resolveUsage!: (value: {
       inputTokens: number;
       outputTokens: number;
@@ -325,13 +325,35 @@ describe("runExploreCodeSubagent", () => {
       ctx: createMockContext(),
     });
     await vi.waitFor(() => expect(streamDrained).toBe(true));
-    expect(mocks.cancelOrphanedBaseStream).not.toHaveBeenCalled();
+    // The orphaned tee branch is cancelled up front so it cannot buffer the
+    // whole response while the run is still going.
+    expect(mocks.cancelOrphanedBaseStream).toHaveBeenCalledOnce();
 
     resolveUsage({ inputTokens: 10, outputTokens: 5 });
     resolveSteps([{ toolCalls: [] }]);
     await run;
 
     expect(mocks.cancelOrphanedBaseStream).toHaveBeenCalledOnce();
+  });
+
+  it("surfaces a provider failure reported through onError", async () => {
+    mocks.streamText.mockImplementationOnce((options: any) => ({
+      fullStream: (async function* () {
+        await options.tools.explore_code.execute({ query: "widget save flow" });
+        // The AI SDK reports provider failures as an error part instead of
+        // throwing from the iterator.
+        options.onError({ error: new Error("provider stream failed") });
+        yield { type: "text-delta", text: "partial" };
+      })(),
+      textStream: createTextStream([]),
+    }));
+
+    await expect(
+      runExploreCodeSubagent({
+        args: { query: "widget save flow", intent: "locate" },
+        ctx: createMockContext(),
+      }),
+    ).rejects.toThrow("provider stream failed");
   });
 
   it("preserves Code Explorer fallback warnings in the final report", async () => {

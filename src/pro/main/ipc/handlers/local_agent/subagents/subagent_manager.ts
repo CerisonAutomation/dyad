@@ -40,6 +40,11 @@ import { getChatInferenceSettings } from "@/ipc/services/chat_inference_settings
 import { readSettings } from "@/main/settings";
 import { getDyadAppPath } from "@/paths/paths";
 import { sanitizeStepMessages } from "../prepare_step_utils";
+import {
+  boundSubagentAssignmentsForModel,
+  MIN_SUBAGENT_HISTORY_CHARS,
+  pruneSubagentMessages,
+} from "./subagent_context_budget";
 import type { AgentContext } from "../tools/types";
 import { runExploreCodeSubagent } from "../tools/explore_code_subagent";
 import { buildReviewTarget, type ReviewTarget } from "./review_target";
@@ -84,7 +89,7 @@ const MODELS = {
 const MAX_DURABLE_REPORT_CHARS = 100_000;
 const MAX_ACTIVITY_XML_CHARS = 200_000;
 const MAX_ACTIVITY_OUTPUT_CHARS = 200_000;
-const MAX_MODEL_HISTORY_CHARS = 100_000;
+const MAX_MODEL_HISTORY_CHARS = 40_000;
 const AUTO_REVIEW_BARRIER_MAX_WAIT_MS = 10 * 60 * 1000;
 const ROOT_FINALIZATION_MAX_WAIT_MS = 20 * 60 * 1000;
 const SAFE_ABORT_DRAIN_MAX_WAIT_MS = 30 * 1000;
@@ -1672,7 +1677,12 @@ async function runThread(
     );
     shouldContinue = true;
   } catch (error) {
-    if (controller.signal.aborted) return;
+    if (controller.signal.aborted) {
+      // An aborted run must still settle its thread, otherwise the row stays
+      // "running" until the next app restart.
+      await settleThreadIfStillActive(threadId);
+      return;
+    }
     await finishThread(
       threadId,
       isAgent2Enabled(readSettings()) ? "failed" : "entitlement_revoked",
@@ -1683,6 +1693,7 @@ async function runThread(
     clearInterval(entitlementWatcher);
     abortControllers.delete(threadId);
     cancelledThreadIds.delete(threadId);
+    await settleThreadIfStillActive(threadId);
     try {
       if (shouldContinue) await schedulePendingFollowup(threadId);
     } finally {
@@ -1802,7 +1813,12 @@ async function runReview(
     );
     shouldContinue = true;
   } catch (error) {
-    if (controller.signal.aborted) return;
+    if (controller.signal.aborted) {
+      // An aborted run must still settle its thread, otherwise the row stays
+      // "running" until the next app restart.
+      await settleThreadIfStillActive(threadId);
+      return;
+    }
     await finishThread(
       threadId,
       isAgent2Enabled(readSettings()) ? "failed" : "entitlement_revoked",
@@ -1812,6 +1828,7 @@ async function runReview(
   } finally {
     clearInterval(entitlementWatcher);
     abortControllers.delete(threadId);
+    await settleThreadIfStillActive(threadId);
     if (shouldContinue) await schedulePendingFollowup(threadId);
   }
 }
@@ -2035,7 +2052,7 @@ export function prepareSubagentStepMessages(
   stepMessages: ModelMessage[],
   rootMessages: string[],
 ): ModelMessage[] {
-  return sanitizeStepMessages([
+  const sanitized = sanitizeStepMessages([
     ...stepMessages,
     ...rootMessages.map(
       (message): ModelMessage => ({
@@ -2044,6 +2061,11 @@ export function prepareSubagentStepMessages(
       }),
     ),
   ]).messages;
+  // Sub-agent step loops re-send the whole transcript on every step. Bound the
+  // tool results so a single large read/grep/diff cannot dominate the request
+  // and so the accumulated transcript stays proportional to the budget instead
+  // of growing quadratically with the step count.
+  return pruneSubagentMessages(sanitized);
 }
 
 async function recordModelUsage(
@@ -2138,24 +2160,47 @@ export function buildBoundedModelHistory(params: {
     consumed: boolean;
   }>;
 }): ModelMessage[] {
+  // The assignments are re-sent on every step of the turn, so bound them
+  // before they are counted against the history budget. The durable copies
+  // kept in the database are untouched.
+  const { originalAssignment, currentAssignment } =
+    boundSubagentAssignmentsForModel({
+      originalAssignment: params.originalAssignment,
+      currentAssignment: params.currentAssignment,
+    });
   const prior = params.messages.filter(
     (message) => message.role === "assistant" || message.consumed,
   );
   const bounded: typeof prior = [];
-  let chars =
-    params.currentAssignment.length + params.originalAssignment.length;
+  const assignmentChars = originalAssignment.length + currentAssignment.length;
+  // The history keeps whatever the assignments did not use, but never less
+  // than MIN_SUBAGENT_HISTORY_CHARS: a large assignment must not be able to
+  // wipe out the sub-agent's conversational memory.
+  const historyBudget = Math.max(
+    MIN_SUBAGENT_HISTORY_CHARS,
+    MAX_MODEL_HISTORY_CHARS - assignmentChars,
+  );
+  let chars = 0;
   for (let index = prior.length - 1; index >= 0; index--) {
     const message = prior[index];
-    if (chars + message.content.length > MAX_MODEL_HISTORY_CHARS) break;
+    const remaining = historyBudget - chars;
+    if (remaining <= 0) break;
+    if (message.content.length > remaining) {
+      // Keep the newest message even when it alone exceeds the budget, but
+      // bound it so one huge root message cannot dominate the request.
+      bounded.unshift({
+        ...message,
+        content: message.content.slice(0, remaining),
+      });
+      chars = historyBudget;
+      break;
+    }
     bounded.unshift(message);
     chars += message.content.length;
   }
   const history: ModelMessage[] = [];
-  if (
-    bounded.length > 0 &&
-    params.originalAssignment !== params.currentAssignment
-  ) {
-    history.push({ role: "user", content: params.originalAssignment });
+  if (bounded.length > 0 && originalAssignment !== currentAssignment) {
+    history.push({ role: "user", content: originalAssignment });
   }
   history.push(
     ...bounded.map(
@@ -2168,7 +2213,7 @@ export function buildBoundedModelHistory(params: {
       }),
     ),
   );
-  history.push({ role: "user", content: params.currentAssignment });
+  history.push({ role: "user", content: currentAssignment });
   return history;
 }
 
@@ -2187,33 +2232,59 @@ export function shouldDrainMutationOnAbort(persona: SubagentPersona): boolean {
   return persona === "implementer";
 }
 
-const SHARED_TOOL_RULES = `
+const TOOL_RULES_HEADER = `
 TOOL USE IS MANDATORY, not optional. These tools exist because guessing is worse than looking.
+`;
 
+const CODE_MAP_RULE = `
 - code_map — REQUIRED first step whenever you touch an unfamiliar area, or when you
   cannot name the file that holds the answer. It returns the file tree, the detected
   framework, and per-file exports in one cheap call. Do not read files one at a time
   to discover structure.
+`;
+
+const AST_GREP_RULE = `
 - ast_grep_search — REQUIRED when you need code that matches by SHAPE rather than by
   literal text: "where is this handled", "every call to X", "every useState", "any
   try/catch", a repeated construct, or a deprecated API. Prefer it over grep whenever
   the identifier may be named differently at each call site. Write the pattern as
   ordinary code with $METAVARIABLES, e.g. "await $FUNC($$$)" or "useState<$T>($INIT)".
   Use grep only for exact string or symbol lookups.
+`;
+
+const PREVIEW_BROWSER_RULE = `
 - preview_browser — REQUIRED before you report a change as working. Navigate to the
   affected route, read what a user would actually see, and check the console for
   errors. Never claim a UI behaves correctly from reading the code alone. Use the
   "console" action after any navigation; a page that renders but throws is still broken.
+`;
 
+const EVIDENCE_RULE = `
 Report only what a tool actually showed you. If a tool contradicts your expectation,
 believe the tool and say so.`;
 
+/**
+ * The tool rules are sent with every request of every step, so a persona must
+ * only be told about the tools it actually has. Telling a persona to use a tool
+ * it cannot call wastes tokens and teaches it to ignore the rules.
+ */
+export function toolRulesForPersona(persona: SubagentPersona): string {
+  const rules = [TOOL_RULES_HEADER, CODE_MAP_RULE, AST_GREP_RULE];
+  // The Explorer is read-only research and has no browser tool.
+  if (persona === "reviewer" || persona === "implementer") {
+    rules.push(PREVIEW_BROWSER_RULE);
+  }
+  rules.push(EVIDENCE_RULE);
+  return rules.join("");
+}
+
 function systemPrompt(persona: SubagentPersona): string {
+  const toolRules = toolRulesForPersona(persona);
   if (persona === "reviewer")
     return (
       "You are Dyad Reviewer. Be independent, concise, evidence-based, and read-only. " +
       "A review that only reads the diff is incomplete: verify behaviour before approving." +
-      SHARED_TOOL_RULES
+      toolRules
     );
   if (persona === "implementer")
     return (
@@ -2221,13 +2292,13 @@ function systemPrompt(persona: SubagentPersona): string {
       "Treat assigned paths as the expected focus, but cross them when correctness requires " +
       "it and report every changed file and unresolved issue. Do not declare the work done " +
       "until you have exercised it in the running app." +
-      SHARED_TOOL_RULES
+      toolRules
     );
   return (
     "You are Dyad Explorer. Investigate read-only, cite files and evidence, and return a " +
     "concise report with confidence and recommended next action. Locate code structurally " +
     "rather than guessing at paths." +
-    SHARED_TOOL_RULES
+    toolRules
   );
 }
 
@@ -2338,6 +2409,27 @@ async function finishThread(
     resultJson,
     error,
   });
+}
+
+/**
+ * Settle a thread whose run ended without reaching a terminal state. Without
+ * this, an aborted run left the row "running" (or "queued") and the UI
+ * showed a spinner until the app was restarted.
+ */
+async function settleThreadIfStillActive(threadId: string): Promise<void> {
+  try {
+    const thread = await getThread(threadId);
+    const status = resolveUnsettledThreadStatus(thread.status);
+    if (!status) return;
+    await finishThread(
+      threadId,
+      status,
+      null,
+      "The sub-agent run ended before it produced a result.",
+    );
+  } catch (error) {
+    logger.error(`Failed to settle unsettled sub-agent ${threadId}`, error);
+  }
 }
 
 async function appendAssistantMessage(
@@ -2694,6 +2786,17 @@ export function isTerminalSubagentStatus(status: string): boolean {
   return !SUBAGENT_NONTERMINAL_STATUSES.includes(
     status as (typeof SUBAGENT_NONTERMINAL_STATUSES)[number],
   );
+}
+
+/**
+ * A run that ends must leave its thread in a terminal state. An aborted or
+ * cancelled run used to return early and leave the row "queued" or "running"
+ * until the next app restart.
+ */
+export function resolveUnsettledThreadStatus(
+  currentStatus: string,
+): "cancelled" | null {
+  return isTerminalSubagentStatus(currentStatus) ? null : "cancelled";
 }
 
 export function isSubagentJoinReady(

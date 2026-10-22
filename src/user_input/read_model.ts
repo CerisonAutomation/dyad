@@ -401,7 +401,12 @@ export function getUserInputReadModel({
                 index < tombstones.length - MAX_SETTLED_TOMBSTONES;
                 index++
               ) {
-                next.delete(tombstones[index][0]);
+                const [tombstoneId] = tombstones[index];
+                next.delete(tombstoneId);
+                // The request is gone, so its staleness counter is dead too.
+                // Without this the map grows one entry per user-input request
+                // for the life of the window.
+                revisions.delete(tombstoneId);
               }
               return next;
             });

@@ -59,18 +59,18 @@ function createHarness() {
     preserveRejectedPrompt: vi.fn(),
     showError: vi.fn(),
   };
-  const controller = new FirstPromptController({
-    runner: createFirstPromptCommandRunner({
-      clock,
-      idSource: createSequentialIdSource(),
-      getSettleDelayMs: () => 2_000,
-      getDeps: () => deps,
-    }),
+  const runner = createFirstPromptCommandRunner({
+    clock,
+    idSource: createSequentialIdSource(),
+    getSettleDelayMs: () => 2_000,
+    getDeps: () => deps,
   });
+  const controller = new FirstPromptController({ runner });
   return {
     clock,
     controller,
     deps,
+    runner,
     setNeonError: (error?: Error) => {
       neonError = error;
     },
@@ -286,6 +286,11 @@ describe("FirstPromptController", () => {
       "first-prompt-create-chat:1",
       undefined,
     );
+    // The prompt was submitted, so the chat is live and must be kept.
+    expect(harness.deps.commitCreation).toHaveBeenCalledWith(
+      "first-prompt-create-chat:1",
+    );
+    expect(harness.deps.cancelCreation).not.toHaveBeenCalled();
     expect(harness.deps.submitPrompt).toHaveBeenCalledWith({
       appId: 41,
       chatId: 3,
@@ -295,6 +300,31 @@ describe("FirstPromptController", () => {
       onAccepted: expect.any(Function),
       onAcceptanceRejected: expect.any(Function),
     });
+  });
+
+  it("deletes an abandoned chat instead of keeping it as an empty orphan", async () => {
+    const harness = createHarness();
+    const chatPayload: FirstPromptPayload = {
+      ...payload,
+      selectedApp: { id: 41, name: "Existing app" },
+    };
+
+    await harness.runner.run(
+      { type: "CreateChat", appId: 41, payload: chatPayload },
+      () => {},
+    );
+    await harness.runner.run(
+      { type: "CreateChat", appId: 41, payload: chatPayload },
+      () => {},
+    );
+
+    expect(harness.deps.createChat).toHaveBeenCalledTimes(2);
+    // The first chat never received a prompt, so it is deleted rather than
+    // left behind as an empty chat in the chat list.
+    expect(harness.deps.cancelCreation).toHaveBeenCalledWith(
+      "first-prompt-create-chat:1",
+    );
+    expect(harness.deps.commitCreation).not.toHaveBeenCalled();
   });
 
   it("persists an explicitly selected mode when creating a chat", async () => {

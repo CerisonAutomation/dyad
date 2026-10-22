@@ -542,6 +542,44 @@ describe("ActorHost keyed admission integration", () => {
     await host.dispose();
   });
 
+  it("fails closed with a ticket when the admission gate is disposed", async () => {
+    const definition = machine({ id: "disposed-gate-ticket" });
+    const { host } = harness(definition);
+    const actor = host.localRef(definition, "one");
+    await host.dispose();
+
+    const ticket = actor.enqueue({ type: "WORK" });
+    await expect(ticket.settled).resolves.toMatchObject({
+      kind: "failed",
+      stage: "before-admission",
+      error: expect.objectContaining({ code: "key-fenced" }),
+    });
+  });
+
+  it("does not raise an unhandled rejection when a caller enqueues after disposal", async () => {
+    const definition = machine({ id: "disposed-gate-unhandled" });
+    const { host } = harness(definition);
+    const actor = host.localRef(definition, "one");
+    await host.dispose();
+
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      // A floating async caller must never observe the disposal race as an
+      // escaping rejection.
+      void Promise.resolve().then(() => {
+        actor.send({ type: "WORK" });
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+    expect(unhandled).toEqual([]);
+  });
+
   it("holds a committed machine reset fence through actor disposal", async () => {
     const definition = machine({ id: "machine-reset-commit" });
     const { host } = harness(definition);

@@ -8,7 +8,7 @@ import { createTypedHandler } from "./base";
 import { DyadError, DyadErrorKind } from "../../errors/dyad_error";
 
 import { getStoredConsent } from "../utils/mcp_consent";
-import { mcpManager } from "../utils/mcp_manager";
+import { mcpManager, McpListToolsTimeoutError } from "../utils/mcp_manager";
 import {
   disconnectOAuth,
   runOAuthFlow,
@@ -500,7 +500,14 @@ export function registerMcpHandlers() {
       // Tear down the cached client so a hung transport doesn't leak
       // an FD on every subsequent poll. Fire-and-forget: awaiting a hung
       // transport's close would hang this handler.
-      void mcpManager.dispose(serverId).catch(() => {});
+      //
+      // A list-tools timeout is NOT a dead client: giving up only stops
+      // waiting (see mcp_manager.listToolsWithin). Disposing here would kill
+      // a slow-starting stdio server (e.g. `npx` on a cold cache) and restart
+      // it on every poll, so it would never list its tools at all.
+      if (!(e instanceof McpListToolsTimeoutError)) {
+        void mcpManager.dispose(serverId).catch(() => {});
+      }
       const message =
         e instanceof Error ? `${e.name}: ${e.message}` : String(e);
       logger.error(`Failed to list tools for server ${serverId}: ${message}`);

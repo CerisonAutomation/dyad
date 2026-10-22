@@ -41,10 +41,15 @@ vi.mock("@/ipc/utils/sandbox/runner", async () => {
   };
 });
 
-vi.mock("@/ipc/utils/sandbox/capabilities", () => ({
-  assertAllowedGuestPath: vi.fn(),
-  assertSandboxWritePathAllowed: vi.fn(),
-}));
+vi.mock("@/ipc/utils/sandbox/capabilities", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/ipc/utils/sandbox/capabilities")>();
+  return {
+    ...actual,
+    assertAllowedGuestPath: vi.fn(),
+    assertSandboxWritePathAllowed: vi.fn(),
+  };
+});
 
 vi.mock("@/ipc/handlers/app_blueprint_handlers", () => ({
   getAppBlueprintForChat: vi.fn(),
@@ -151,7 +156,9 @@ describe("executeSandboxScriptTool", () => {
       "main();",
     ].join("\n");
     vi.mocked(runSandboxScript).mockRejectedValue(
-      new Error("Unexpected token ?."),
+      Object.assign(new Error("Unexpected token ?."), {
+        name: "MustardParseError",
+      }),
     );
 
     let thrown: unknown;
@@ -165,7 +172,8 @@ describe("executeSandboxScriptTool", () => {
     }
 
     expect(thrown).toBeInstanceOf(Error);
-    expect((thrown as Error).message).toContain(
+    expect((thrown as Error).message).toMatch(/could not be parsed/i);
+    expect((thrown as Error).message).not.toContain(
       "This script contains unsupported syntax.",
     );
     expect((thrown as Error).message).toContain(`Script:\n${script}`);
@@ -186,6 +194,33 @@ describe("executeSandboxScriptTool", () => {
         error: "Unexpected token ?.",
       }),
     );
+  });
+
+  it("reports a blocked host call instead of blaming the script's syntax", async () => {
+    const script = 'const files = await list_files("node_modules/.pnpm");';
+    vi.mocked(runSandboxScript).mockRejectedValue(
+      Object.assign(
+        new Error(
+          "precondition: Sandbox scripts cannot access protected path: node_modules/.pnpm\n  at <script> [0..51]",
+        ),
+        { name: "MustardRuntimeError" },
+      ),
+    );
+
+    let thrown: unknown;
+    try {
+      await executeSandboxScriptTool.execute({ script }, createMockContext());
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).not.toContain(
+      "This script contains unsupported syntax.",
+    );
+    expect((thrown as Error).message).toMatch(/blocked this host call/i);
+    expect((thrown as Error).message).toContain("protected path");
+    expect((thrown as Error).message).toContain(`Script:\n${script}`);
   });
 
   it("reports a worker failure as is instead of blaming the script's syntax", async () => {
@@ -681,7 +716,9 @@ describe("buildExecuteSandboxScriptDescription (search mode)", () => {
       );
       expect(description).toContain("en-US only");
       expect(description).not.toContain("localeCompare is not supported");
-      expect(description).toContain("Top-level return is not supported");
+      expect(description).toContain(
+        "A top-level `return` is supported as the final statement",
+      );
       expect(description).toContain("BigInt to a string");
       expect(description).toContain("lone UTF-16 surrogates");
       expect(description).toContain(

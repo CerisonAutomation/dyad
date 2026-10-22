@@ -3,7 +3,7 @@ import type { AgentContext } from "./types";
 import { planningQuestionnaireTool } from "./planning_questionnaire";
 
 const registryMocks = vi.hoisted(() => ({
-  request: vi.fn(() => "request-1"),
+  request: vi.fn((_descriptor: unknown, _requestId: string) => "request-1"),
   park: vi.fn(),
 }));
 
@@ -97,5 +97,64 @@ describe("planningQuestionnaireTool", () => {
     );
 
     expect(ctx.appBlueprintQuestionnaireCompleted).not.toBe(true);
+  });
+
+  it("rejects choice questions without options instead of showing an unusable question", async () => {
+    registryMocks.park.mockResolvedValue({
+      kind: "questionnaire",
+      answers: {},
+    });
+    const ctx = {
+      chatId: 1,
+      onXmlComplete: vi.fn(),
+    } as unknown as AgentContext;
+
+    await expect(
+      planningQuestionnaireTool.execute(
+        {
+          questions: [{ type: "radio", question: "Which visual style?" }],
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ kind: "validation" });
+    expect(registryMocks.request).not.toHaveBeenCalled();
+  });
+
+  it("gives duplicate question ids distinct ids so no answer is lost", async () => {
+    let presented: { id?: string }[] = [];
+    registryMocks.request.mockImplementationOnce((descriptor: unknown) => {
+      presented = (descriptor as { questions: { id?: string }[] }).questions;
+      return "request-1";
+    });
+    registryMocks.park.mockImplementation(async () => ({
+      kind: "questionnaire",
+      answers: Object.fromEntries(
+        presented.map((question, index) => [
+          question.id as string,
+          `answer ${index + 1}`,
+        ]),
+      ),
+    }));
+    const ctx = {
+      chatId: 1,
+      onXmlComplete: vi.fn(),
+    } as unknown as AgentContext;
+
+    const result = await planningQuestionnaireTool.execute(
+      {
+        questions: [
+          { id: "dup", type: "text", question: "First question?" },
+          { id: "dup", type: "text", question: "Second question?" },
+        ],
+      },
+      ctx,
+    );
+
+    const ids = presented.map((question) => question.id);
+    expect(new Set(ids).size).toBe(2);
+    expect(result).toContain("First question?");
+    expect(result).toContain("answer 1");
+    expect(result).toContain("Second question?");
+    expect(result).toContain("answer 2");
   });
 });

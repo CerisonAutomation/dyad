@@ -21,6 +21,7 @@ import {
   listAgentsTool,
   sendMessageTool,
   spawnAgentTool,
+  validateSubagentAllowedToolNames,
   waitAgentsTool,
 } from "./subagent_tools";
 import type { AgentContext } from "./types";
@@ -62,6 +63,24 @@ describe("provider tool enablement", () => {
     expect(getSupabaseProjectInfoTool.isEnabled?.(ctx)).toBe(false);
     expect(getNeonProjectInfoTool.isEnabled?.(ctx)).toBe(false);
     expect(getDatabaseTableSchemaTool.isEnabled?.(ctx)).toBe(false);
+  });
+});
+
+describe("sub-agent tool allowlist", () => {
+  it("classifies an allowlist name missing from the registry as an internal error", () => {
+    let thrown: unknown;
+    try {
+      validateSubagentAllowedToolNames(
+        ["read_file", "run_typechecks"],
+        [{ name: "read_file" }],
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(DyadError);
+    expect((thrown as DyadError).kind).toBe(DyadErrorKind.Internal);
+    expect((thrown as Error).message).toMatch(/run_typechecks/);
   });
 });
 

@@ -102,6 +102,30 @@ function settledTicket<State, Reason extends IgnoreReason>(
   };
 }
 
+/**
+ * A gate that was already disposed means the actor lost its admission
+ * lifetime while the host was shutting down. That is a disposal race, not an
+ * admission violation: it must fail closed quietly instead of escaping as an
+ * unhandled rejection from an async caller.
+ */
+function isDisposedAdmissionGateError(
+  error: unknown,
+): error is KeyedAdmissionGateError {
+  return (
+    error instanceof KeyedAdmissionGateError && error.code === "gate-disposed"
+  );
+}
+
+/**
+ * Placeholder generation for a sink captured after the gate was disposed.
+ * Real gate generations start at ordinal 1, so this can never be mistaken for
+ * an admitted generation.
+ */
+const DISPOSED_ADMISSION_GENERATION: KeyedAdmissionGeneration = Object.freeze({
+  ordinal: 0,
+  identity: Object.freeze({}),
+});
+
 function composeObservers<State, Event, Command, Reason extends IgnoreReason>(
   observers: readonly (
     | TransitionObserver<State, Event, Command, Reason>
@@ -243,6 +267,7 @@ class HostedActor<
   private readonly pendingContinuations: EventContinuation[] = [];
   private currentContinuation: EventContinuation | undefined;
   private startingCommandGeneration: KeyedAdmissionGeneration | undefined;
+  private lastCapturedGeneration: KeyedAdmissionGeneration | undefined;
   private idleTimer: RetentionTimerLease | undefined;
   private terminalTimer: RetentionTimerLease | undefined;
   private readonly admissionStopErrors: unknown[] = [];
@@ -317,7 +342,13 @@ class HostedActor<
         scheduler: this.trackScheduler(scheduler),
         runCommand: (command) => {
           const generation =
-            this.startingCommandGeneration ?? this.admission.capture();
+            this.startingCommandGeneration ?? this.tryCaptureGeneration();
+          if (!generation) {
+            // The gate was disposed while this command was scheduled. Fail
+            // closed without running the command and without reporting the
+            // disposal race as a command failure.
+            return Promise.resolve();
+          }
           const sink = this.captureSinkForGeneration(
             generation,
             definition.commandSinkRevisionPolicy,
@@ -402,13 +433,59 @@ class HostedActor<
   enqueue = (
     event: Event,
     dispatchContext?: DispatchContext,
-  ): ActorDispatchTicket<State, Reason> =>
-    this.enqueueWithAdmission(
-      event,
-      dispatchContext,
-      this.admission.capture(),
-      false,
-    );
+  ): ActorDispatchTicket<State, Reason> => {
+    // The generation must be captured before admission, and capturing it can
+    // observe a gate that the host already disposed. A disposed gate is a
+    // disposal race, so it fails closed with a ticket instead of throwing out
+    // of the caller's promise chain.
+    const generation = this.tryCaptureGeneration();
+    if (!generation) {
+      return this.disposedAdmissionTicket();
+    }
+    return this.enqueueWithAdmission(event, dispatchContext, generation, false);
+  };
+
+  /**
+   * Captures the current admission generation, or undefined when the gate was
+   * already disposed. A disposed gate is a disposal race rather than an
+   * admission violation, so callers must fail closed quietly.
+   */
+  private tryCaptureGeneration(): KeyedAdmissionGeneration | undefined {
+    try {
+      const generation = this.admission.capture();
+      this.lastCapturedGeneration = generation;
+      return generation;
+    } catch (error) {
+      if (!isDisposedAdmissionGateError(error)) throw error;
+      return undefined;
+    }
+  }
+
+  private disposedAdmissionTicket(): ActorDispatchTicket<State, Reason> {
+    return settledTicket({
+      kind: "failed",
+      stage: "before-admission",
+      error: new ActorAdmissionError(
+        "key-fenced",
+        "The keyed admission gate is disposed",
+      ),
+    });
+  }
+
+  /**
+   * A sink captured after the gate was disposed drops events instead of
+   * surfacing the disposal race to its caller.
+   */
+  private disposedSink(): ActorEventSink<Event> {
+    return Object.freeze({
+      actor: this.getMetadata(),
+      admissionGeneration:
+        this.lastCapturedGeneration ?? DISPOSED_ADMISSION_GENERATION,
+      send: () => {
+        // The admission gate is disposed: drop the event.
+      },
+    });
+  }
 
   private enqueueWithAdmission(
     event: Event,
@@ -502,9 +579,19 @@ class HostedActor<
   }
 
   private captureSinkForGeneration(
-    generation: KeyedAdmissionGeneration = this.admission.capture(),
+    generation: KeyedAdmissionGeneration | undefined,
     revisionPolicy: "captured" | "allow-advance" = "captured",
   ): ActorEventSink<Event> {
+    if (generation === undefined) {
+      // A fresh capture can observe a gate the host already disposed. That is
+      // a disposal race, so it yields a sink that drops events instead of
+      // throwing out of the caller's promise chain.
+      const captured = this.tryCaptureGeneration();
+      if (!captured) {
+        return this.disposedSink();
+      }
+      generation = captured;
+    }
     const actor = this.getMetadata();
     const sinkState: CapturedSinkState = { expectedActor: actor };
     return Object.freeze({

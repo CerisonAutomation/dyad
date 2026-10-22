@@ -1,39 +1,47 @@
 ---
 name: preview-control
-description: Use this guide when the assignment involves seeing or driving the running app preview — taking screenshots, inspecting rendered UI, clicking, typing, or verifying visual state. Routes the work through the Comet browser MCP server against the Dyad preview URL.
+description: Use this guide when the assignment involves seeing or driving the running app preview — taking screenshots, inspecting rendered UI, clicking, typing, or verifying visual state. Uses the native preview_browser tool against the app preview.
 ---
 
 # Preview Control
 
-The agent cannot screenshot or drive the native preview surface directly. The Comet browser MCP server ("Comet Browser" in Settings → MCP servers) loads the same app over HTTP and gives full see-and-drive capability from chat.
+The `preview_browser` tool drives the app that is already running in the preview pane: it opens its own browser session against the preview URL, so the agent can see the rendered UI and interact with it directly. No external browser MCP server is needed.
+
+Use the tool with the `action` parameter. Every action returns a short text result; `screenshot` returns an image.
 
 ## Preview URL
 
-- Default: `http://localhost:42140/` (the Dyad preview proxy for the selected app).
-- Override with the `DYAD_PREVIEW_URL` environment variable when the preview runs elsewhere.
-- Always navigate to this URL first unless the active tab already shows it.
+- Default: the app root of the running preview (relative paths like `/` resolve against it).
+- Pass an absolute `http(s)` URL to `navigate` to reach a specific route or a different server. Absolute URLs are checked against private/internal addresses and rejected when they point at the local network.
 
 ## One-call screenshot
 
-- Call the `preview_snapshot` tool with no arguments. It navigates to the preview URL only when needed, settles the page, and returns a screenshot image plus the page title, URL, and saved PNG path.
+- Call `preview_browser` with `action: "screenshot"` to capture the preview as a PNG data URL. Large images are re-encoded as JPEG automatically so the result always fits in the model's context.
 - Use this for "show me the preview", visual verification after edits, and regression screenshots.
+- `preview_browser` with `action: "snapshot"` (the `preview_snapshot` flow) returns the interactive elements of the page as an accessibility outline — cheaper than a screenshot when you only need to know what is on the page.
 
 ## Drive and inspect
 
-- `navigate` — load the preview URL (or any app route under it).
-- `read_page` — accessibility snapshot with `ref_N` element handles for the current page.
-- `find` — locate an element by visible text; falls back to a CSS selector when given.
-- `computer` with action `screenshot` — raw screenshot; with `left_click`, `type`, `scroll`, `press_key`, `hover` — drive the page using `ref_N` handles or coordinates from the latest snapshot.
-- `form_input` — fill text fields, selects, checkboxes, and file inputs.
-- `javascript_tool` with action `javascript_exec` — evaluate a JS expression and get the serialized result. Prefer `find`/`computer` for UI interaction; use this for reading app state.
-- `console_messages` — page console errors and warnings after a load or interaction.
-- `tabs_context` / `tabs_create` / `tabs_close` — manage multiple preview pages.
+- `action: "navigate"` with `path` — load a route (relative paths resolve against the preview, so `/` is the app root).
+- `action: "snapshot"` — accessibility-style outline of the interactive elements (links, buttons, inputs, selects, textareas, tabs, headings). Every element gets a `ref_N` handle you can then act on. This is the `read_page` equivalent.
+- `action: "find"` with `text` (or `selector`) — locate an element by visible text; falls back to a CSS selector when given. Returns a `ref_N` handle plus a description of the match. Use `index` to pick among several matches.
+- `action: "click"` with `ref` (preferred) or `selector` — click the element.
+- `action: "type"` with `ref` or `selector` plus `text` — fill an input; set `submit: true` to press Enter afterwards.
+- `action: "form_input"` with `ref` and `kind` — fill a `text` field, choose a `select` option, toggle a `checkbox`/`radio` (with `checked`), or upload a `file` (with `file_path`).
+- `action: "hover"` with `ref` — hover the element.
+- `action: "scroll"` with `delta_x` / `delta_y` — scroll the page by a pixel delta.
+- `action: "press_key"` with `key` — press a key such as `Enter`, `Escape` or `Tab`.
+- `action: "read"` — page title, URL and the text a user would see.
+- `action: "evaluate"` with `expression` — evaluate a JavaScript expression in the preview page and get the serialized result. Prefer `find`/`click` for UI interaction; use this for reading app state.
+- `action: "console"` — console output and uncaught errors from the preview after a load or interaction.
+- `action: "tabs"` with `tab_action` (`list`, `new`, `switch`, `close`) — manage multiple preview pages.
 
 ## Rules
 
-- Screenshot before claiming a visual state; never describe UI you have not observed through `preview_snapshot` or `read_page`.
-- After code edits that affect the UI, reload via `navigate` and take a fresh `preview_snapshot` before reporting the result.
-- Report console errors from `console_messages` alongside any visual finding.
+- Observe before claiming a visual state; never describe UI you have not observed through `snapshot`, `read` or `screenshot`.
+- After code edits that affect the UI, reload via `navigate` and take a fresh `snapshot`/`screenshot` before reporting the result.
+- Report console errors from `console` alongside any visual finding.
+- Refs are per-page and are invalidated by a reload: re-run `snapshot`/`find` after navigating.
 
 <nextjs-only>
 

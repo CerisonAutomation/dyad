@@ -5,6 +5,7 @@ import { getChatInferenceSettings } from "@/ipc/services/chat_inference_settings
 import { resolveModelSelection } from "@/ipc/utils/model_effort";
 import { getModelPreferenceKey } from "@/lib/modelEffort";
 import { cleanMessage } from "@/ipc/utils/ai_messages_utils";
+import { pruneSubagentMessages } from "../subagents/subagent_context_budget";
 import { getModelClient } from "@/ipc/utils/get_model_client";
 import { getAiHeaders, getProviderOptions } from "@/ipc/utils/provider_options";
 import {
@@ -120,6 +121,7 @@ export async function runExploreChatHistorySubagent({
     },
   });
 
+  let streamError: unknown;
   try {
     const streamResult = streamText({
       output: fastTextOutput(),
@@ -154,6 +156,9 @@ export async function runExploreChatHistorySubagent({
       },
       stopWhen: [stepCountIs(SUBAGENT_MAX_STEPS), () => reportFinalized],
       abortSignal: ctx.abortSignal,
+      onError: ({ error }) => {
+        streamError ??= error;
+      },
     });
     const fullStream = streamResult.fullStream;
     cancelOrphanedBaseStream(streamResult);
@@ -162,12 +167,24 @@ export async function runExploreChatHistorySubagent({
       // Drain the stream so tool calls execute.
     }
 
+    // The AI SDK reports provider/stream failures as an error part instead of
+    // throwing from the iterator, so without this a failed run looks exactly
+    // like a clean run that found nothing.
+    if (streamError) {
+      throw streamError;
+    }
+
     return { report: finalReport({ query, acceptedRef, registry }) };
   } catch (error) {
     if (ctx.abortSignal?.aborted) {
       throw error;
     }
     logger.warn("explore_chat_history sub-agent failed", error);
+    if (streamError) {
+      // Surface the provider failure instead of returning an evidence-only
+      // report that reads as "no prior discussion was found".
+      throw streamError;
+    }
     if (acceptedRef.current || registry.size() > 0) {
       return { report: finalReport({ query, acceptedRef, registry }) };
     }
@@ -299,15 +316,18 @@ function prepareSubagentStep({
       : null;
 
   const cleanedMessages = messages.map(cleanMessage);
-  const hasCleanedMessages = cleanedMessages.some(
-    (message, index) => message !== messages[index],
-  );
-  if (!hasCleanedMessages) {
+  // Bound the tool results carried across steps; reading whole chats can
+  // produce very large results that would otherwise be re-sent every step.
+  const prunedMessages = pruneSubagentMessages(cleanedMessages);
+  const hasChangedMessages =
+    cleanedMessages.some((message, index) => message !== messages[index]) ||
+    prunedMessages !== cleanedMessages;
+  if (!hasChangedMessages) {
     return forcedStep ?? undefined;
   }
   return {
     ...forcedStep,
-    messages: cleanedMessages,
+    messages: prunedMessages,
   };
 }
 

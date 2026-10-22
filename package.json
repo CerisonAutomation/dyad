@@ -111,7 +111,6 @@
     "drizzle-orm": "^0.41.0",
     "dugite": "^3.0.0",
     "electron-log": "^5.4.3",
-    "electron-playwright-helpers": "^2.1.0",
     "electron-squirrel-startup": "^1.0.1",
     "esbuild-register": "^3.6.0",
     "file-uri-to-path": "^1.0.0",
@@ -131,10 +130,11 @@
     "lexical-beautiful-mentions": "^0.1.47",
     "lucide-react": "^0.487.0",
     "monaco-editor": "^0.52.2",
-    "mustardscript": "^0.2.1",
+    "mustardscript": "^0.3.1",
     "node-pty": "^1.1.0",
     "perfect-freehand": "^1.2.2",
     "pg-schema-classifier": "file:packages/pg-schema-classifier",
+    "playwright-core": "^1.64.1",
     "posthog-js": "^1.265.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -177,7 +177,7 @@
     "@electron-forge/plugin-vite": "^7.11.1",
     "@electron-forge/publisher-github": "^7.11.1",
     "@electron/fuses": "^1.8.0",
-    "@playwright/test": "^1.58.2",
+    "@playwright/test": "^1.64.1",
     "@storybook/addon-essentials": "^8.6.14",
     "@storybook/blocks": "^8.6.14",
     "@storybook/react": "^8.6.15",
@@ -204,6 +204,7 @@
     "cross-env": "^7.0.3",
     "drizzle-kit": "^0.30.6",
     "electron": "40.0.0",
+    "electron-playwright-helpers": "^2.1.0",
     "esbuild": "^0.25.9",
     "eslint": "^8.57.1",
     "eslint-plugin-import": "^2.31.0",
@@ -225,6 +226,7 @@
   "productName": "dyad",
   "allowScripts": {
     "dyad-keychain-reader": true,
-    "better-sqlite3": true
+    "better-sqlite3": true,
+    "@vscode/ripgrep": true
   }
 }

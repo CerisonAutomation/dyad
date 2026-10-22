@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import type { ToolDefinition } from "./types";
 
 const MAX_FILES = 400;
@@ -73,7 +74,7 @@ export const codeMapTool: ToolDefinition = {
   getConsentPreview: (args) =>
     `Map the structure of ${args.path ?? "the whole app"}`,
   execute: async (args, ctx) => {
-    const root = args.path ? path.join(ctx.appPath, args.path) : ctx.appPath;
+    const root = resolveAppRelativePath(ctx.appPath, args.path);
     const files = await collectFiles(root);
     if (files.length === 0) {
       return `No source files found under ${args.path ?? ctx.appPath}.`;
@@ -91,6 +92,29 @@ export const codeMapTool: ToolDefinition = {
     return sections.join("\n\n");
   },
 };
+
+/**
+ * Resolve a model-supplied path against the app root and refuse anything that
+ * escapes it, so a tool call cannot read files outside the app.
+ */
+function resolveAppRelativePath(
+  appPath: string,
+  relativePath?: string,
+): string {
+  const root = path.resolve(appPath);
+  if (!relativePath) {
+    return root;
+  }
+  const resolved = path.resolve(root, relativePath);
+  const relative = path.relative(root, resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new DyadError(
+      `Path "${relativePath}" is outside the app directory. Use a path relative to the app root.`,
+      DyadErrorKind.Validation,
+    );
+  }
+  return resolved;
+}
 
 async function collectFiles(root: string): Promise<string[]> {
   const out: string[] = [];

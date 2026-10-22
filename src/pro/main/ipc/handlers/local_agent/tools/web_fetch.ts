@@ -79,6 +79,7 @@ export const webFetchTool: ToolDefinition<z.infer<typeof webFetchSchema>> = {
       const result = await localWebFetch(args.url, {
         maxLength: MAX_CONTENT_LENGTH,
         timeout: 15000,
+        abortSignal: ctx.abortSignal,
       });
 
       if (!result || !result.content) {

@@ -13,6 +13,7 @@ import {
 } from "../../prompts/supabase_prompt";
 import { buildNeonPromptForApp } from "../../neon_admin/neon_prompt_context";
 import { NEON_DISCONNECTED_SYSTEM_PROMPT } from "../../prompts/neon_prompt";
+import { isCloneWorkflowConversation } from "../../prompts/clone_workflow_prompt";
 import { getDyadAppPath } from "../../paths/paths";
 import { detectFrameworkType } from "../utils/framework_utils";
 import log from "electron-log";
@@ -130,6 +131,11 @@ export function registerTokenCountHandlers() {
         planningQuestionnaireAvailable,
         appBlueprintQuestionnaireCompleted,
         appBlueprint,
+        isCloneWorkflow: isCloneWorkflowConversation(
+          chat.messages
+            .filter((message) => message.role === "user")
+            .map((message) => message.content),
+        ),
       });
       let supabaseContext = "";
       const supabaseProviderToolsAvailable = Boolean(

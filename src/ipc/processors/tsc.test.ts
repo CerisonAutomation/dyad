@@ -11,6 +11,7 @@ import {
 import {
   clearTypeScriptVersionCacheForTests,
   parseTypeScriptDiagnostics,
+  getTypeCheckPreconditionGuidance,
   getTypeCheckPreconditionKind,
   isMissingPathError,
   runTypeScriptCheck,
@@ -220,6 +221,19 @@ describe("isMissingPathError", () => {
   });
 });
 
+describe("getTypeCheckPreconditionGuidance", () => {
+  it("does not claim TypeScript is installed when no tsconfig was found", async () => {
+    const guidance = await getTypeCheckPreconditionGuidance({
+      kind: "tsconfig-not-found",
+      appPath: "/app",
+    });
+
+    expect(guidance).toContain("no tsconfig was found");
+    expect(guidance).toContain("immediate subdirectories");
+    expect(guidance).not.toContain("TypeScript is installed");
+  });
+});
+
 describe("runTypeScriptCheck", () => {
   let appPath: string;
   const typeScriptBinPath = path.join("bin", "tsc");
@@ -331,6 +345,22 @@ describe("runTypeScriptCheck", () => {
     );
     expect(path.basename(tsBuildInfoPath)).toMatch(
       /^[a-f0-9]{64}\.tsbuildinfo$/,
+    );
+  });
+
+  it("stops the compiler when the caller's signal is aborted", async () => {
+    mockVersion();
+    runBufferedProcessMock.mockResolvedValueOnce(
+      processResult({ aborted: true }),
+    );
+    const controller = new AbortController();
+
+    await expect(
+      runTypeScriptCheck({ appPath, signal: controller.signal }),
+    ).rejects.toMatchObject({ kind: "user_cancelled" });
+
+    expect(runBufferedProcessMock).toHaveBeenCalledWith(
+      expect.objectContaining({ signal: controller.signal }),
     );
   });
 

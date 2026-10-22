@@ -197,13 +197,44 @@ function findBestPartialMatch(
 }
 
 /**
+ * Build a compact diagnostic describing where the search block almost matched.
+ * The agent only sees the error message, so it has to carry the information
+ * the agent needs to correct its next attempt.
+ */
+function buildMatchDiagnostic(
+  resultLines: string[],
+  searchLines: string[],
+): string {
+  const bestMatch = findBestPartialMatch(resultLines, searchLines);
+  const lines = [
+    `Closest match: ${bestMatch.matchingLines}/${searchLines.length} search lines match at file lines ${bestMatch.startIndex + 1}-${bestMatch.startIndex + searchLines.length}.`,
+  ];
+
+  const mismatchFileIndex = bestMatch.startIndex + bestMatch.firstMismatchIndex;
+  if (
+    bestMatch.firstMismatchIndex < searchLines.length &&
+    mismatchFileIndex < resultLines.length
+  ) {
+    lines.push(
+      `First mismatch at search line ${bestMatch.firstMismatchIndex + 1}:`,
+    );
+    lines.push(
+      `  search: ${JSON.stringify(searchLines[bestMatch.firstMismatchIndex])}`,
+    );
+    lines.push(`  file:   ${JSON.stringify(resultLines[mismatchFileIndex])}`);
+  }
+
+  return lines.join("\n");
+}
+
+/**
  * Log detailed information about a failed match to help diagnose issues
  */
 function logMatchFailure(
   resultLines: string[],
   searchLines: string[],
   blockIndex: number,
-): void {
+): string {
   logger.error(
     `=== SEARCH/REPLACE MATCH FAILURE (Block ${blockIndex + 1}) ===`,
   );
@@ -270,6 +301,8 @@ function logMatchFailure(
   }
 
   logger.error(`\n=== END MATCH FAILURE ===\n`);
+
+  return buildMatchDiagnostic(resultLines, searchLines);
 }
 
 /**
@@ -314,6 +347,7 @@ export function applySearchReplace(
   success: boolean;
   content?: string;
   error?: string;
+  diagnostic?: string;
 } {
   const blocks = parseSearchReplaceBlocks(diffContent);
   if (blocks.length === 0) {
@@ -380,10 +414,15 @@ export function applySearchReplace(
 
     if (matchResult.error) {
       // Log detailed diagnostic information for debugging
-      logMatchFailure(resultLines, searchLines, appliedCount);
+      const diagnostic = logMatchFailure(
+        resultLines,
+        searchLines,
+        appliedCount,
+      );
       return {
         success: false,
         error: matchResult.error,
+        diagnostic,
       };
     }
 

@@ -49,7 +49,7 @@ describe("sanitizeMcpToolResult", () => {
     );
   });
 
-  it("does not impose depth or item-count limits", () => {
+  it("does not impose a depth limit below the guardrail", () => {
     const nested: Record<string, unknown> = {};
     let cursor = nested;
     for (let i = 0; i < 30; i += 1) {
@@ -61,6 +61,20 @@ describe("sanitizeMcpToolResult", () => {
     const result = sanitizeMcpToolResult(nested);
     expect(result.truncated).toBe(false);
     expect(JSON.parse(result.serialized)).toEqual(nested);
+  });
+
+  it("truncates results nested deeper than the guardrail instead of exhausting the stack", () => {
+    // MCP servers are untrusted, so a result can be arbitrarily deep. Before
+    // the depth guardrail this blew the JS stack: the RangeError was swallowed
+    // as an "unreadable property" and the whole result was silently lost.
+    let deep: unknown = "leaf";
+    for (let i = 0; i < 500; i += 1) {
+      deep = { next: deep };
+    }
+
+    const result = sanitizeMcpToolResult(deep);
+    expect(result.truncated).toBe(true);
+    expect(result.serialized).toContain("nested too deeply");
   });
 
   it("does not impose a separate embedded-media limit", () => {

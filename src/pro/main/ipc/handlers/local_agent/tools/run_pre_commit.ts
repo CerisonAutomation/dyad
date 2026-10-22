@@ -360,7 +360,10 @@ export const runPreCommitTool: ToolDefinition<
             signal: ctx.abortSignal,
             timeoutMs: PRE_COMMIT_STAGING_TIMEOUT_MS,
             maxOutputBytes: 256_000,
-            waitForCloseAfterForceKill: true,
+            // Settle after the force-kill grace instead of waiting for `close`:
+            // a descendant that keeps the pipes open would otherwise hang the
+            // tool forever and hold the repository claim.
+            waitForCloseAfterForceKill: false,
           });
         } catch (error) {
           const message =
@@ -416,7 +419,10 @@ export const runPreCommitTool: ToolDefinition<
             signal: ctx.abortSignal,
             timeoutMs: PRE_COMMIT_STAGING_TIMEOUT_MS,
             maxOutputBytes: 64_000,
-            waitForCloseAfterForceKill: true,
+            // Settle after the force-kill grace instead of waiting for `close`:
+            // a descendant that keeps the pipes open would otherwise hang the
+            // tool forever and hold the repository claim.
+            waitForCloseAfterForceKill: false,
           });
         } catch (error) {
           const message =

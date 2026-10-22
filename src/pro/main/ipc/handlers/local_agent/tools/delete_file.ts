@@ -66,9 +66,9 @@ export const deleteFileTool: ToolDefinition<z.infer<typeof deleteFileSchema>> =
             }
 
             if (currentStat.isDirectory()) {
-              fs.rmdirSync(fullFilePath, { recursive: true });
+              await fs.promises.rm(fullFilePath, { recursive: true });
             } else {
-              fs.unlinkSync(fullFilePath);
+              await fs.promises.unlink(fullFilePath);
             }
             logger.log(`Successfully deleted file: ${fullFilePath}`);
 

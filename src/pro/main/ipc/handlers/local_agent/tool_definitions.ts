@@ -147,6 +147,34 @@ function getToolErrorSummary(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Describe a failed tool-input validation in a way the model can act on.
+ *
+ * The schema validation error is a Zod-style error whose `issues` carry the
+ * per-field problems; the raw error message alone often omits them.
+ */
+function formatToolInputIssues(error: unknown): string {
+  const issues = (error as { issues?: unknown } | null | undefined)?.issues;
+  if (Array.isArray(issues) && issues.length > 0) {
+    const described = issues
+      .map((issue) => {
+        const { path, message } = issue as {
+          path?: unknown[];
+          message?: unknown;
+        };
+        const field = Array.isArray(path) ? path.join(".") : "";
+        const text = typeof message === "string" ? message : String(issue);
+        return field ? `${field}: ${text}` : text;
+      })
+      .join("; ");
+    if (described) {
+      return described;
+    }
+  }
+
+  return error instanceof Error ? error.message : String(error);
+}
+
 // Combined tool definitions array
 export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   writeFileTool,
@@ -922,7 +950,16 @@ export function buildAgentToolSet(
           );
           if (schema.validate) {
             const validated = await schema.validate(args);
-            if (!validated.success) throw validated.error;
+            if (!validated.success) {
+              // Tool-input validation failures are the model's mistake, not an
+              // app bug: classify them so telemetry filters them out, and keep
+              // the Zod issues in the message so the model can fix its input.
+              throw new DyadError(
+                `Invalid input for tool ${tool.name}: ${formatToolInputIssues(validated.error)}`,
+                DyadErrorKind.Validation,
+                { cause: validated.error },
+              );
+            }
             args = validated.value;
           }
           const mutationRequiresTracking =

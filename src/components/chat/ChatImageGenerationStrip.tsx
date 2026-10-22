@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { X, Loader2, Plus, AlertCircle, RotateCcw } from "lucide-react";
-import { dismissedImageGenerationJobIdsAtom } from "@/atoms/imageGenerationAtoms";
+import {
+  dismissImageGenerationJobAtom,
+  dismissedImageGenerationJobIdsAtom,
+} from "@/atoms/imageGenerationAtoms";
 import { useChatImageGenerationJobs } from "@/image_generation/hooks";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { useGenerateImage } from "@/hooks/useGenerateImage";
@@ -22,6 +25,7 @@ export function ChatImageGenerationStrip({
   const [dismissedJobIds, setDismissedJobIds] = useAtom(
     dismissedImageGenerationJobIdsAtom,
   );
+  const dismissJob = useSetAtom(dismissImageGenerationJobAtom);
   const [lightboxJob, setLightboxJob] = useState<ImageGenerationJobView | null>(
     null,
   );
@@ -56,7 +60,7 @@ export function ChatImageGenerationStrip({
   if (visibleJobs.length === 0) return null;
 
   const handleDismiss = (jobId: string) => {
-    setDismissedJobIds((prev: Set<string>) => new Set(prev).add(jobId));
+    dismissJob(jobId);
   };
 
   const handleRetry = async (job: ImageGenerationJobView) => {
@@ -72,7 +76,7 @@ export function ChatImageGenerationStrip({
         source: job.source,
       });
       if (replacementJobId) {
-        setDismissedJobIds((prev: Set<string>) => new Set(prev).add(job.id));
+        dismissJob(job.id);
       }
     } finally {
       retryingJobIdsRef.current.delete(job.id);
@@ -82,7 +86,7 @@ export function ChatImageGenerationStrip({
 
   const handleCancel = (jobId: string) => {
     cancel(jobId);
-    setDismissedJobIds((prev: Set<string>) => new Set(prev).add(jobId));
+    dismissJob(jobId);
   };
 
   return (

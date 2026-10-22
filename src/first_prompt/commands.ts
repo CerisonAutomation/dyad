@@ -70,6 +70,7 @@ export function createFirstPromptCommandRunner(options: {
   let disposed = false;
   let ownedCreationOperationId: string | undefined;
   let cancelledCreationOperationId: string | undefined;
+  let ownedCreationIsChat = false;
 
   function retryCreationCancellation(deps: FirstPromptDeps): void {
     const operationId =
@@ -77,11 +78,21 @@ export function createFirstPromptCommandRunner(options: {
     if (operationId) deps.cancelCreation(operationId);
   }
 
-  function relinquishOwnedCreation(deps: FirstPromptDeps): void {
+  function relinquishOwnedCreation(deps: FirstPromptDeps, keep: boolean): void {
     if (!ownedCreationOperationId) return;
-    deps.commitCreation(ownedCreationOperationId);
+    const operationId = ownedCreationOperationId;
+    const isChat = ownedCreationIsChat;
     ownedCreationOperationId = undefined;
+    ownedCreationIsChat = false;
     cancelledCreationOperationId = undefined;
+    // An abandoned chat has no messages, so keeping it would leave an empty
+    // orphan in the chat list. Delete it instead. Apps are kept because they
+    // are visible in the app list and can be reused.
+    if (!keep && isChat) {
+      deps.cancelCreation(operationId);
+      return;
+    }
+    deps.commitCreation(operationId);
   }
 
   return {
@@ -106,9 +117,10 @@ export function createFirstPromptCommandRunner(options: {
           return;
 
         case "CreateApp": {
-          relinquishOwnedCreation(deps);
+          relinquishOwnedCreation(deps, false);
           const operationId = options.idSource.next("first-prompt-create-app");
           ownedCreationOperationId = operationId;
+          ownedCreationIsChat = false;
           try {
             const result = await deps.createApp(
               operationId,
@@ -140,9 +152,10 @@ export function createFirstPromptCommandRunner(options: {
         }
 
         case "CreateChat": {
-          relinquishOwnedCreation(deps);
+          relinquishOwnedCreation(deps, false);
           const operationId = options.idSource.next("first-prompt-create-chat");
           ownedCreationOperationId = operationId;
+          ownedCreationIsChat = true;
           try {
             const chatId = await deps.createChat(
               command.appId,
@@ -158,13 +171,14 @@ export function createFirstPromptCommandRunner(options: {
             }
             emit({ type: "CHAT_CREATED", chatId });
           } catch (error) {
-            if (disposed) {
-              deps.cancelCreation(operationId);
-            } else {
-              deps.commitCreation(operationId);
+            // The chat can exist even though the call failed, so cancel it
+            // instead of committing it; otherwise it lingers as an empty chat.
+            deps.cancelCreation(operationId);
+            if (!disposed) {
               emit({ type: "CREATE_FAILED", message: errorMessage(error) });
             }
             ownedCreationOperationId = undefined;
+            ownedCreationIsChat = false;
           }
           return;
         }
@@ -230,7 +244,8 @@ export function createFirstPromptCommandRunner(options: {
               }
             },
           });
-          relinquishOwnedCreation(deps);
+          // The prompt is on its way, so the chat is live and must be kept.
+          relinquishOwnedCreation(deps, true);
           return;
 
         case "ScheduleSettle":
@@ -282,6 +297,7 @@ export function createFirstPromptCommandRunner(options: {
         cancelledCreationOperationId = ownedCreationOperationId;
         options.getDeps().cancelCreation(ownedCreationOperationId);
         ownedCreationOperationId = undefined;
+        ownedCreationIsChat = false;
       }
     },
   };

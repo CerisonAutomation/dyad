@@ -263,6 +263,26 @@ describe("runTypeChecksTool precondition guidance", () => {
     expect(safeSend).not.toHaveBeenCalled();
   });
 
+  it("passes the turn abort signal to the type check", async () => {
+    const appPath = await makeApp({
+      devDependencies: { typescript: "^5.0.0" },
+    });
+    const ctx = makeCtx(appPath);
+    const controller = new AbortController();
+    ctx.abortSignal = controller.signal;
+    vi.mocked(runTypeScriptCheck).mockResolvedValue({
+      outcome: "passed",
+      problems: [],
+    });
+
+    await runTypeChecksTool.execute({}, ctx);
+
+    expect(runTypeScriptCheck).toHaveBeenCalledWith({
+      appPath,
+      signal: controller.signal,
+    });
+  });
+
   it("warns that configuration errors prevented a complete scoped check", async () => {
     const appPath = await makeApp({
       devDependencies: { typescript: "^7.0.0" },

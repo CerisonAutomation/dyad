@@ -290,13 +290,21 @@ describe("runPreCommitTool", () => {
     }
   });
 
-  it("waits for staging and hook processes to close after force-kill", async () => {
+  it("settles staging after the force-kill grace instead of waiting for close", async () => {
     await runPreCommitTool.execute({}, context(repo));
 
+    // A descendant that keeps the stdout/stderr pipes open would otherwise
+    // keep the pre-commit tool pending forever and hold the repository claim.
     expect(mocks.runBufferedProcess).toHaveBeenCalledWith(
       expect.objectContaining({
         args: ["add", "--", "."],
-        waitForCloseAfterForceKill: true,
+        waitForCloseAfterForceKill: false,
+      }),
+    );
+    expect(mocks.runBufferedProcess).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: expect.arrayContaining(["--cached", "--quiet"]),
+        waitForCloseAfterForceKill: false,
       }),
     );
     expect(mocks.runBufferedProcess).toHaveBeenCalledWith(

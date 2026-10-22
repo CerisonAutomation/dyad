@@ -199,6 +199,29 @@ describe("discovery versus invocation availability", () => {
   });
 });
 
+describe("tool input validation", () => {
+  it("classifies invalid tool input as a validation error", async () => {
+    const ctx = {
+      appId: 1,
+      appPath: "/tmp/unused",
+      chatId: 1,
+      isDyadPro: false,
+      referencedApps: new Map(),
+      onXmlComplete: vi.fn(),
+      onXmlStream: vi.fn(),
+      requireConsent: vi.fn(async () => true),
+      abortSignal: new AbortController().signal,
+    } as unknown as import("./tools/types").AgentContext;
+    const tools = buildAgentToolSet(ctx, { enableAppBlueprint: false });
+
+    // `read_file` requires a `path`; the missing field must surface as a
+    // classified validation error, not a raw Zod error.
+    await expect(tools.read_file.execute({})).rejects.toMatchObject({
+      kind: "validation",
+    });
+  });
+});
+
 describe("shell tool registration", () => {
   it("excludes shell from Build, Ask, Plan, Free turns and children", async () => {
     const { shouldIncludeTool } = await import("./tool_definitions");

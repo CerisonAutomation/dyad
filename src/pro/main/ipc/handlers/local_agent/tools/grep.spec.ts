@@ -32,6 +32,7 @@ vi.mock("@/ipc/utils/ripgrep_utils", () => ({
       executableName,
     );
   },
+  assertRgExecutableAvailable: () => undefined,
   MAX_FILE_SEARCH_SIZE: 1024 * 1024,
   RIPGREP_EXCLUDED_GLOBS: ["!node_modules/**", "!.git/**", "!.next/**"],
 }));
@@ -464,6 +465,13 @@ function deepHello() {
       await expect(
         grepTool.execute({ query: "hello|function{" }, mockContext),
       ).rejects.toThrow(/Invalid regex pattern[\s\S]*literal=true/);
+    });
+
+    it("throws a typed error when ripgrep itself fails", async () => {
+      // An unparsable glob makes ripgrep exit with code 2.
+      await expect(
+        grepTool.execute({ query: "hello", include_pattern: "[" }, mockContext),
+      ).rejects.toMatchObject({ name: "DyadError" });
     });
 
     it("runs a code-shaped query as a regex without inferring literal", async () => {

@@ -1,5 +1,16 @@
-import { describe, expect, it } from "vitest";
-import { isPrivateIp } from "./network_utils";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DyadErrorKind } from "@/errors/dyad_error";
+
+const dnsMock = vi.hoisted(() => ({
+  lookup: vi.fn(),
+}));
+
+vi.mock("node:dns/promises", () => {
+  const mocked = { lookup: dnsMock.lookup };
+  return { ...mocked, default: mocked };
+});
+
+import { assertNotPrivateIpResolved, isPrivateIp } from "./network_utils";
 
 /**
  * Regression coverage for the SSRF guard. Every case here is a bypass that was
@@ -88,5 +99,65 @@ describe("isPrivateIp", () => {
     ]) {
       expect(() => isPrivateIp(junk)).not.toThrow();
     }
+  });
+});
+
+/**
+ * The literal check alone is bypassable: a name such as `127.0.0.1.nip.io` or
+ * a rebinding A record resolves to a private address without looking like
+ * one, so the resolved addresses have to be validated too.
+ */
+describe("assertNotPrivateIpResolved", () => {
+  beforeEach(() => {
+    dnsMock.lookup.mockReset();
+  });
+
+  it("rejects a hostname that resolves to loopback", async () => {
+    dnsMock.lookup.mockResolvedValue([{ address: "127.0.0.1", family: 4 }]);
+
+    await expect(
+      assertNotPrivateIpResolved("http://127.0.0.1.nip.io/"),
+    ).rejects.toMatchObject({ kind: DyadErrorKind.Validation });
+  });
+
+  it("rejects when any of the resolved addresses is private", async () => {
+    dnsMock.lookup.mockResolvedValue([
+      { address: "93.184.216.34", family: 4 },
+      { address: "169.254.169.254", family: 4 },
+    ]);
+
+    await expect(
+      assertNotPrivateIpResolved("https://rebind.example/"),
+    ).rejects.toMatchObject({ kind: DyadErrorKind.Validation });
+  });
+
+  it("rejects a hostname that resolves to an IPv6 loopback", async () => {
+    dnsMock.lookup.mockResolvedValue([{ address: "::1", family: 6 }]);
+
+    await expect(
+      assertNotPrivateIpResolved("https://ipv6-loopback.example/"),
+    ).rejects.toMatchObject({ kind: DyadErrorKind.Validation });
+  });
+
+  it("allows a hostname that only resolves to public addresses", async () => {
+    dnsMock.lookup.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
+
+    await expect(
+      assertNotPrivateIpResolved("https://example.com/"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("does not resolve an address literal", async () => {
+    await expect(
+      assertNotPrivateIpResolved("https://1.1.1.1/"),
+    ).resolves.toBeUndefined();
+    expect(dnsMock.lookup).not.toHaveBeenCalled();
+  });
+
+  it("rejects a literal private address without resolving it", async () => {
+    await expect(
+      assertNotPrivateIpResolved("http://127.0.0.1/"),
+    ).rejects.toMatchObject({ kind: DyadErrorKind.Validation });
+    expect(dnsMock.lookup).not.toHaveBeenCalled();
   });
 });

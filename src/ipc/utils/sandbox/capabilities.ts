@@ -58,6 +58,22 @@ const DENIED_PATH_PATTERNS = [
   /\.key$/i,
   /\.pem$/i,
 ];
+
+/**
+ * Human-readable list of the paths the sandbox refuses to touch. Kept next to
+ * `DENIED_PATH_PATTERNS` so the tool description cannot drift from the
+ * actual enforcement.
+ */
+export const SANDBOX_DENIED_PATH_DESCRIPTIONS = [
+  ".git directories",
+  ".npmrc, .yarnrc and .pypirc files",
+  "shell and database history files (.bash_history, .zsh_history, .fish_history, .python_history, .mysql_history, .psql_history, .sqlite_history)",
+  "node_modules directories",
+  ".ssh, .aws and .config directories",
+  ".netrc files",
+  "*.key and *.pem files",
+  ".env, .env.* and .envrc files",
+] as const;
 const DOTENV_DENIED_PATH_PATTERN =
   /(^|[/\\])(?:\.env(?:\.[^/\\]+)*|\.envrc)(?:[/\\]|$)/i;
 

@@ -1089,6 +1089,57 @@ describe("sanitizeToolCallTranscript", () => {
     ]);
   });
 
+  it("reorders the original tool message in place so the SDK history stays canonical", () => {
+    const messages: ModelMessage[] = [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "call-1",
+            toolName: "read_file",
+            input: { path: "src/App.tsx" },
+          },
+          {
+            type: "tool-call",
+            toolCallId: "call-2",
+            toolName: "read_file",
+            input: { path: "src/main.tsx" },
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call-2",
+            toolName: "read_file",
+            output: { type: "text", value: "main" },
+          },
+          {
+            type: "tool-result",
+            toolCallId: "call-1",
+            toolName: "read_file",
+            output: { type: "text", value: "app" },
+          },
+        ],
+      },
+    ];
+
+    const toolMessage = messages[1];
+    const [call2Part, call1Part] = toolMessage.content as any[];
+
+    const sanitized = sanitizeToolCallTranscript(messages);
+
+    // The provider-facing transcript is ordered by tool call.
+    expect(sanitized[1].content).toEqual([call1Part, call2Part]);
+
+    // The original message is repaired in place, otherwise the AI SDK rebuilds
+    // an out-of-order history from its own response messages on every step.
+    expect(toolMessage.content).toEqual([call1Part, call2Part]);
+  });
+
   it("preserves completed parallel tool pairs when another result is missing", () => {
     const messages: ModelMessage[] = [
       {

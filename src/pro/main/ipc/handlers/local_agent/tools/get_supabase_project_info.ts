@@ -6,7 +6,32 @@ import {
   escapeXmlContent,
 } from "./types";
 import { getSupabaseProjectInfo } from "../../../../../../supabase_admin/supabase_context";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import { classifyManagementApiError } from "../../../../../../supabase_admin/supabase_management_client";
+import { DyadError, DyadErrorKind, isDyadError } from "@/errors/dyad_error";
+
+/**
+ * A Management API failure must not escape as a raw SupabaseManagementAPIError:
+ * a 401/403 means the organization's token was revoked (an Auth problem the
+ * user fixes by reconnecting), and anything else is an upstream failure rather
+ * than a product bug. Already-classified errors keep their kind.
+ */
+function toSupabaseProjectInfoError(error: unknown): DyadError {
+  if (isDyadError(error)) {
+    return error;
+  }
+  const classified = classifyManagementApiError(
+    error,
+    "read the Supabase project info",
+  );
+  if (isDyadError(classified)) {
+    return classified;
+  }
+  return new DyadError(
+    `Failed to get Supabase project info: ${error instanceof Error ? error.message : String(error)}`,
+    DyadErrorKind.External,
+    { cause: error },
+  );
+}
 
 const getSupabaseProjectInfoSchema = z.object({
   includeDbFunctions: z
@@ -45,6 +70,8 @@ export const getSupabaseProjectInfoTool: ToolDefinition<
       supabaseProjectId: ctx.supabaseProjectId,
       organizationSlug: ctx.supabaseOrganizationSlug ?? null,
       includeDbFunctions: args.includeDbFunctions,
+    }).catch((error: unknown) => {
+      throw toSupabaseProjectInfoError(error);
     });
 
     ctx.onXmlComplete(

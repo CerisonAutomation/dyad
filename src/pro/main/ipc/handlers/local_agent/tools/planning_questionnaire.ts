@@ -4,6 +4,7 @@ import log from "electron-log";
 import { ToolDefinition, AgentContext } from "./types";
 import { userInputRegistry } from "@/user_input/main";
 import { persistQuestionnaire } from "@/user_input/questionnaire_journal";
+import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import {
   escapeXmlAttr,
   escapeXmlContent,
@@ -14,41 +15,42 @@ const logger = log.scope("planning_questionnaire");
 export const COMPLETED_PLANNING_QUESTIONNAIRE_RESULT_PREFIX =
   "User responses:\n\n";
 
-const QuestionSchema = z
-  .object({
-    id: z
-      .string()
-      .optional()
-      .describe(
-        "Unique identifier for this question (auto-generated if omitted)",
-      ),
-    question: z.string().describe("The question text to display to the user"),
-    type: z
-      .enum(["text", "radio", "checkbox"])
-      .describe(
-        "text for free-form input, radio for single choice, checkbox for multiple choice",
-      ),
-    options: z
-      .array(z.string())
-      .min(1)
-      .max(3)
-      .optional()
-      .describe(
-        "Options for radio/checkbox questions. Keep to max 3 — users can always provide a custom answer via the free-form text input. Omit for text questions.",
-      ),
-    required: z
-      .boolean()
-      .optional()
-      .describe("Whether this question requires an answer (defaults to true)"),
-    placeholder: z
-      .string()
-      .optional()
-      .describe("Placeholder text for text inputs"),
-  })
-  .refine((q) => q.type === "text" || (q.options && q.options.length >= 1), {
-    message: "options are required for radio and checkbox questions",
-    path: ["options"],
-  });
+const QuestionSchema = z.object({
+  id: z
+    .string()
+    .optional()
+    .describe(
+      "Unique identifier for this question (auto-generated if omitted)",
+    ),
+  question: z.string().describe("The question text to display to the user"),
+  type: z
+    .enum(["text", "radio", "checkbox"])
+    .describe(
+      "text for free-form input, radio for single choice, checkbox for multiple choice",
+    ),
+  options: z
+    .array(z.string())
+    .min(1)
+    .max(3)
+    .optional()
+    .describe(
+      "Options for radio/checkbox questions. Keep to max 3 — users can always provide a custom answer via the free-form text input. Omit for text questions.",
+    ),
+  required: z
+    .boolean()
+    .optional()
+    .describe("Whether this question requires an answer (defaults to true)"),
+  placeholder: z
+    .string()
+    .optional()
+    .describe("Placeholder text for text inputs"),
+});
+
+// NOTE: the "radio/checkbox questions need options" rule is enforced in
+// `execute`, not with `refine`. A `refine` is not represented in the JSON
+// schema shown to the model, and the AI SDK validates tool input against the
+// schema *before* `execute` runs, so a `refine` would reject the call without
+// ever showing the model the tool's own guidance.
 
 const planningQuestionnaireSchema = z.object({
   questions: z
@@ -131,11 +133,36 @@ export const planningQuestionnaireTool: ToolDefinition<
     `Questionnaire (${args.questions.length} questions)`,
 
   execute: async (args, ctx: AgentContext) => {
-    // Auto-generate missing IDs
-    const questions = args.questions.map((q) => ({
-      ...q,
-      id: q.id || `q_${crypto.randomUUID().slice(0, 8)}`,
-    }));
+    // Radio and checkbox questions are unusable without options, and the
+    // constraint is not visible to the model in the tool schema. Enforce it
+    // here with an actionable message instead of letting it fail silently.
+    args.questions.forEach((question, index) => {
+      if (
+        question.type !== "text" &&
+        (!question.options || question.options.length < 1)
+      ) {
+        throw new DyadError(
+          `Question ${index + 1} ("${question.question}") has type "${question.type}" but no options. Radio and checkbox questions require an "options" array with at least one option; use type "text" for free-form input.`,
+          DyadErrorKind.Validation,
+        );
+      }
+    });
+
+    // Auto-generate missing IDs and repair duplicates: two questions sharing
+    // an id would collapse into a single answer entry and silently lose one
+    // of the answers.
+    const usedIds = new Set<string>();
+    const questions = args.questions.map((q) => {
+      const requestedId = q.id?.trim();
+      let id = requestedId && !usedIds.has(requestedId) ? requestedId : "";
+      if (!id) {
+        do {
+          id = `q_${crypto.randomUUID().slice(0, 8)}`;
+        } while (usedIds.has(id));
+      }
+      usedIds.add(id);
+      return { ...q, id };
+    });
 
     const requestId = crypto.randomUUID();
     if (ctx.persistQuestionnaireRecovery)

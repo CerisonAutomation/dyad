@@ -13,9 +13,13 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import * as fs from "node:fs/promises";
 import Fuse from "fuse.js";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import { DyadError, DyadErrorKind, isDyadError } from "@/errors/dyad_error";
 import * as path from "node:path";
 import { DEFAULT_EXCLUDE_DIRS } from "./file_utils";
+import {
+  assertRgExecutableAvailable,
+  getRgExecutablePath,
+} from "@/ipc/utils/ripgrep_utils";
 
 const execFileAsync = promisify(execFile);
 
@@ -124,7 +128,13 @@ export async function localCodeSearch(
       caseSensitive,
       useRegex: false,
     });
-  } catch {
+  } catch (error) {
+    // A classified ripgrep failure (e.g. the missing-binary precondition) must
+    // surface: swallowing it turns "search is broken" into "no matches",
+    // which the model reads as a real answer.
+    if (isDyadError(error)) {
+      throw error;
+    }
     // ripgrep not available — fuzzy results are sufficient
   }
 
@@ -290,6 +300,7 @@ async function searchWithRipgrep(
     excludePatterns,
     maxResults = 50,
     caseSensitive,
+    useRegex,
   } = options;
 
   const args = [
@@ -301,15 +312,28 @@ async function searchWithRipgrep(
   ];
 
   if (!caseSensitive) args.push("--ignore-case");
-  args.push("--fixed-strings", query);
+  if (useRegex) {
+    // `--regexp` keeps a pattern that starts with "-" from being parsed as a
+    // flag. Without it the query is searched as a literal and never matches.
+    args.push("--regexp", query);
+  } else {
+    args.push("--fixed-strings", query);
+  }
 
   for (const pattern of filePatterns) args.push("--glob", pattern);
   for (const pattern of excludePatterns) args.push("--glob", `!${pattern}`);
   args.push(appPath);
 
+  // Use the bundled ripgrep, not a bare "rg" from PATH: the packaged app
+  // ships the binary under Resources/@vscode/ripgrep/bin and does not put it
+  // on PATH, so a PATH lookup always fails there. The guard runs outside the
+  // try/catch below so a missing binary surfaces as an actionable error
+  // instead of being folded into an empty result set.
+  assertRgExecutableAvailable();
+
   let result;
   try {
-    const { stdout } = await execFileAsync("rg", args, {
+    const { stdout } = await execFileAsync(getRgExecutablePath(), args, {
       cwd: appPath,
       timeout: 10_000,
     });

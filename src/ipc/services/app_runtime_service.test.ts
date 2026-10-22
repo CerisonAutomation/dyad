@@ -1793,4 +1793,51 @@ describe("executeApp", () => {
       }),
     );
   });
+
+  it("explains why the preview never became ready after the process exited", async () => {
+    const appProcess = new FakeChildProcess(707);
+    spawnMock.mockReturnValueOnce(appProcess);
+
+    await executeApp({
+      appPath: "/tmp/app",
+      appId: 4242,
+      output: createOutput(),
+      isNeon: false,
+    });
+
+    appProcess.stderr.emit(
+      "data",
+      "ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION: a dependency was published too recently",
+    );
+    runningApps.delete(4242);
+
+    await expect(appRuntimeService.waitForReady(4242)).rejects.toThrow(
+      /ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION/,
+    );
+  });
+
+  it("reports the awaited URL and the app output when the preview times out", async () => {
+    const appProcess = new FakeChildProcess(708);
+    spawnMock.mockReturnValueOnce(appProcess);
+
+    await executeApp({
+      appPath: "/tmp/app",
+      appId: 4243,
+      output: createOutput(),
+      isNeon: false,
+    });
+
+    appProcess.stderr.emit("data", "listen EADDRINUSE: address already in use");
+
+    const failure = await appRuntimeService
+      .waitForReady(4243, { timeoutMs: 0 })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toMatch(/http:\/\/localhost:\d+/);
+    expect((failure as Error).message).toMatch(/EADDRINUSE/);
+  });
 });

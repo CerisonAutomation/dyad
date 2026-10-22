@@ -7,6 +7,12 @@ import {
   constructLocalAgentPrompt,
 } from "./local_agent_prompt";
 import { constructPlanModePrompt } from "./plan_mode_prompt";
+import {
+  COMMUNICATION_BLOCK,
+  ENGINEERING_DISCIPLINE_BLOCK,
+  REACT_GUIDANCE_BLOCK,
+} from "./agent_discipline_prompt";
+import { buildSkillsSection } from "./skill_catalog_prompt";
 import type { AppFrameworkType } from "@/lib/framework_constants";
 import type { AppBlueprintData } from "@/ipc/types/app_blueprint";
 
@@ -580,7 +586,15 @@ ${
 
 const BUILD_SYSTEM_PROMPT_BASE = `${BUILD_SYSTEM_PREFIX}
 
+${ENGINEERING_DISCIPLINE_BLOCK}
+
+${REACT_GUIDANCE_BLOCK}
+
+${COMMUNICATION_BLOCK}
+
 [[AI_RULES]]
+
+[[SKILLS]]
 
 ${BUILD_SYSTEM_POSTFIX}`;
 
@@ -604,6 +618,14 @@ Available packages and libraries:
 `;
 
 const ASK_MODE_SYSTEM_PROMPT = `
+${ENGINEERING_DISCIPLINE_BLOCK}
+
+${REACT_GUIDANCE_BLOCK}
+
+${COMMUNICATION_BLOCK}
+
+[[SKILLS]]
+
 # Role
 You are a helpful AI assistant that specializes in web development, programming, and technical guidance. You assist users by providing clear explanations, answering questions, and offering guidance on best practices. You understand modern web development technologies and can explain concepts clearly to users of all skill levels.
 
@@ -774,6 +796,7 @@ export const constructSystemPrompt = ({
   restartAppToolAvailable,
   reinstallAndRestartAppToolAvailable,
   runBuildToolAvailable,
+  isCloneWorkflow = false,
 }: {
   aiRules: string | undefined;
   chatMode?: "build" | "ask" | "local-agent" | "plan";
@@ -830,9 +853,17 @@ export const constructSystemPrompt = ({
   restartAppToolAvailable?: boolean;
   reinstallAndRestartAppToolAvailable?: boolean;
   runBuildToolAvailable?: boolean;
+  /**
+   * Whether this conversation is running the Replica workflow. The pack is a
+   * staged project, so it is carried for the whole conversation rather than
+   * for the turn that happened to mention a clone.
+   */
+  isCloneWorkflow?: boolean;
 }) => {
   if (chatMode === "plan") {
-    return constructPlanModePrompt(aiRules, themePrompt);
+    return constructPlanModePrompt(aiRules, themePrompt, {
+      isCloneWorkflow,
+    });
   }
 
   if (chatMode === "local-agent") {
@@ -855,6 +886,7 @@ export const constructSystemPrompt = ({
       restartAppToolAvailable,
       reinstallAndRestartAppToolAvailable,
       runBuildToolAvailable,
+      isCloneWorkflow,
     });
   }
 
@@ -869,6 +901,7 @@ export const constructSystemPrompt = ({
       appBlueprint,
       restartAppToolAvailable,
       reinstallAndRestartAppToolAvailable,
+      isCloneWorkflow,
     });
   }
 
@@ -877,6 +910,7 @@ export const constructSystemPrompt = ({
     enableTurboEditsV2,
     frameworkType,
     hasSupabaseProject,
+    isCloneWorkflow,
   });
   systemPrompt = systemPrompt.replace(
     "[[AI_RULES]]",
@@ -896,14 +930,22 @@ export const getSystemPromptForChatMode = ({
   enableTurboEditsV2,
   frameworkType,
   hasSupabaseProject,
+  isCloneWorkflow = false,
 }: {
   chatMode: "build" | "ask";
   enableTurboEditsV2: boolean;
   frameworkType?: AppFrameworkType | null;
   hasSupabaseProject?: boolean;
+  /**
+   * Whether this conversation is running the Replica workflow. The pack is a
+   * staged project, so it is carried for the whole conversation rather than
+   * for the turn that happened to mention a clone.
+   */
+  isCloneWorkflow?: boolean;
 }) => {
+  const skills = buildSkillsSection(isCloneWorkflow);
   if (chatMode === "ask") {
-    return ASK_MODE_SYSTEM_PROMPT;
+    return ASK_MODE_SYSTEM_PROMPT.replace("[[SKILLS]]", () => skills);
   }
   // The Nitro server-layer nudge is Vite-specific. Only inject it for Vite
   // apps that haven't already enabled Nitro (`"vite-nitro"` apps already have
@@ -913,9 +955,10 @@ export const getSystemPromptForChatMode = ({
   // both layers confuses the model.
   const shouldAppendNitroNudge =
     frameworkType === "vite" && !hasSupabaseProject;
-  const buildPrompt =
+  const buildPrompt = (
     BUILD_SYSTEM_PROMPT_BASE +
-    (shouldAppendNitroNudge ? `\n\n${BUILD_SERVER_LAYER_NUDGE}` : "");
+    (shouldAppendNitroNudge ? `\n\n${BUILD_SERVER_LAYER_NUDGE}` : "")
+  ).replace("[[SKILLS]]", () => skills);
   return buildPrompt + (enableTurboEditsV2 ? TURBO_EDITS_V2_SYSTEM_PROMPT : "");
 };
 

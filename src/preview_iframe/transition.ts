@@ -1,4 +1,8 @@
 import { ignore, type TransitionResult } from "@/state_machines/types";
+import {
+  CHUNK_RECOVERY_MAX_ATTEMPTS,
+  isStaleChunkErrorMessage,
+} from "./chunk_recovery";
 import type {
   PreviewIframeCommand,
   PreviewIframeEvent,
@@ -81,6 +85,9 @@ export function transition(
         // The dev server's own address, not a route anyone chose.
         currentUrlSource: "none",
         preservedUrl: event.url,
+        // A different dev server serves a different set of chunks, so the
+        // automatic chunk-recovery budget starts over with it.
+        chunkRecoveryAttempts: 0,
       });
     }
     case "NAVIGATE": {
@@ -232,6 +239,9 @@ export function transition(
         preservedUrl: null,
         selectorReady: false,
         picking: false,
+        // The restarted dev server serves a new build, so the automatic
+        // chunk-recovery budget starts over with it.
+        chunkRecoveryAttempts: 0,
       });
     case "RELOAD_REQUESTED":
       return applied({
@@ -240,6 +250,11 @@ export function transition(
         selectorReady: false,
         picking: false,
         error: undefined,
+        // A refresh the user asked for is a fresh start: the automatic
+        // chunk-recovery budget starts over, and a recovery still waiting for
+        // its reload is dropped — this reload already replaces the iframe.
+        chunkRecoveryAttempts: 0,
+        chunkRecoveryPending: false,
       });
     case "IFRAME_REPLACED": {
       if (state.preserveHistoryOnNextReplacement) {
@@ -274,16 +289,57 @@ export function transition(
       return state.error === undefined
         ? ignore(state, "no-preview-error")
         : applied({ ...state, error: undefined });
-    case "IFRAME_ERROR":
-      if (
+    case "IFRAME_ERROR": {
+      // A stale dev-server chunk is the one preview failure the preview can
+      // fix by itself: the document still points at a hashed chunk path the
+      // server no longer serves, so reloading asks for the document again and
+      // the new build serves the chunks it knows about. The reload is delayed
+      // (the command adapter owns the timer) and bounded, so a chunk that
+      // never comes back cannot turn into a reload loop.
+      const canRecoverChunk =
+        event.source === "preview-app" &&
+        !state.chunkRecoveryPending &&
+        state.chunkRecoveryAttempts < CHUNK_RECOVERY_MAX_ATTEMPTS &&
+        isStaleChunkErrorMessage(event.message);
+      const isSameError =
         state.error?.source === event.source &&
-        state.error.message === event.message
-      ) {
+        state.error.message === event.message;
+      // The same error twice is one error — unless the first report already
+      // spent a recovery and the chunk is still missing. A reload that lands
+      // on the same failure reports it again without a document load in
+      // between, and that report is what earns the next recovery.
+      if (isSameError && !canRecoverChunk) {
         return ignore(state, "same-preview-error");
+      }
+      const error = { message: event.message, source: event.source };
+      if (canRecoverChunk) {
+        return applied(
+          {
+            ...state,
+            error,
+            chunkRecoveryAttempts: state.chunkRecoveryAttempts + 1,
+            chunkRecoveryPending: true,
+          },
+          [{ type: "schedule-chunk-recovery" }],
+        );
+      }
+      return applied({ ...state, error });
+    }
+    case "CHUNK_RECOVERY_APPLIED":
+      // The recovery replaces the iframe, exactly like a manual refresh: the
+      // new document asks the dev server for its chunks again. The error stays
+      // until that document loads (`IFRAME_LOADED` clears it), so a reload
+      // that never lands still leaves the banner — and the manual
+      // affordances on it — in place.
+      if (!state.chunkRecoveryPending) {
+        return ignore(state, "no-pending-chunk-recovery");
       }
       return applied({
         ...state,
-        error: { message: event.message, source: event.source },
+        iframeEpoch: state.iframeEpoch + 1,
+        selectorReady: false,
+        picking: false,
+        chunkRecoveryPending: false,
       });
     case "SYNC_ERROR":
       if (state.error && state.error.source !== "dyad-sync") {

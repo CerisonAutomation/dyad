@@ -2,10 +2,16 @@
  * Network safety utilities for SSRF prevention.
  *
  * Provides `assertNotPrivateIp` which throws a `DyadError` when a URL targets
- * a loopback, link-local, private, or otherwise restricted address.
+ * a loopback, link-local, private, or otherwise restricted address, and
+ * `assertNotPrivateIpResolved` which additionally resolves the hostname and
+ * rejects URLs that point at a private address through DNS.
  */
 
+import { lookup } from "node:dns/promises";
+import log from "electron-log";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+
+const logger = log.scope("network_utils");
 
 /**
  * Parse a numeric IPv4 address string (e.g. "10.0.1.5") into four octets.
@@ -146,6 +152,53 @@ export function isPrivateIp(hostname: string): boolean {
 }
 
 /**
+ * `true` when the host is an IP literal (dotted quad or IPv6) instead of a
+ * name that would have to be resolved.
+ */
+function isIpLiteral(host: string): boolean {
+  if (host.includes(":")) return true;
+  return parseIpv4(host) !== undefined;
+}
+
+/**
+ * Extract the hostname of a URL, rejecting malformed URLs.
+ */
+function parseHostname(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    throw new DyadError(`Invalid URL: ${url}`, DyadErrorKind.Validation);
+  }
+}
+
+/**
+ * Apply the literal-address rules of `isPrivateIp` to a hostname.
+ *
+ * Returns `true` when the host was explicitly allowed as a local service
+ * (`allowLocalhost`), so the caller can skip resolving it.
+ */
+function assertAllowedHostname(
+  hostname: string,
+  options?: { allowLocalhost?: boolean },
+): boolean {
+  // Allow localhost for local model services (Ollama, LMStudio) when explicitly permitted
+  if (
+    options?.allowLocalhost &&
+    (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1")
+  ) {
+    return true;
+  }
+
+  if (isPrivateIp(hostname)) {
+    throw new DyadError(
+      `Fetching private/internal addresses is not allowed: ${hostname}`,
+      DyadErrorKind.Validation,
+    );
+  }
+  return false;
+}
+
+/**
  * Validate a URL is not targeting a private / restricted IP range.
  * Throws a `DyadError` (Validation kind) when the address is blocked.
  *
@@ -155,25 +208,57 @@ export function assertNotPrivateIp(
   url: string,
   options?: { allowLocalhost?: boolean },
 ): void {
-  let hostname: string;
-  try {
-    hostname = new URL(url).hostname;
-  } catch {
-    throw new DyadError(`Invalid URL: ${url}`, DyadErrorKind.Validation);
-  }
+  assertAllowedHostname(parseHostname(url), options);
+}
 
-  // Allow localhost for local model services (Ollama, LMStudio) when explicitly permitted
-  if (
-    options?.allowLocalhost &&
-    (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1")
-  ) {
+/**
+ * Validate a URL is not targeting a private / restricted IP range, including
+ * when the address is only reachable through DNS.
+ *
+ * A hostname can point at a private address without looking like one
+ * (`127.0.0.1.nip.io`, a rebinding A record, ...), so the literal check alone
+ * is not enough: the name is resolved and *every* returned address is
+ * validated. A single private address rejects the whole URL.
+ *
+ * Call this **before** performing the actual fetch.
+ */
+export async function assertNotPrivateIpResolved(
+  url: string,
+  options?: { allowLocalhost?: boolean },
+): Promise<void> {
+  const hostname = parseHostname(url);
+  const allowedLocalhost = assertAllowedHostname(hostname, options);
+  if (allowedLocalhost) {
     return;
   }
 
-  if (isPrivateIp(hostname)) {
-    throw new DyadError(
-      `Fetching private/internal addresses is not allowed: ${hostname}`,
-      DyadErrorKind.Validation,
+  const host = hostname.toLowerCase().replace(/^\[([\da-f:.]+)\]$/, "$1");
+  if (isIpLiteral(host)) {
+    // Nothing to resolve: the literal address was validated above.
+    return;
+  }
+
+  let addresses: Array<{ address: string }>;
+  try {
+    addresses = await lookup(host, { all: true, verbatim: true });
+  } catch (error) {
+    // The name does not resolve (or the resolver is unreachable). The fetch
+    // itself reports that failure with a clearer error, and a name that does
+    // not resolve cannot reach a private address.
+    logger.warn(
+      `Could not resolve ${host} while checking for private addresses: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
     );
+    return;
+  }
+
+  for (const { address } of addresses) {
+    if (isPrivateIp(address)) {
+      throw new DyadError(
+        `Fetching private/internal addresses is not allowed: ${host} resolves to ${address}`,
+        DyadErrorKind.Validation,
+      );
+    }
   }
 }

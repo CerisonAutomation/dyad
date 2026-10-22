@@ -39,3 +39,15 @@ export function getLogs(appId: number): ConsoleEntry[] {
 export function clearLogs(appId: number): void {
   logStore.delete(appId);
 }
+
+/**
+ * Release the log buffer of an app whose runtime is gone.
+ *
+ * The per-app buffer is a bounded circular buffer, but the MAP KEY is not:
+ * `clearLogs` only ran on explicit user actions (delete app, "Clear logs"),
+ * so every app that was ever run kept up to 1000 console entries resident in
+ * the main process for the whole session. The app stop path calls this.
+ */
+export function releaseLogs(appId: number): void {
+  logStore.delete(appId);
+}

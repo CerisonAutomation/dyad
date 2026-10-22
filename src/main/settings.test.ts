@@ -979,7 +979,9 @@ describe("encrypt", () => {
       if (String(target).includes(".dyad-encryption-key")) {
         return Buffer.alloc(32, 7);
       }
-      return undefined;
+      // An empty read stands in for "no key file": the real readFileSync throws
+      // ENOENT and settings.ts treats a missing or short read as "no key yet".
+      return Buffer.alloc(0);
     });
   });
 

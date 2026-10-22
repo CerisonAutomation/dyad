@@ -313,6 +313,12 @@ ${JSON.stringify(tableNames)}
 `;
   } catch (error) {
     logger.error("Error getting Neon project info:", error);
+    // getNeonClient() raises a DyadErrorKind.Auth for a missing/expired API
+    // key. Re-wrapping it as External would drop the classification that
+    // drives the re-auth guidance.
+    if (isDyadError(error)) {
+      throw error;
+    }
     throw new DyadError(
       `Failed to get Neon project info: ${error instanceof Error ? error.message : String(error)}`,
       DyadErrorKind.External,

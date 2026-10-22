@@ -66,10 +66,10 @@ export const writeFileTool: ToolDefinition<z.infer<typeof writeFileSchema>> = {
     await withLock(await getFileWriteKey(fullFilePath), async () => {
       // Ensure directory exists
       const dirPath = path.dirname(fullFilePath);
-      fs.mkdirSync(dirPath, { recursive: true });
+      await fs.promises.mkdir(dirPath, { recursive: true });
 
       // Write file content
-      fs.writeFileSync(fullFilePath, args.content);
+      await fs.promises.writeFile(fullFilePath, args.content);
       logger.log(`Successfully wrote file: ${fullFilePath}`);
       queueCloudSandboxSnapshotSync({
         appId: ctx.appId,
@@ -82,8 +82,13 @@ export const writeFileTool: ToolDefinition<z.infer<typeof writeFileSchema>> = {
       let functionName: string;
       try {
         functionName = extractFunctionNameFromPath(operationPath);
-      } catch {
-        return `Successfully wrote ${args.path}`;
+      } catch (error) {
+        // The file was written, but this path is not a deployable function
+        // (e.g. "supabase/functions/_shared/..."). Report the skipped deploy
+        // instead of silently claiming a plain success.
+        return `Successfully wrote ${args.path}, but skipped the Supabase function deployment: ${
+          error instanceof Error ? error.message : String(error)
+        }`;
       }
       if (ctx.allowDeploySideEffects === false) {
         if (ctx.onDeferredFunctionDeploy) {

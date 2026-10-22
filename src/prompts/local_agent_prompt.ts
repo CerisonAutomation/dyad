@@ -28,6 +28,12 @@ import {
   NEON_IMPLEMENTER_NO_MANUAL_MIGRATIONS_RULE,
   NEON_RLS_REQUIRES_JWT_RULE,
 } from "./neon_prompt_rules";
+import {
+  COMMUNICATION_BLOCK,
+  ENGINEERING_DISCIPLINE_BLOCK,
+  REACT_GUIDANCE_BLOCK,
+} from "./agent_discipline_prompt";
+import { buildSkillsSection } from "./skill_catalog_prompt";
 
 // ============================================================================
 // Shared Prompt Blocks (used by both Pro and Basic Agent modes)
@@ -94,12 +100,17 @@ const COMMON_GUIDELINES = `- All text you output outside of tool use is displaye
 - If the user asks for help or wants to give feedback, tell them to use the Help button in the bottom left.
 - Set a chat summary early in the turn using the \`set_chat_summary\` tool. Call it exactly once, as soon as you understand the user's request well enough to write a short title. Do not wait until the end of the turn.`;
 
-const IMPLEMENTATION_SIMPLICITY_GUIDANCE = `- Prioritize creating small, focused files and components.
-- Avoid over-engineering. Only make changes that are directly requested or clearly necessary. Keep solutions simple and focused.
-  - Don't add features, refactor code, or make "improvements" beyond what was asked. A bug fix doesn't need surrounding code cleaned up. A simple feature doesn't need extra configurability. Don't add docstrings, comments, or type annotations to code you didn't change. Only add comments where the logic isn't self-evident.
-  - Don't add error handling, fallbacks, or validation for scenarios that can't happen. Trust internal code and framework guarantees. Only validate at system boundaries (user input, external APIs). Don't use feature flags or backwards-compatibility shims when you can just change the code.
-  - Don't create helpers, utilities, or abstractions for one-time operations. Don't design for hypothetical future requirements. The right amount of complexity is the minimum needed for the current task—three similar lines of code is better than a premature abstraction.
-  - Avoid backwards-compatibility hacks like renaming unused _vars, re-exporting types, adding // removed comments for removed code, etc. If you are certain that something is unused, you can delete it completely.`;
+/**
+ * Scope and complexity rules now live in the engineering-principles block
+ * (subtract before you add, smallest change, validation at the boundaries,
+ * minimise reader load, and the integration rules that forbid compatibility
+ * shims). Restating them here duplicated the same rules in two places, which
+ * is exactly what the writing rules warn against - so this block keeps only
+ * what is specific to Dyad and points at the rest.
+ */
+const IMPLEMENTATION_SIMPLICITY_GUIDANCE = `- The engineering-principles block governs scope, where validation belongs, how much abstraction to add, and whether to keep a compatibility shim. Apply those rules rather than restating them.
+- Don't add docstrings, comments, or type annotations to code you didn't change. Only add comments where the logic isn't self-evident.
+- Prioritize creating small, focused files and components.`;
 
 /**
  * The user has ADHD, so every response must be optimized for focus and
@@ -491,6 +502,10 @@ ${COMMON_GUIDELINES}
 - If you're not sure about something, read the relevant files to find out
 </general_guidelines>
 
+${ENGINEERING_DISCIPLINE_BLOCK}
+
+${COMMUNICATION_BLOCK}
+
 <tool_calling>
 You have READ-ONLY tools at your disposal to understand the codebase. Follow these rules:
 1. ALWAYS follow the tool call schema exactly as specified and make sure to provide all necessary parameters.
@@ -510,6 +525,8 @@ ${GIT_CONTEXT_BLOCK}
 </workflow>
 
 ${AI_RULES_BLOCK_READONLY}
+
+[[SKILLS]]
 `;
 
 // ============================================================================
@@ -664,6 +681,12 @@ ${appLifecycleBlock({ restartAppToolAvailable, reinstallAndRestartAppToolAvailab
 
 ${GENERAL_GUIDELINES_BLOCK}
 
+${ENGINEERING_DISCIPLINE_BLOCK}
+
+${REACT_GUIDANCE_BLOCK}
+
+${COMMUNICATION_BLOCK}
+
 ${TOOL_CALLING_BLOCK}
 
 ${GIT_CONTEXT_BLOCK}
@@ -678,6 +701,8 @@ ${testingEnabled ? `${AGENT_TEST_WRITING_GUIDANCE}\n` : ""}
 ${IMAGE_GENERATION_BLOCK}
 ${enableAppBlueprint ? `\n${appBlueprintBlock({ hasAppBlueprint, planningQuestionnaireAvailable, appBlueprintQuestionnaireCompleted, appBlueprint })}\n` : ""}
 ${AI_RULES_BLOCK}
+
+[[SKILLS]]
 `;
 }
 
@@ -706,6 +731,12 @@ ${appLifecycleBlock({ restartAppToolAvailable, reinstallAndRestartAppToolAvailab
 
 ${GENERAL_GUIDELINES_BLOCK}
 
+${ENGINEERING_DISCIPLINE_BLOCK}
+
+${REACT_GUIDANCE_BLOCK}
+
+${COMMUNICATION_BLOCK}
+
 ${TOOL_CALLING_BLOCK}
 
 ${GIT_CONTEXT_BLOCK}
@@ -718,6 +749,8 @@ ${basicDevelopmentWorkflowBlock(enableAppBlueprint, hasAppBlueprint, planningQue
 [[SERVER_LAYER]]
 ${testingEnabled ? `${AGENT_TEST_WRITING_GUIDANCE}\n` : ""}${enableAppBlueprint ? `\n${appBlueprintBlock({ hasAppBlueprint, planningQuestionnaireAvailable, appBlueprintQuestionnaireCompleted, appBlueprint })}\n` : ""}
 ${AI_RULES_BLOCK}
+
+[[SKILLS]]
 `;
 }
 
@@ -763,6 +796,12 @@ ${appLifecycleBlock({ restartAppToolAvailable, reinstallAndRestartAppToolAvailab
 
 ${GENERAL_GUIDELINES_BLOCK}
 
+${ENGINEERING_DISCIPLINE_BLOCK}
+
+${REACT_GUIDANCE_BLOCK}
+
+${COMMUNICATION_BLOCK}
+
 ${TOOL_CALLING_BLOCK}
 
 ${BUILD_GIT_CONTEXT_BLOCK}
@@ -777,6 +816,8 @@ ${developmentWorkflow}
 [[SERVER_LAYER]]
 ${enableAppBlueprint ? `\n${appBlueprintBlock({ hasAppBlueprint, planningQuestionnaireAvailable, appBlueprintQuestionnaireCompleted, appBlueprint })}\n` : ""}
 ${AI_RULES_BLOCK}
+
+[[SKILLS]]
 `;
 }
 
@@ -876,6 +917,11 @@ export function constructImplementerPrompt(
     providerMetadataReadAvailable?: boolean;
     databaseSchemaReadAvailable?: boolean;
     readGuideAvailable?: boolean;
+    /**
+     * Whether this conversation is running the Replica workflow. The pack is
+     * a project, so the Implementer needs the same stages the root Agent has.
+     */
+    isCloneWorkflow?: boolean;
   },
 ): string {
   const providerGuidance = implementerProviderGuidance(
@@ -910,7 +956,7 @@ You are Dyad Implementer. Complete the focused assignment using only the provide
 - Before editing, check whether the assigned change has already been implemented.
 - Only edit files related to the assignment and leave all other files alone.
 - Never add placeholders or TODO comments in place of requested functionality. If part of the assignment cannot be completed, preserve a coherent working state and report the incomplete portion.
-- qa-preview-control when the assignment needs to see or drive the running app preview (screenshots, clicks, visual verification via the Comet browser MCP server).
+- qa-preview-control when the assignment needs to see or drive the running app preview (screenshots, clicks, visual verification via the preview_browser tool).
 ${IMPLEMENTATION_SIMPLICITY_GUIDANCE}
 </implementation_guidelines>
 
@@ -919,6 +965,14 @@ ${PRO_TOOL_CALLING_BEST_PRACTICES_BLOCK}
 ${PRO_FILE_EDITING_TOOL_SELECTION_BLOCK}
 
 ${options?.testingEnabled ? getImplementerTestWritingGuidance(options.runTestsAvailable !== false) : ""}
+
+${ENGINEERING_DISCIPLINE_BLOCK}
+
+${REACT_GUIDANCE_BLOCK}
+
+${COMMUNICATION_BLOCK}
+
+[[SKILLS]]
 
 <workflow>
 1. Inspect the assignment's relevant files and confirm the requested behavior is not already present.
@@ -937,7 +991,9 @@ The \`<ai_rules>\` block is a snapshot from the start of the root turn. Before e
 
 <ai_rules>
 ${aiRules ?? DEFAULT_AI_RULES}
-</ai_rules>`;
+</ai_rules>`.replace("[[SKILLS]]", () =>
+    buildSkillsSection(options?.isCloneWorkflow === true),
+  );
 }
 
 // ============================================================================
@@ -973,6 +1029,12 @@ export function constructLocalAgentPrompt(
     restartAppToolAvailable?: boolean;
     reinstallAndRestartAppToolAvailable?: boolean;
     runBuildToolAvailable?: boolean;
+    /**
+     * Whether this conversation is running the Replica workflow. The pack is
+     * a staged project, so it is carried for the whole conversation rather
+     * than for the turn that happened to mention a clone.
+     */
+    isCloneWorkflow?: boolean;
   },
 ): string {
   const enableAppBlueprint = options?.enableAppBlueprint === true;
@@ -1042,6 +1104,9 @@ export function constructLocalAgentPrompt(
   // cannot splice the rest of the prompt via `$'`, `$&`, etc.
   let prompt = basePrompt
     .replace("[[SERVER_LAYER]]", () => serverLayer)
+    .replace("[[SKILLS]]", () =>
+      buildSkillsSection(options?.isCloneWorkflow === true),
+    )
     .replace("[[AI_RULES]]", () => aiRules ?? DEFAULT_AI_RULES);
 
   // Append theme prompt if provided
@@ -1066,6 +1131,12 @@ export function constructBuildAgentPrompt(
     appBlueprint?: AppBlueprintData;
     restartAppToolAvailable?: boolean;
     reinstallAndRestartAppToolAvailable?: boolean;
+    /**
+     * Whether this conversation is running the Replica workflow. The pack is
+     * a staged project, so it is carried for the whole conversation rather
+     * than for the turn that happened to mention a clone.
+     */
+    isCloneWorkflow?: boolean;
   },
 ): string {
   const enableAppBlueprint = options?.enableAppBlueprint === true;
@@ -1089,6 +1160,9 @@ export function constructBuildAgentPrompt(
     options?.reinstallAndRestartAppToolAvailable !== false,
   )
     .replace("[[SERVER_LAYER]]", () => serverLayer)
+    .replace("[[SKILLS]]", () =>
+      buildSkillsSection(options?.isCloneWorkflow === true),
+    )
     .replace("[[AI_RULES]]", () => aiRules ?? DEFAULT_AI_RULES);
 
   if (themePrompt) {

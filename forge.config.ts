@@ -2,6 +2,7 @@ import { windowsSign } from "./windowsSign";
 import {
   removeUnusedAppPackageFiles,
   removeUnusedCopiedResources,
+  assertRipgrepBundled,
 } from "./src/lib/packaging_cleanup";
 import type { ForgeConfig } from "@electron-forge/shared-types";
 import { MakerSquirrel } from "@electron-forge/maker-squirrel";
@@ -106,6 +107,9 @@ const ignore = (file: string) => {
   if (file.startsWith("/node_modules/node-pty")) {
     return false;
   }
+  if (file.startsWith("/node_modules/playwright-core")) {
+    return false;
+  }
   if (isRuntimeDependency(file, ssh2RuntimeDependencies)) {
     return false;
   }
@@ -182,6 +186,14 @@ const config: ForgeConfig = {
     afterCopyExtraResources: [
       (buildPath, _electronVersion, platform, _arch, callback) => {
         removeUnusedCopiedResources(buildPath, platform).then(
+          () => callback(),
+          (error) => callback(error as Error),
+        );
+      },
+      // Fail the package step when the ripgrep binary did not make it into
+      // the bundle. Without it every grep-backed tool dies at spawn time.
+      (buildPath, _electronVersion, platform, _arch, callback) => {
+        assertRipgrepBundled(buildPath, platform).then(
           () => callback(),
           (error) => callback(error as Error),
         );

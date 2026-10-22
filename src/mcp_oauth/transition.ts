@@ -133,7 +133,9 @@ export function transition(
             message: `OAuth callback error: ${event.error ?? "missing code"}`,
           });
     case "TIMEOUT":
-      return state.status === "binding" || state.status === "awaitingCallback"
+      return state.status === "binding" ||
+        state.status === "awaitingCallback" ||
+        state.status === "exchanging"
         ? change({ ...state, status: "timedOut" })
         : ignoreTransition(state, "invalid-in-current-state");
     case "EXCHANGE_OK":

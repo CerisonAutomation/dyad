@@ -59,6 +59,7 @@ export const renameFileTool: ToolDefinition<z.infer<typeof renameFileSchema>> =
       const toFullPath = safeJoin(ctx.appPath, toOperationPath);
       let functionToDelete: string | undefined;
       let functionToDeploy: string | undefined;
+      let gitStageFailure: string | undefined;
       const didRename = await withLocks(
         [
           await getFileWriteKey(fromFullPath),
@@ -88,15 +89,24 @@ export const renameFileTool: ToolDefinition<z.infer<typeof renameFileSchema>> =
 
             // Ensure target directory exists
             const dirPath = path.dirname(toFullPath);
-            fs.mkdirSync(dirPath, { recursive: true });
+            await fs.promises.mkdir(dirPath, { recursive: true });
 
-            fs.renameSync(fromFullPath, toFullPath);
+            await fs.promises.rename(fromFullPath, toFullPath);
             logger.log(
               `Successfully renamed file: ${fromFullPath} -> ${toFullPath}`,
             );
 
             // Update git
-            await gitAdd({ path: ctx.appPath, filepath: toOperationPath });
+            try {
+              await gitAdd({ path: ctx.appPath, filepath: toOperationPath });
+            } catch (error) {
+              // The rename already succeeded on disk; a git staging failure
+              // must not fail the whole tool call (and must not skip the
+              // Supabase reconciliation below).
+              gitStageFailure =
+                error instanceof Error ? error.message : String(error);
+              logger.warn(`Failed to git add renamed file ${args.to}:`, error);
+            }
             try {
               await gitRemove({
                 path: ctx.appPath,
@@ -153,7 +163,9 @@ export const renameFileTool: ToolDefinition<z.infer<typeof renameFileSchema>> =
 
       // Deployment admission can queue behind another chat's batch upload, so
       // it must not hold the file locks other writers of these paths need.
-      const successMessage = `Successfully renamed ${args.from} to ${args.to}`;
+      const successMessage = gitStageFailure
+        ? `Successfully renamed ${args.from} to ${args.to} but failed to stage it in git: ${gitStageFailure}`
+        : `Successfully renamed ${args.from} to ${args.to}`;
       let deferredNote: string | undefined;
       if (functionToDelete && ctx.supabaseProjectId) {
         try {

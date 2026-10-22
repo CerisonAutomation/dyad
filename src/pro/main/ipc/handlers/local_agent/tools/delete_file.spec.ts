@@ -26,6 +26,8 @@ vi.mock("node:fs", async () => {
       promises: {
         realpath: vi.fn(async (filePath: string) => filePath),
         lstat: vi.fn(),
+        rm: vi.fn(async () => undefined),
+        unlink: vi.fn(async () => undefined),
       },
     },
   };
@@ -138,10 +140,10 @@ describe("deleteFileTool", () => {
         deleteFileTool.execute({ path: "src/admin.ts" }, context),
       ).resolves.toContain("Successfully deleted");
 
-      expect(fs.unlinkSync).toHaveBeenCalledWith(
+      expect(fs.promises.unlink).toHaveBeenCalledWith(
         path.join(mockContext.appPath, "src/admin.ts"),
       );
-      expect(fs.rmdirSync).not.toHaveBeenCalled();
+      expect(fs.promises.rm).not.toHaveBeenCalled();
     });
 
     it.each([".", "./", ".\\", "foo/..", "foo\\.."])(
@@ -152,8 +154,8 @@ describe("deleteFileTool", () => {
         ).rejects.toThrow(/Refusing to delete project root/);
 
         expect(fs.existsSync).not.toHaveBeenCalled();
-        expect(fs.unlinkSync).not.toHaveBeenCalled();
-        expect(fs.rmdirSync).not.toHaveBeenCalled();
+        expect(fs.promises.unlink).not.toHaveBeenCalled();
+        expect(fs.promises.rm).not.toHaveBeenCalled();
         expect(gitRemove).not.toHaveBeenCalled();
       },
     );
@@ -172,10 +174,10 @@ describe("deleteFileTool", () => {
         mockContext,
       );
 
-      expect(fs.unlinkSync).toHaveBeenCalledWith(
+      expect(fs.promises.unlink).toHaveBeenCalledWith(
         path.join(mockContext.appPath, "src/file.ts"),
       );
-      expect(fs.rmdirSync).not.toHaveBeenCalled();
+      expect(fs.promises.rm).not.toHaveBeenCalled();
       expect(gitRemove).toHaveBeenCalledWith({
         path: "/test/app",
         filepath: "src/file.ts",
@@ -183,7 +185,7 @@ describe("deleteFileTool", () => {
       expect(result).toBe("Successfully deleted src/file.ts");
     });
 
-    it("deletes directories with rmdir recursive", async () => {
+    it("deletes directories with rm recursive", async () => {
       vi.mocked(fs.existsSync).mockReturnValue(true);
       vi.mocked(fs.lstatSync).mockReturnValue({
         isDirectory: () => true,
@@ -195,13 +197,13 @@ describe("deleteFileTool", () => {
         mockContext,
       );
 
-      expect(fs.rmdirSync).toHaveBeenCalledWith(
+      expect(fs.promises.rm).toHaveBeenCalledWith(
         path.join(mockContext.appPath, "src/dir"),
         {
           recursive: true,
         },
       );
-      expect(fs.unlinkSync).not.toHaveBeenCalled();
+      expect(fs.promises.unlink).not.toHaveBeenCalled();
       expect(result).toBe("Successfully deleted src/dir");
     });
 
@@ -248,7 +250,7 @@ describe("deleteFileTool", () => {
         context,
       );
 
-      expect(fs.unlinkSync).toHaveBeenCalledWith(
+      expect(fs.promises.unlink).toHaveBeenCalledWith(
         path.join(
           mockContext.appPath,
           "supabase/functions/hello-world/index.ts",

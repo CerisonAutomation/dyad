@@ -264,7 +264,17 @@ function runSandboxScriptInWorker(
       clearTimeout(wallClockTimeout);
       clearVmTimeout();
       params.signal?.removeEventListener("abort", onAbort);
-      worker.removeAllListeners();
+      // Remove only the listeners this module owns. `removeAllListeners()`
+      // would also drop the 'error' handler, and an EventEmitter 'error'
+      // event with no listener THROWS - a worker that raises between this
+      // cleanup and the effect of `terminate()` would then become an uncaught
+      // exception in the Electron main process.
+      worker.removeAllListeners("message");
+      worker.removeAllListeners("exit");
+      worker.removeAllListeners("error");
+      // Keep a sink so a late worker error can never become an uncaught
+      // exception.
+      worker.on("error", () => undefined);
     }
 
     function settle(fn: () => void, terminate: boolean) {

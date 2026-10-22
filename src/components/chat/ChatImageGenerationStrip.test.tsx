@@ -20,6 +20,9 @@ vi.mock("jotai", async (importOriginal) => ({
   ...(await importOriginal<typeof import("jotai")>()),
   useAtomValue: () => 7,
   useAtom: () => [new Set<string>(), mocks.setDismissed],
+  // The strip dismisses through the bounded `dismissImageGenerationJobAtom`
+  // writer rather than mutating the set directly.
+  useSetAtom: () => mocks.setDismissed,
 }));
 vi.mock("@/image_generation/hooks", () => ({
   useChatImageGenerationJobs: () => [

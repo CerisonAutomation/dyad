@@ -22,4 +22,13 @@ describe("readGuideTool", () => {
       readGuideTool.execute({ guide: "no-such-guide" }, ctx(null)),
     ).rejects.toThrow(/qa-preview-control/);
   });
+
+  it("rejects guide names that resolve to Object.prototype members", async () => {
+    await expect(
+      readGuideTool.execute({ guide: "constructor" }, ctx(null)),
+    ).rejects.toThrow(/not found/);
+    await expect(
+      readGuideTool.execute({ guide: "toString" }, ctx(null)),
+    ).rejects.toThrow(/not found/);
+  });
 });

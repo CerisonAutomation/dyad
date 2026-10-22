@@ -161,6 +161,7 @@ import { endTestsForApp } from "./tests_handlers";
 import { removeE2eTestArtifactsForApp } from "../services/e2e_test_workspace";
 
 import {
+  assertRgExecutableAvailable,
   getRgExecutablePath,
   MAX_FILE_SEARCH_SIZE,
   RIPGREP_EXCLUDED_GLOBS,
@@ -168,6 +169,7 @@ import {
 import { DyadError, DyadErrorKind, isDyadError } from "@/errors/dyad_error";
 import { detectFrameworkType } from "../utils/framework_utils";
 import { readAppFileForEditor } from "../utils/bounded_text_file";
+import { clearFileContentCache } from "@/utils/codebase";
 import { queryInvalidationBus } from "@/window_infrastructure/main/query_invalidation_bus";
 import { entityDisposalBus } from "@/window_infrastructure/main/entity_disposal_bus";
 import { appRunActorService } from "../services/app_run_actor_service";
@@ -330,6 +332,7 @@ async function searchAppFilesWithRipgrep({
       ".",
     ];
 
+    assertRgExecutableAvailable();
     const rg = spawnWithBadFdRetry(getRgExecutablePath(), args, {
       cwd: appPath,
     });
@@ -792,6 +795,10 @@ async function deleteAppByIdExclusive(
 
     // Clear logs for this app to prevent memory leak
     appRuntimeService.clearRuntimeLogs(appId);
+    // The codebase file cache holds whole file bodies of this app's sources.
+    // They are dead once the app is deleted, so release them rather than
+    // keeping them resident for the rest of the session.
+    clearFileContentCache();
     getPtySessionManager().killForApp(appId);
     appRuntimeService.cleanup(appId);
     try {

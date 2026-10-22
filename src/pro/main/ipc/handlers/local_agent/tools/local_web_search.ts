@@ -32,6 +32,37 @@ export interface SearchResult {
 const SEARXNG_INSTANCES: string[] = ["http://127.0.0.1:8888"];
 
 /**
+ * Deadline for a single provider request.
+ *
+ * The provider requests always carry a deadline: the turn signal alone would
+ * let a hung provider block the tool for the whole turn.
+ */
+const PROVIDER_TIMEOUT_MS = 12_000;
+
+/**
+ * Combine the caller's cancellation signal with a request deadline.
+ */
+function providerSignal(abortSignal: AbortSignal | undefined): AbortSignal {
+  const timeoutSignal = AbortSignal.timeout(PROVIDER_TIMEOUT_MS);
+  return abortSignal
+    ? AbortSignal.any([abortSignal, timeoutSignal])
+    : timeoutSignal;
+}
+
+/**
+ * Rethrow a cancelled request as a `UserCancelled` error.
+ *
+ * The caller's signal is the only authority here: the provider deadline
+ * aborts the request too, and that is a provider failure, not a cancelled
+ * turn.
+ */
+function throwIfCancelled(abortSignal: AbortSignal | undefined): void {
+  if (abortSignal?.aborted) {
+    throw new DyadError("Web search cancelled.", DyadErrorKind.UserCancelled);
+  }
+}
+
+/**
  * Multi-provider parallel web search with deduplication
  * @param query - The search query
  * @param maxResults - Maximum number of results to return (default: 8)
@@ -45,7 +76,9 @@ export async function localWebSearch(
   const startTime = Date.now();
 
   // Check abort before starting
-  abortSignal?.throwIfAborted();
+  if (abortSignal?.aborted) {
+    throw new DyadError("Web search cancelled.", DyadErrorKind.UserCancelled);
+  }
 
   // Launch parallel searches across providers
   const searchPromises = [
@@ -61,6 +94,21 @@ export async function localWebSearch(
 
   // Use Promise.allSettled for fault-tolerant parallel execution
   const results = await Promise.allSettled(searchPromises);
+
+  // A cancelled turn is not a missing backend: surface the cancellation
+  // instead of reporting that no search backend is reachable.
+  for (const result of results) {
+    if (
+      result.status === "rejected" &&
+      result.reason instanceof DyadError &&
+      result.reason.kind === DyadErrorKind.UserCancelled
+    ) {
+      throw result.reason;
+    }
+  }
+  if (abortSignal?.aborted) {
+    throw new DyadError("Web search cancelled.", DyadErrorKind.UserCancelled);
+  }
 
   // Collect all successful results
   const allResults: SearchResult[] = [];
@@ -123,7 +171,7 @@ async function searchFirecrawl(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query, limit: Math.min(maxResults, 10) }),
-      signal: abortSignal ?? AbortSignal.timeout(12_000),
+      signal: providerSignal(abortSignal),
     });
     if (!response.ok) {
       logger.warn(`Firecrawl returned ${response.status}`);
@@ -143,6 +191,7 @@ async function searchFirecrawl(
       }));
     return results.slice(0, maxResults);
   } catch (error) {
+    throwIfCancelled(abortSignal);
     logger.error("Firecrawl search failed:", error);
     return [];
   }
@@ -162,7 +211,7 @@ async function searchDuckDuckGoLite(
       `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`,
       {
         headers: { "User-Agent": "Mozilla/5.0 (Macintosh)" },
-        signal: abortSignal ?? AbortSignal.timeout(12_000),
+        signal: providerSignal(abortSignal),
       },
     );
     if (!response.ok) return [];
@@ -195,6 +244,7 @@ async function searchDuckDuckGoLite(
     }
     return results;
   } catch (error) {
+    throwIfCancelled(abortSignal);
     logger.error("DuckDuckGo lite search failed:", error);
     return [];
   }
@@ -214,7 +264,7 @@ async function searchDuckDuckGoHtml(
           "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         },
-        signal: abortSignal ?? AbortSignal.timeout(10000),
+        signal: providerSignal(abortSignal),
       },
     );
 
@@ -226,6 +276,7 @@ async function searchDuckDuckGoHtml(
     const html = await response.text();
     return parseDuckDuckGoHtml(html, maxResults);
   } catch (error) {
+    throwIfCancelled(abortSignal);
     logger.error("DuckDuckGo search failed:", error);
     return [];
   }
@@ -290,7 +341,7 @@ async function searchSearXNG(
           "User-Agent": "Mozilla/5.0 (Macintosh)",
           Accept: "text/html",
         },
-        signal: abortSignal ?? AbortSignal.timeout(10_000),
+        signal: providerSignal(abortSignal),
       },
     );
 
@@ -332,6 +383,7 @@ async function searchSearXNG(
     }
     return results;
   } catch (error) {
+    throwIfCancelled(abortSignal);
     logger.error(`SearXNG ${instance} search failed:`, error);
     return [];
   }

@@ -7,6 +7,9 @@ import { getLogs } from "@/lib/log_store";
 import { formatLogsForAI } from "@/shared/format_logs";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 
+// The window used to be hardcoded to 5 minutes, which hid older errors.
+const DEFAULT_LOG_WINDOW_MINUTES = 30;
+
 const readLogsSchema = z.object({
   type: z
     .enum(["all", "client", "server", "edge-function", "network-requests"])
@@ -31,6 +34,15 @@ const readLogsSchema = z.object({
     .max(200)
     .optional()
     .describe("Maximum number of logs to return (default: 50, max: 200)"),
+
+  minutes: z
+    .number()
+    .min(1)
+    .max(1440)
+    .optional()
+    .describe(
+      "How far back to read logs, in minutes (default: 30, max: 1440). Widen this when the error you are looking for happened earlier than the last few minutes.",
+    ),
 });
 
 export const readLogsTool: ToolDefinition<z.infer<typeof readLogsSchema>> = {
@@ -53,7 +65,9 @@ export const readLogsTool: ToolDefinition<z.infer<typeof readLogsSchema>> = {
       filters.push(`level="${args.level}"`);
 
     // Build a descriptive summary of what's being queried
-    const parts: string[] = ["Time: last 5 minutes"];
+    const parts: string[] = [
+      `Time: last ${args.minutes ?? DEFAULT_LOG_WINDOW_MINUTES} minutes`,
+    ];
 
     if (args.type && args.type !== "all") parts.push(`Type: ${args.type}`);
     if (args.level && args.level !== "all") parts.push(`Level: ${args.level}`);
@@ -85,7 +99,8 @@ ${summary}
     const allLogs = getLogs(appId);
 
     // Apply time filter (hardcoded: last 5 minutes)
-    const cutoff = Date.now() - 5 * 60 * 1000;
+    const cutoff =
+      Date.now() - (args.minutes ?? DEFAULT_LOG_WINDOW_MINUTES) * 60 * 1000;
     let filtered = allLogs.filter((log) => log.timestamp >= cutoff);
 
     // Apply type filter
@@ -134,7 +149,9 @@ ${summary}
         : formatLogsForAI(filtered, recentLogs.length);
 
     // Build the query summary for display
-    const parts: string[] = ["Time: last 5 minutes"];
+    const parts: string[] = [
+      `Time: last ${args.minutes ?? DEFAULT_LOG_WINDOW_MINUTES} minutes`,
+    ];
     if (args.type && args.type !== "all") parts.push(`Type: ${args.type}`);
     if (args.level && args.level !== "all") parts.push(`Level: ${args.level}`);
     if (args.searchTerm)

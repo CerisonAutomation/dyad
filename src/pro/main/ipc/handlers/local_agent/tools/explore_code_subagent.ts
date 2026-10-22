@@ -5,6 +5,7 @@ import { getChatInferenceSettings } from "@/ipc/services/chat_inference_settings
 import { resolveModelSelection } from "@/ipc/utils/model_effort";
 import { getModelPreferenceKey } from "@/lib/modelEffort";
 import { cleanMessage } from "@/ipc/utils/ai_messages_utils";
+import { pruneSubagentMessages } from "../subagents/subagent_context_budget";
 import { getModelClient } from "@/ipc/utils/get_model_client";
 import { getAiHeaders, getProviderOptions } from "@/ipc/utils/provider_options";
 import {
@@ -185,6 +186,7 @@ export async function runExploreCodeSubagent({
     },
   });
 
+  let streamError: unknown;
   try {
     const streamResult = streamText({
       output: fastTextOutput(),
@@ -221,18 +223,30 @@ export async function runExploreCodeSubagent({
       },
       stopWhen: [stepCountIs(SUBAGENT_MAX_STEPS), () => reportFinalized],
       abortSignal: ctx.abortSignal,
+      onError: ({ error }) => {
+        streamError ??= error;
+      },
     });
     const fullStream = streamResult.fullStream;
+    // Cancel the orphaned tee branch before the stream pumps chunks; waiting
+    // until after the drain lets that branch buffer the whole response.
+    cancelOrphanedBaseStream(streamResult);
 
     for await (const _part of fullStream) {
       // Drain the stream so tool calls execute.
+    }
+
+    // The AI SDK reports provider/stream failures as an error part instead of
+    // throwing from the iterator, and `steps` only rejects when no step ran,
+    // so a mid-run failure would otherwise be reported as a successful run.
+    if (streamError) {
+      throw streamError;
     }
 
     const [usage, steps] = await Promise.all([
       streamResult.totalUsage ?? Promise.resolve(undefined),
       streamResult.steps ?? Promise.resolve([]),
     ]);
-    cancelOrphanedBaseStream(streamResult);
     await onUsage?.({
       inputTokens: usage?.inputTokens ?? 0,
       outputTokens: usage?.outputTokens ?? 0,
@@ -266,6 +280,11 @@ export async function runExploreCodeSubagent({
     return reportText;
   } catch (error) {
     logger.warn("explore_code sub-agent failed", error);
+    if (streamError) {
+      // Surface the provider failure instead of returning a report built from
+      // partial observations with no error notice.
+      throw streamError;
+    }
     if (acceptedRef.current || observations.length > 0) {
       const reportText = renderFinalReport({
         args,
@@ -964,17 +983,21 @@ function prepareExploreCodeSubagentStep({
   }
 
   const cleanedMessages = messages.map(cleanMessage);
-  const hasCleanedMessages = cleanedMessages.some(
-    (message, index) => message !== messages[index],
-  );
+  // The explorer re-sends its whole transcript on every step, so bound the
+  // tool results it carries instead of letting a single large read blow up
+  // every subsequent request.
+  const prunedMessages = pruneSubagentMessages(cleanedMessages);
+  const hasChangedMessages =
+    cleanedMessages.some((message, index) => message !== messages[index]) ||
+    prunedMessages !== cleanedMessages;
 
-  if (!hasCleanedMessages) {
+  if (!hasChangedMessages) {
     return forcedStep ?? undefined;
   }
 
   return {
     ...forcedStep,
-    messages: cleanedMessages,
+    messages: prunedMessages,
   };
 }
 

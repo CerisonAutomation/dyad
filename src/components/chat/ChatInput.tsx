@@ -59,6 +59,7 @@ import { useAttachments } from "@/hooks/useAttachments";
 import { useAppMediaFiles } from "@/hooks/useAppMediaFiles";
 import { useLoadApps } from "@/hooks/useLoadApps";
 import { buildOptimisticChatDisplay } from "@/lib/optimisticChatDisplay";
+import { beginNewChat, endNewChat } from "@/lib/new_chat_lock";
 import { AttachmentsList } from "./AttachmentsList";
 import { DragDropOverlay } from "./DragDropOverlay";
 import { FileAttachmentTypeDialog } from "./FileAttachmentTypeDialog";
@@ -88,7 +89,10 @@ import {
   doesSqlMutateSchema,
 } from "@/lib/sqlSchemaMutation";
 import { ChatImageGenerationStrip } from "./ChatImageGenerationStrip";
-import { dismissedImageGenerationJobIdsAtom } from "@/atoms/imageGenerationAtoms";
+import {
+  dismissImageGenerationJobAtom,
+  dismissedImageGenerationJobIdsAtom,
+} from "@/atoms/imageGenerationAtoms";
 import { useChatImageGenerationJobs } from "@/image_generation/hooks";
 import { ImageGeneratorDialog } from "@/components/ImageGeneratorDialog";
 import { useChatModeToggle } from "@/hooks/useChatModeToggle";
@@ -258,6 +262,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
   const [dismissedImageJobIds, setDismissedImageJobIds] = useAtom(
     dismissedImageGenerationJobIdsAtom,
   );
+  const dismissImageJob = useSetAtom(dismissImageGenerationJobAtom);
   const visibleSuccessfulImageJobs = useMemo(() => {
     const appJobs = appId
       ? chatImageJobs.filter((job) => job.targetAppId === appId)
@@ -603,11 +608,9 @@ export function ChatInput({ chatId }: { chatId?: number }) {
     );
     const dismissSubmittedImageJobs = () => {
       if (submittedImageJobIds.length === 0) return;
-      setDismissedImageJobIds((previous) => {
-        const next = new Set(previous);
-        for (const jobId of submittedImageJobIds) next.add(jobId);
-        return next;
-      });
+      for (const jobId of submittedImageJobIds) {
+        dismissImageJob(jobId);
+      }
     };
 
     // Use all selected components for multi-component editing
@@ -768,6 +771,9 @@ export function ChatInput({ chatId }: { chatId?: number }) {
 
   const handleNewChat = async () => {
     if (appId) {
+      // A burst of clicks (or key auto-repeat) would create one empty chat
+      // per click, so latch the action while a creation is in flight.
+      if (!beginNewChat()) return;
       try {
         const newChatId = await ipc.chat.createChat({ appId });
         setSelectedChatId(newChatId);
@@ -780,6 +786,8 @@ export function ChatInput({ chatId }: { chatId?: number }) {
         showErrorToast(
           `Failed to create new chat: ${(err as Error).toString()}`,
         );
+      } finally {
+        endNewChat();
       }
     } else {
       navigate({ to: "/" });

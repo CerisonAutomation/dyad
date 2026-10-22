@@ -396,6 +396,10 @@ export async function executeApp({
   previewAbortSignal?.throwIfAborted();
   const runtimeMode = settings.runtimeMode2 ?? "host";
 
+  // Each run reports its own output: a previous run's failure must not be
+  // blamed on this one.
+  clearAppOutputTail(appId);
+
   if (runtimeMode === "docker") {
     await executeAppInDocker({
       appPath,
@@ -1086,6 +1090,86 @@ async function recordIgnoredBuildsAfterInstall(appPath: string): Promise<void> {
   }
 }
 
+/**
+ * Bounded tail of the app process's own output, kept per app.
+ *
+ * A failed startup used to report only "the app process exited" or "timed out
+ * waiting for the preview", which hides the actual cause (a pnpm release-age
+ * violation, a port already in use, a missing dependency). The agent then has
+ * no way to recover. The tail is small and bounded so a long-running dev
+ * server cannot leak memory.
+ */
+const MAX_APP_OUTPUT_TAIL_LINES = 20;
+const appOutputTails = new Map<
+  number,
+  { stdout: string[]; stderr: string[] }
+>();
+
+function recordAppOutput(
+  appId: number,
+  stream: "stdout" | "stderr",
+  message: string,
+): void {
+  const lines = message
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+$/, ""))
+    .filter((line) => line.trim().length > 0);
+  if (lines.length === 0) return;
+  let tails = appOutputTails.get(appId);
+  if (!tails) {
+    tails = { stdout: [], stderr: [] };
+    appOutputTails.set(appId, tails);
+  }
+  const tail = tails[stream];
+  for (const line of lines) {
+    tail.push(line);
+  }
+  while (tail.length > MAX_APP_OUTPUT_TAIL_LINES) {
+    tail.shift();
+  }
+}
+
+/** Drop the retained output of a previous run so it cannot be misreported. */
+function clearAppOutputTail(appId: number): void {
+  appOutputTails.delete(appId);
+}
+
+/**
+ * The most recent meaningful output of the app process. stderr wins over
+ * stdout because install and runtime failures are reported there.
+ */
+function appOutputTailLines(appId: number): string[] {
+  const tails = appOutputTails.get(appId);
+  if (!tails) return [];
+  if (tails.stderr.length > 0) {
+    return tails.stderr.slice(-MAX_APP_OUTPUT_TAIL_LINES);
+  }
+  return tails.stdout.slice(-MAX_APP_OUTPUT_TAIL_LINES);
+}
+
+/**
+ * Builds the failure message for a preview that never became ready, keeping
+ * the original prefix so existing assertions still match and appending the
+ * reason the app process actually failed.
+ */
+function appStartupFailureMessage(options: {
+  appId: number;
+  prefix: string;
+  waitedForUrl?: string;
+}): string {
+  const parts: string[] = [options.prefix];
+  if (options.waitedForUrl) {
+    parts.push(`The preview was expected at ${options.waitedForUrl}.`);
+  }
+  const output = appOutputTailLines(options.appId);
+  if (output.length > 0) {
+    parts.push(`Last output from the app process:\n${output.join("\n")}`);
+  } else {
+    parts.push("The app process produced no output.");
+  }
+  return parts.join(" ");
+}
+
 function listenToProcess({
   process: spawnedProcess,
   appId,
@@ -1121,6 +1205,7 @@ function listenToProcess({
   spawnedProcess.stdout?.on("data", async (data) => {
     const message = util.stripVTControlCharacters(data.toString());
     appendProcessOutput(message);
+    recordAppOutput(appId, "stdout", message);
     logger.debug(
       `App ${appId} (PID: ${spawnedProcess.pid}) stdout: ${message}`,
     );
@@ -1180,6 +1265,7 @@ function listenToProcess({
   spawnedProcess.stderr?.on("data", async (data) => {
     const message = util.stripVTControlCharacters(data.toString());
     appendProcessOutput(message);
+    recordAppOutput(appId, "stderr", message);
     logger.error(
       `App ${appId} (PID: ${spawnedProcess.pid}) stderr: ${message}`,
     );
@@ -2407,7 +2493,10 @@ async function waitForAppReady(
     const appInfo = runningApps.get(appId);
     if (!appInfo) {
       throw new DyadError(
-        "The app process exited before the preview became ready",
+        appStartupFailureMessage({
+          appId,
+          prefix: "The app process exited before the preview became ready",
+        }),
         DyadErrorKind.External,
       );
     }
@@ -2424,8 +2513,14 @@ async function waitForAppReady(
   }
   // The dev process is still running. Keep its proxy lifetime alive so a late
   // ready URL can recover after a slow first install/build.
+  const appInfo = runningApps.get(appId);
   throw new DyadError(
-    "Timed out waiting for the app preview to become ready",
+    appStartupFailureMessage({
+      appId,
+      prefix: "Timed out waiting for the app preview to become ready",
+      waitedForUrl:
+        appInfo?.originalUrl ?? `http://localhost:${getAppPort(appId)}`,
+    }),
     DyadErrorKind.External,
   );
 }

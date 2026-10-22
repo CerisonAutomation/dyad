@@ -24,6 +24,7 @@ import {
   setSubagentEventTarget,
   shouldDrainMutationOnAbort,
   syncRootImplementerProviderContext,
+  toolRulesForPersona,
   SUBAGENT_NONTERMINAL_STATUSES,
   waitForAbortableDelay,
   withFinalizationAdmission,
@@ -284,6 +285,42 @@ describe("sub-agent manager status policy", () => {
     expect(shouldDrainMutationOnAbort("implementer")).toBe(true);
     expect(shouldDrainMutationOnAbort("reviewer")).toBe(false);
     expect(shouldDrainMutationOnAbort("explorer")).toBe(false);
+  });
+
+  it("keeps conversational history when the assignment is huge", () => {
+    const history = buildBoundedModelHistory({
+      originalAssignment: "o".repeat(60_000),
+      currentAssignment: "c".repeat(60_000),
+      messages: [
+        {
+          role: "assistant",
+          content: "Earlier finding that must survive",
+          consumed: false,
+        },
+      ],
+    });
+    const contents = history.map((message) =>
+      typeof message.content === "string" ? message.content : "",
+    );
+
+    expect(
+      contents.some((content) => content.includes("Earlier finding")),
+    ).toBe(true);
+    expect(contents.join("").length).toBeLessThanOrEqual(60_000);
+  });
+
+  it("only tells a persona about the tools it actually has", () => {
+    const explorer = toolRulesForPersona("explorer");
+    expect(explorer).toContain("code_map");
+    expect(explorer).toContain("ast_grep_search");
+    expect(explorer).not.toContain("preview_browser");
+
+    for (const persona of ["reviewer", "implementer"] as const) {
+      const rules = toolRulesForPersona(persona);
+      expect(rules).toContain("code_map");
+      expect(rules).toContain("ast_grep_search");
+      expect(rules).toContain("preview_browser");
+    }
   });
 
   it("uses the root-provided system prompt only for Implementers", () => {

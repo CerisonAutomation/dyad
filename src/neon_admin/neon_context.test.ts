@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getNeonClient } from "./neon_management_client";
-import { getConnectionUri, getNeonTableSchema } from "./neon_context";
+import {
+  getConnectionUri,
+  getNeonProjectInfo,
+  getNeonTableSchema,
+} from "./neon_context";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import {
   filterSchemaForTable,
@@ -206,6 +210,23 @@ describe("Neon context", () => {
 
     await expect(
       getNeonTableSchema({
+        projectId: "project-id",
+        branchId: "branch-id",
+      }),
+    ).rejects.toBe(authError);
+  });
+
+  it("preserves existing DyadError classifications for project info", async () => {
+    // A missing/expired Neon API key surfaces as an Auth error; re-wrapping it
+    // as External would drop the re-auth guidance.
+    const authError = new DyadError(
+      "Neon authentication failed",
+      DyadErrorKind.Auth,
+    );
+    getNeonClientMock.mockRejectedValue(authError);
+
+    await expect(
+      getNeonProjectInfo({
         projectId: "project-id",
         branchId: "branch-id",
       }),

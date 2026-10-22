@@ -15,6 +15,8 @@ import {
 
 const logger = log.scope("mcp-auto-consent");
 
+// The whole verdict (model-client setup AND the request) shares this single
+// deadline, so one classification can never take longer than eight seconds.
 const CLASSIFIER_TIMEOUT_MS = 8000;
 
 export interface McpConsentDecision {
@@ -30,6 +32,11 @@ export interface ClassifyMcpToolConsentInput {
   args: unknown;
   recentTurns: RecentTurn[];
   settings: UserSettings;
+  /**
+   * Turn-scoped abort signal. When the user stops the turn, the classifier
+   * must not start (or keep running) inference.
+   */
+  signal?: AbortSignal;
 }
 
 // Fail-closed default: when anything goes wrong, ask.
@@ -69,31 +76,67 @@ export async function classifyMcpToolConsent(
   input: ClassifyMcpToolConsentInput,
 ): Promise<McpConsentDecision> {
   const controller = new AbortController();
+  const callerSignal = input.signal;
+  // Turn cancellation and the classifier's own deadline share one signal so a
+  // stopped turn can never leave inference running in the background.
+  const combinedSignal = callerSignal
+    ? AbortSignal.any([callerSignal, controller.signal])
+    : controller.signal;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  // Race the stream against a timeout that rejects, so a stuck request can
-  // never block the tool call. On timeout, abort() cancels the in-flight
-  // request so it doesn't keep running after we've moved on.
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      controller.abort();
-      reject(new Error("classifier timeout"));
-    }, CLASSIFIER_TIMEOUT_MS);
-  });
+  let abortListener: (() => void) | undefined;
   try {
+    if (callerSignal?.aborted) {
+      return ask("Turn was cancelled before classification.");
+    }
+
     // Classify with the user's own model. A compiled-in OpenAI model made
     // auto-consent impossible for anyone without that key.
     const classifierModel: LargeLanguageModel = input.settings.selectedModel;
-    const { modelClient } = await getModelClient(
-      classifierModel,
-      input.settings,
-    );
 
+    // ONE deadline for the whole verdict: model-client setup and the request
+    // share the eight-second budget instead of the request getting a fresh
+    // eight seconds after a slow setup.
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        // Reject first so the timeout wins the race against the abort it
+        // triggers, then abort to cancel the in-flight request.
+        reject(new Error("classifier timeout"));
+        controller.abort();
+      }, CLASSIFIER_TIMEOUT_MS);
+    });
+    // The same promise is raced more than once; make sure a late rejection
+    // can't surface as an unhandled rejection.
+    void timeout.catch(() => {});
+
+    // Cancellation ends the verdict immediately instead of waiting for the
+    // deadline to expire.
+    const cancelled = new Promise<never>((_, reject) => {
+      abortListener = () => reject(new Error("classifier cancelled"));
+      combinedSignal.addEventListener("abort", abortListener, { once: true });
+    });
+    void cancelled.catch(() => {});
+
+    const { modelClient } = await Promise.race([
+      getModelClient(classifierModel, input.settings),
+      timeout,
+      cancelled,
+    ]);
+
+    // The turn may have been cancelled while the model client was resolving.
+    // Re-check before spending a request.
+    if (combinedSignal.aborted) {
+      return ask("Turn was cancelled before classification.");
+    }
+
+    // Race the stream against a timeout that rejects, so a stuck request can
+    // never block the tool call. On timeout, abort() cancels the in-flight
+    // request so it doesn't keep running after we've moved on.
     const stream = streamText({
       output: fastTextOutput(),
       model: modelClient.model,
       system: buildMcpConsentSystemPrompt(),
       maxRetries: 1,
-      abortSignal: controller.signal,
+      abortSignal: combinedSignal,
       messages: [{ role: "user", content: buildUserPayload(input) }],
     });
 
@@ -102,7 +145,7 @@ export async function classifyMcpToolConsent(
     // unhandled rejection that accumulates across many calls.
     const textPromise = Promise.resolve(stream.text);
     textPromise.catch(() => {});
-    const text = await Promise.race([textPromise, timeout]);
+    const text = await Promise.race([textPromise, timeout, cancelled]);
     const json = extractJson(text);
     if (!json) return ask("Classifier returned no parseable decision.");
 
@@ -123,6 +166,9 @@ export async function classifyMcpToolConsent(
     return ask("Could not evaluate the tool call automatically.");
   } finally {
     clearTimeout(timer);
+    if (abortListener) {
+      combinedSignal.removeEventListener("abort", abortListener);
+    }
   }
 }
 
@@ -140,6 +186,11 @@ export function buildMcpAutoApprove(params: {
   toolDescription?: string | null;
   inputSchema?: unknown;
   args: unknown;
+  /**
+   * Turn-scoped abort signal. Pass the turn's signal so a stopped turn cannot
+   * leave the classifier running inference in the background.
+   */
+  signal?: AbortSignal;
 }): (() => Promise<McpAutoApproveResult>) | undefined {
   if (
     !params.settings.autoApproveSafeMcpTools ||
@@ -161,6 +212,7 @@ export function buildMcpAutoApprove(params: {
         args: params.args,
         recentTurns,
         settings: params.settings,
+        signal: params.signal,
       });
       return {
         approved: decision.decision === "allow",

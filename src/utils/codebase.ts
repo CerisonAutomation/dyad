@@ -122,6 +122,17 @@ const MAX_FILE_SIZE = 1000 * 1024;
 // Maximum size for fileContentCache
 const MAX_FILE_CACHE_SIZE = 500;
 
+/**
+ * Byte budget for the cached file bodies.
+ *
+ * The cache was bounded by ENTRY COUNT only, and each entry holds a whole
+ * decoded file body of up to 1 MB. 500 entries therefore allowed roughly
+ * half a gigabyte of main-process strings to accumulate across the apps a
+ * session touched - against a shared 4 GB V8 heap cage that also holds every
+ * worker thread.
+ */
+const MAX_FILE_CACHE_BYTES = 32 * 1024 * 1024;
+
 // File content cache with timestamps
 type FileCache = {
   content: string;
@@ -130,6 +141,37 @@ type FileCache = {
 
 // Cache for file contents
 const fileContentCache = new Map<string, FileCache>();
+let fileContentCacheBytes = 0;
+
+/**
+ * Evict cached file bodies until both the entry count and the byte budget
+ * hold. Oldest entries are dropped first (first in, first out).
+ */
+function evictFileCacheEntries(): void {
+  const keys = Array.from(fileContentCache.keys());
+  let index = 0;
+  while (
+    (fileContentCache.size > MAX_FILE_CACHE_SIZE ||
+      fileContentCacheBytes > MAX_FILE_CACHE_BYTES) &&
+    index < keys.length
+  ) {
+    const key = keys[index];
+    index += 1;
+    const entry = fileContentCache.get(key);
+    if (!entry) continue;
+    fileContentCacheBytes -= entry.content.length;
+    fileContentCache.delete(key);
+  }
+}
+
+/**
+ * Drop every cached file body. Call this when the app that owned the files
+ * is deleted, so its contents are not retained for the rest of the session.
+ */
+export function clearFileContentCache(): void {
+  fileContentCache.clear();
+  fileContentCacheBytes = 0;
+}
 
 /**
  * Read file contents with caching based on last modified time
@@ -143,11 +185,13 @@ export async function readFileWithCache(
     const currentMtime = stats.mtimeMs;
 
     // If file is in cache and hasn't been modified, use cached content
-    if (fileContentCache.has(filePath)) {
-      const cache = fileContentCache.get(filePath)!;
-      if (cache.mtime === currentMtime) {
-        return cache.content;
+    const cached = fileContentCache.get(filePath);
+    if (cached) {
+      if (cached.mtime === currentMtime) {
+        return cached.content;
       }
+      fileContentCacheBytes -= cached.content.length;
+      fileContentCache.delete(filePath);
     }
 
     // Read file and update cache
@@ -157,18 +201,10 @@ export async function readFileWithCache(
       content,
       mtime: currentMtime,
     });
+    fileContentCacheBytes += content.length;
 
     // Manage cache size by clearing oldest entries when it gets too large
-    if (fileContentCache.size > MAX_FILE_CACHE_SIZE) {
-      // Get the oldest 25% of entries to remove
-      const entriesToDelete = Math.ceil(MAX_FILE_CACHE_SIZE * 0.25);
-      const keys = Array.from(fileContentCache.keys());
-
-      // Remove oldest entries (first in, first out)
-      for (let i = 0; i < entriesToDelete; i++) {
-        fileContentCache.delete(keys[i]);
-      }
-    }
+    evictFileCacheEntries();
 
     return content;
   } catch (error) {

@@ -26,6 +26,11 @@ import {
 } from "@/utils/dotenv_redaction";
 import { runBufferedProcess } from "./buffered_process";
 import {
+  indexLockConflictMessage,
+  isIndexLockConflict,
+  recoverStaleIndexLock,
+} from "./git_index_lock";
+import {
   collectGitLaunchDiagnostics,
   getGitLaunchTelemetryProperties,
 } from "./git_launch_diagnostics";
@@ -1109,7 +1114,11 @@ export async function gitStageToRevert({
 
 export async function gitAddAll({ path }: GitBaseParams): Promise<void> {
   await ensureGitLineEndingPolicy({ path });
-  await execOrThrow(["add", "."], path, "Failed to stage all files");
+  await gitAddWithIndexLockRecovery({
+    path,
+    args: ["add", "."],
+    errorMessage: "Failed to stage all files",
+  });
   return;
 }
 
@@ -1139,11 +1148,88 @@ export async function gitAdd({ path, filepath }: GitFileParams): Promise<void> {
   }
 
   await ensureGitLineEndingPolicy({ path });
-  await execOrThrow(
-    ["add", "--", normalizedFilepath],
+  await gitAddWithIndexLockRecovery({
     path,
-    `Failed to stage file '${normalizedFilepath}'`,
-  );
+    args: ["add", "--", normalizedFilepath],
+    errorMessage: `Failed to stage file '${normalizedFilepath}'`,
+  });
+}
+
+/**
+ * Absolute path of the repository's own index lock.
+ *
+ * `rev-parse --absolute-git-dir` points at the repository's git directory
+ * (the worktree directory for a linked worktree), so the lock path is always
+ * the one git itself uses for this repository. Nothing outside that
+ * directory is ever considered.
+ */
+async function resolveIndexLockPath(repoPath: string): Promise<string> {
+  try {
+    const result = await execGit(
+      ["rev-parse", "--absolute-git-dir"],
+      repoPath,
+      { maxBuffer: 64_000 },
+    );
+    if (result.exitCode !== 0) {
+      return "";
+    }
+    const gitDir = result.stdout.trim();
+    if (!gitDir) {
+      return "";
+    }
+    return pathModule.join(gitDir, "index.lock");
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Runs a `git add`, recovering from a stale `.git/index.lock` exactly once.
+ *
+ * A leftover index lock (from a crashed or killed git process) otherwise
+ * breaks every later write in the repository until the user deletes it by
+ * hand. A lock that is younger than the stale threshold, or that a live
+ * process still holds, is never removed: the user gets an actionable error
+ * instead.
+ */
+async function gitAddWithIndexLockRecovery(options: {
+  path: string;
+  args: string[];
+  errorMessage: string;
+}): Promise<void> {
+  const attempt = async (): Promise<void> => {
+    await execOrThrow(options.args, options.path, options.errorMessage);
+  };
+
+  try {
+    await attempt();
+    return;
+  } catch (error) {
+    if (!isDyadError(error) || !isIndexLockConflict(error.message)) {
+      throw error;
+    }
+    const lockPath = await resolveIndexLockPath(options.path);
+    const recovery = await recoverStaleIndexLock({ lockPath });
+    if (recovery !== "recovered") {
+      throw new DyadError(
+        `${options.errorMessage}. ${indexLockConflictMessage(lockPath || undefined)}`,
+        DyadErrorKind.Conflict,
+      );
+    }
+  }
+
+  try {
+    await attempt();
+  } catch (error) {
+    if (!isDyadError(error) || !isIndexLockConflict(error.message)) {
+      throw error;
+    }
+    const lockPath = await resolveIndexLockPath(options.path);
+    throw new DyadError(
+      `${options.errorMessage}. ${indexLockConflictMessage(lockPath || undefined)}`,
+      DyadErrorKind.Conflict,
+    );
+  }
 }
 
 export async function gitResetFile({

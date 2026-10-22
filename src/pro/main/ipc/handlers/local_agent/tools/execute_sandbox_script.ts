@@ -8,9 +8,18 @@ import type { RemoteCapabilityMap } from "@/ipc/utils/sandbox/remote_capabilitie
 import {
   assertAllowedGuestPath,
   assertSandboxWritePathAllowed,
+  SANDBOX_DENIED_PATH_DESCRIPTIONS,
 } from "@/ipc/utils/sandbox/capabilities";
-import { SANDBOX_SCRIPT_SOURCE_LIMIT_BYTES } from "@/ipc/utils/sandbox/limits";
-import { DyadError, DyadErrorKind, isDyadError } from "@/errors/dyad_error";
+import {
+  DEFAULT_SANDBOX_TIMEOUT_MS,
+  SANDBOX_SCRIPT_SOURCE_LIMIT_BYTES,
+  SANDBOX_WALL_CLOCK_TIMEOUT_MS,
+} from "@/ipc/utils/sandbox/limits";
+import {
+  classifySandboxScriptFailure,
+  formatSandboxFailureMessage,
+} from "@/ipc/utils/sandbox/failure_classification";
+import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import { sendTelemetryEvent } from "@/ipc/utils/telemetry";
 import { DYAD_MEDIA_DIR_NAME } from "@/ipc/utils/media_path_utils";
 import { readSettings } from "@/main/settings";
@@ -91,21 +100,6 @@ function isAttachmentHostCallPath(path: string | undefined): boolean {
   );
 }
 
-function buildSandboxFailureMessage(params: {
-  script: string;
-  errorMessage: string;
-}): string {
-  return [
-    "This script contains unsupported syntax.",
-    "",
-    "Script:",
-    previewForXml(params.script, SANDBOX_ERROR_SCRIPT_PREVIEW_CHARS),
-    "",
-    "Original error:",
-    params.errorMessage,
-  ].join("\n");
-}
-
 function buildScriptXml(params: {
   args: ExecuteSandboxScriptArgs;
   output: string;
@@ -175,8 +169,12 @@ Supported language surface:
 - let/const, functions, closures, arrow functions, async/await, promises, arrays, plain objects, Map, Set, if/switch, loops, break/continue, try/catch/finally, throw, template literals, destructuring, optional chaining, nullish coalescing, JSON, Math, and conservative Array/String/Object/Date/Intl/RegExp helpers.
 - Data helpers include Object.groupBy/Map.groupBy, toSorted/toReversed/toSpliced, Set union/intersection/difference, and delete for object properties or array elements. JSON.parse revivers and JSON.stringify replacers/indentation are supported; JSON callbacks must be synchronous and must not call host functions.
 - String.prototype.localeCompare and Intl formatting support en-US only (the default); other locale arguments are rejected, not silently ignored. Date local-time methods such as getHours/getDate return UTC values, not the user's local time; Intl date formatting rejects non-UTC time zones. URI encoding/decoding helpers are available, but URL/URLSearchParams and network access are not.
-- Top-level await is supported. Top-level return is not supported; return the final expression value instead, e.g. \`const text = await read_file("attachments:data.csv"); text.length;\`.
+- Top-level await is supported. A top-level \`return\` is supported as the final statement of the script, e.g. \`const text = await read_file("attachments:data.csv"); return text.length;\`. You can also return the final expression value instead, e.g. \`const text = await read_file("attachments:data.csv"); text.length;\`.
 - The script has no ambient authority. It can only act through the host functions below.
+
+Paths and resources:
+- The sandbox refuses to read or write these paths: ${SANDBOX_DENIED_PATH_DESCRIPTIONS.join("; ")}.
+- A single script may run for at most ${Math.round(DEFAULT_SANDBOX_TIMEOUT_MS / 1000)} seconds of compute and ${Math.round(SANDBOX_WALL_CLOCK_TIMEOUT_MS / 1000)} seconds of wall-clock time. Long-running work must be split into several scripts.
 
 Recommendations:
 - Avoid defining nested helper functions in the main function.
@@ -184,7 +182,7 @@ Recommendations:
 Unsupported / unavailable:
 - No var, import/export, require, CommonJS, npm packages, Node APIs, browser/DOM APIs, process, module, exports, global, environment variables, subprocesses, network/fetch, fetch, timers, setTimeout, setInterval, eval, Function constructor, with, classes, generators, custom iterator authoring, Symbols, WeakMap, WeakSet, typed arrays, ArrayBuffer, shared memory, atomics, Proxy, accessors, full prototype/property-descriptor semantics, or arbitrary filesystem access.
 - \`console.*\` is not available.
-- Unsupported syntax or unsupported built-in behavior fails closed with an error. Rewrite using simpler JavaScript when that happens.
+- Unsupported syntax or unsupported built-in behavior fails closed with an error. Rewrite using simpler JavaScript when that happens. Errors are reported with the actual cause (for example a blocked path or a timeout), so read the error message before retrying.
 
 Return only plain structured data (strings, numbers, booleans, null/undefined, arrays, and plain objects). Convert Map/Set to arrays or plain objects and BigInt to a string before returning or passing to host functions. Strings and object keys must not contain lone UTF-16 surrogates.
 
@@ -399,27 +397,42 @@ export const executeSandboxScriptTool: ToolDefinition<ExecuteSandboxScriptArgs> 
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
+        // The worker itself failed, so the script is not at fault.
+        if (error instanceof SandboxWorkerError) {
+          sendTelemetryEvent("sandbox.script.failed", {
+            chatId: ctx.chatId,
+            appId: ctx.appId,
+            error: errorMessage,
+            executionThread,
+          });
+          throw error;
+        }
+        // Classify the failure so the agent is told what actually went wrong
+        // (blocked host call, timeout, runtime error, ...) instead of always
+        // being told the script has "unsupported syntax".
+        const failure = classifySandboxScriptFailure(error);
         sendTelemetryEvent(
-          errorMessage.includes("timed out")
+          failure.kind === DyadErrorKind.External &&
+            /timed out/i.test(errorMessage)
             ? "sandbox.script.timeout"
             : "sandbox.script.failed",
           {
             chatId: ctx.chatId,
             appId: ctx.appId,
             error: errorMessage,
+            failureKind: failure.kind,
             executionThread,
           },
         );
-        // The worker itself failed, so the script is not at fault.
-        if (error instanceof SandboxWorkerError) {
-          throw error;
-        }
         throw new DyadError(
-          buildSandboxFailureMessage({
-            script: args.script,
-            errorMessage,
+          formatSandboxFailureMessage({
+            failure,
+            scriptPreview: previewForXml(
+              args.script,
+              SANDBOX_ERROR_SCRIPT_PREVIEW_CHARS,
+            ),
           }),
-          isDyadError(error) ? error.kind : DyadErrorKind.Validation,
+          failure.kind,
         );
       }
     },

@@ -12,6 +12,10 @@ vi.mock("ai", async () => {
 vi.mock("@/ipc/utils/get_model_client", () => ({
   getModelClient: mocks.getModelClient,
 }));
+vi.mock("./mcp_consent_context", () => ({
+  getRecentTurnsForConsent: vi.fn().mockResolvedValue([]),
+  formatRecentTurns: vi.fn().mockReturnValue(""),
+}));
 
 import {
   buildMcpAutoApprove,
@@ -42,12 +46,12 @@ describe("classifyMcpToolConsent", () => {
     expect(d.decision).toBe("allow");
     expect(d.reason).toBe("safe read");
     expect(mocks.getModelClient).toHaveBeenCalledWith(
-      { name: "gpt-6-luna", provider: "openai" },
+      baseInput.settings.selectedModel,
       baseInput.settings,
     );
   });
 
-  it("uses the engine helper model for BYO consent classification", async () => {
+  it("classifies with the user's own model instead of a compiled-in one", async () => {
     withText('{"reason":"safe read","decision":"allow"}');
     const settings = {
       enableDyadPro: true,
@@ -57,8 +61,8 @@ describe("classifyMcpToolConsent", () => {
     };
     await classifyMcpToolConsent({ ...baseInput, settings: settings as any });
     expect(mocks.getModelClient).toHaveBeenCalledWith(
-      { provider: "openai", name: "gpt-6-luna" },
-      { ...settings, proModelUsage: "pro" },
+      { provider: "anthropic", name: "chosen-model" },
+      settings,
     );
   });
   it("parses a decision wrapped in prose/code fences", async () => {
@@ -103,6 +107,87 @@ describe("classifyMcpToolConsent", () => {
       vi.useRealTimers();
     }
   });
+
+  it("keeps a single eight-second deadline across model-client setup and the request", async () => {
+    // Resolving the model client takes 3s; the request must still be cut off
+    // at the same eight-second deadline, not eight seconds after setup.
+    mocks.getModelClient.mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(() => resolve({ modelClient: { model: {} } }), 3000),
+        ),
+    );
+    mocks.streamText.mockReturnValue({ text: new Promise<string>(() => {}) });
+    vi.useFakeTimers();
+    try {
+      const pending = classifyMcpToolConsent(baseInput);
+      let settled = false;
+      pending.then(() => {
+        settled = true;
+      });
+      await vi.advanceTimersByTimeAsync(7000);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(2000);
+      const d = await pending;
+      expect(d.decision).toBe("ask");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("fails closed (ask) when the model client never resolves", async () => {
+    mocks.getModelClient.mockImplementation(() => new Promise(() => {}));
+    mocks.streamText.mockReturnValue({ text: new Promise<string>(() => {}) });
+    vi.useFakeTimers();
+    try {
+      const pending = classifyMcpToolConsent(baseInput);
+      let settled = false;
+      pending.then(() => {
+        settled = true;
+      });
+      await vi.advanceTimersByTimeAsync(8000);
+      const d = await pending;
+      expect(d.decision).toBe("ask");
+      expect(settled).toBe(true);
+      expect(mocks.streamText).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not classify at all when the turn is already cancelled", async () => {
+    withText('{"reason":"safe read","decision":"allow"}');
+    const controller = new AbortController();
+    controller.abort();
+
+    const d = await classifyMcpToolConsent({
+      ...baseInput,
+      signal: controller.signal,
+    });
+
+    expect(d.decision).toBe("ask");
+    expect(mocks.getModelClient).not.toHaveBeenCalled();
+    expect(mocks.streamText).not.toHaveBeenCalled();
+  });
+
+  it("does not start the request when the turn is cancelled during setup", async () => {
+    const controller = new AbortController();
+    mocks.getModelClient.mockImplementation(async () => {
+      controller.abort();
+      return { modelClient: { model: {} } };
+    });
+    mocks.streamText.mockReturnValue({
+      text: Promise.resolve('{"reason":"safe read","decision":"allow"}'),
+    });
+
+    const d = await classifyMcpToolConsent({
+      ...baseInput,
+      signal: controller.signal,
+    });
+
+    expect(d.decision).toBe("ask");
+    expect(mocks.streamText).not.toHaveBeenCalled();
+  });
 });
 
 describe("buildMcpAutoApprove", () => {
@@ -116,6 +201,8 @@ describe("buildMcpAutoApprove", () => {
     inputSchema: { type: "object" },
     args: { a: 1 },
   };
+
+  beforeEach(() => vi.clearAllMocks());
 
   it("does not build an auto-approve callback for Dyad Free turns", () => {
     const autoApprove = buildMcpAutoApprove({
@@ -133,5 +220,24 @@ describe("buildMcpAutoApprove", () => {
     });
 
     expect(autoApprove).toEqual(expect.any(Function));
+  });
+
+  it("does not classify when the turn signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const autoApprove = buildMcpAutoApprove({
+      ...baseParams,
+      freeModelMode: false,
+      signal: controller.signal,
+    });
+
+    const result = await autoApprove?.();
+
+    expect(result).toEqual({
+      approved: false,
+      reason: expect.stringContaining("cancelled"),
+    });
+    expect(mocks.getModelClient).not.toHaveBeenCalled();
+    expect(mocks.streamText).not.toHaveBeenCalled();
   });
 });

@@ -103,6 +103,9 @@ import {
 } from "../../supabase_admin/supabase_context";
 import { SUMMARIZE_CHAT_SYSTEM_PROMPT } from "../../prompts/summarize_chat_system_prompt";
 import { SECURITY_REVIEW_SYSTEM_PROMPT } from "../../prompts/security_review_prompt";
+import { isCloneWorkflowConversation } from "../../prompts/clone_workflow_prompt";
+import { BUILTIN_SKILL_CONTENT } from "../../prompts/builtin_skills/content";
+import { BUILTIN_SKILL_SLUGS } from "../../prompts/builtin_skills/catalog";
 import fs from "node:fs";
 import * as path from "path";
 import * as crypto from "crypto";
@@ -500,6 +503,26 @@ interface TrackedStream {
 const activeStreams = new Map<number, Set<TrackedStream>>();
 const admittedStreams = new Map<number, Set<TrackedStream>>();
 const admissionPendingStreams = new Set<AbortController>();
+
+/**
+ * The conversation's user message texts, newest first, then the turn's prompt.
+ *
+ * A generator, not an array: the clone check stops at the first match, so a
+ * long conversation should not pay for copying every message body on every
+ * turn. Newest first because a new clone request is the common case.
+ */
+function* userMessageTexts(
+  messages: readonly { role: string; content: string }[],
+  currentPrompt: string,
+): Generator<string> {
+  yield currentPrompt;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message.role === "user") {
+      yield message.content;
+    }
+  }
+}
 
 // How many chats are currently streaming a response. Used by the
 // performance monitor to record activity alongside memory snapshots.
@@ -1411,6 +1434,11 @@ export function registerChatStreamHandlers() {
         if (slashSkillPattern.test(userPrompt)) {
           const allPrompts = db.select().from(promptsTable).all();
           const promptsBySlug: Record<string, string> = {};
+          // The built-in skills come first, so a user's own prompt with the
+          // same slug does not shadow the shipped skill.
+          for (const slug of BUILTIN_SKILL_SLUGS) {
+            promptsBySlug[slug] = BUILTIN_SKILL_CONTENT[slug];
+          }
           for (const p of allPrompts) {
             if (p.slug && !promptsBySlug[p.slug]) {
               promptsBySlug[p.slug] = p.content;
@@ -2227,6 +2255,13 @@ ${componentSnippet}
         const hasAppBlueprint = Boolean(appBlueprint);
         const appBlueprintQuestionnaireCompleted =
           hasCompletedAppBlueprintQuestionnaire(updatedChat.messages);
+        // The Replica pack is a staged project, so it is loaded for the whole
+        // conversation rather than for the turn that happened to mention a
+        // clone. Only the user's own messages count: the agent's replies talk
+        // about clones constantly once the workflow is running.
+        const isCloneWorkflow = isCloneWorkflowConversation(
+          userMessageTexts(updatedChat.messages, req.prompt),
+        );
         const initialSupabaseProviderToolsAvailable = Boolean(
           updatedChat.app.supabaseProjectId &&
           hasSupabaseCredentialsForOrganization(
@@ -2262,6 +2297,7 @@ ${componentSnippet}
             databaseSchemaReadAvailable: false,
             readGuideAvailable:
               settings.agentToolConsents?.["read_guide"] !== "never",
+            isCloneWorkflow,
           },
         );
         const refreshImplementerContext = async () => {
@@ -2310,6 +2346,7 @@ ${componentSnippet}
               providerMetadataReadAvailable,
               databaseSchemaReadAvailable,
               readGuideAvailable,
+              isCloneWorkflow,
             }),
             supabaseProjectId: refreshedApp.supabaseProjectId,
             supabaseOrganizationSlug: refreshedApp.supabaseOrganizationSlug,
@@ -2334,6 +2371,7 @@ ${componentSnippet}
           freeModelMode,
           frameworkType,
           hasSupabaseProject: !!updatedChat.app?.supabaseProjectId,
+          isCloneWorkflow,
           enableAppBlueprint:
             settings.enableAppBlueprint && updatedChat.app.needsAppBlueprint,
           hasAppBlueprint,

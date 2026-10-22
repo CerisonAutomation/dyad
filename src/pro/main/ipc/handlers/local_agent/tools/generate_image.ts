@@ -47,6 +47,23 @@ Write detailed, descriptive prompts. Be specific about:
 The tool returns the file path in .dyad/media. Use the copy_file tool to copy it to the appropriate location in the project (e.g., public/assets/) and reference that path in your code.
 `;
 
+/**
+ * Derive a file extension from the payload's media type.
+ *
+ * The placeholder provider returns an SVG data URL, and Pollinations can
+ * answer with JPEG or WebP, so a hard-coded `.png` extension produced files
+ * whose bytes did not match their name.
+ */
+function getImageExtension(mediaType: string | undefined | null): string {
+  const normalized = (mediaType ?? "").split(";")[0]?.trim().toLowerCase();
+  if (!normalized) {
+    return "png";
+  }
+  const subtype = normalized.split("/")[1] ?? "";
+  const cleaned = subtype.replace(/\+xml$/, "").replace(/[^a-z0-9]/g, "");
+  return cleaned || "png";
+}
+
 async function saveGeneratedImage(
   imageData: { url: string; provider: string },
   appPath: string,
@@ -54,17 +71,16 @@ async function saveGeneratedImage(
   const mediaDir = path.join(appPath, DYAD_MEDIA_DIR_NAME);
   await fs.mkdir(mediaDir, { recursive: true });
 
-  const hash = crypto.randomBytes(8).toString("hex");
-  const timestamp = Date.now();
-  const fileName = `generated-${timestamp}-${hash}.png`;
-  const filePath = path.join(mediaDir, fileName);
-  const relativePath = path.join(DYAD_MEDIA_DIR_NAME, fileName);
+  let buffer: Buffer;
+  let mediaType: string | undefined;
 
   if (imageData.url.startsWith("data:")) {
     // Handle data URL (placeholder image)
-    const base64Data = imageData.url.split(",")[1];
-    const buffer = Buffer.from(base64Data, "base64");
-    await fs.writeFile(filePath, buffer);
+    const commaIndex = imageData.url.indexOf(",");
+    const header = imageData.url.slice("data:".length, commaIndex);
+    mediaType = header.split(";")[0]?.trim() || undefined;
+    const base64Data = imageData.url.slice(commaIndex + 1);
+    buffer = Buffer.from(base64Data, "base64");
   } else if (imageData.url.startsWith("http")) {
     // Download from URL (Pollinations.ai)
     // Validate URL doesn't target private IPs (SSRF protection)
@@ -78,14 +94,23 @@ async function saveGeneratedImage(
         DyadErrorKind.External,
       );
     }
-    const arrayBuffer = await response.arrayBuffer();
-    await fs.writeFile(filePath, Buffer.from(arrayBuffer));
+    mediaType = response.headers.get("content-type") ?? undefined;
+    buffer = Buffer.from(await response.arrayBuffer());
   } else {
     throw new DyadError(
       "Image generation returned no image data",
       DyadErrorKind.External,
     );
   }
+
+  const extension = getImageExtension(mediaType);
+  const hash = crypto.randomBytes(8).toString("hex");
+  const timestamp = Date.now();
+  const fileName = `generated-${timestamp}-${hash}.${extension}`;
+  const filePath = path.join(mediaDir, fileName);
+  const relativePath = path.join(DYAD_MEDIA_DIR_NAME, fileName);
+
+  await fs.writeFile(filePath, buffer);
 
   return relativePath;
 }
@@ -104,6 +129,8 @@ export const generateImageTool: ToolDefinition<
 
   getConsentPreview: (args) => `Generate image: "${args.prompt}"`,
 
+  // Only a real generated image counts as a mutation. The placeholder
+  // fallback writes a stand-in file and must not look like a finished asset.
   shouldTrackMutation: (_args, result) =>
     result.startsWith("Image generated and saved"),
 
@@ -133,6 +160,19 @@ export const generateImageTool: ToolDefinition<
       ctx.onXmlComplete(
         `<dyad-image-generation prompt="${escapeXmlAttr(args.prompt)}" path="${escapeXmlAttr(relativePath)}">${escapeXmlContent(relativePath)}</dyad-image-generation>`,
       );
+
+      if (imageData.provider === "placeholder") {
+        // The provider failed and a placeholder was substituted. Say so
+        // explicitly instead of reporting a generated image: the placeholder
+        // is not a usable asset for the app.
+        const reason = (imageData.fallbackReason ?? "")
+          .split("\n")[0]
+          .slice(0, 200);
+        logger.warn(
+          `Image generation fell back to a placeholder image: ${relativePath}`,
+        );
+        return `Placeholder image generated and saved to: ${relativePath}\n\nThe image generation provider was unavailable${reason ? ` (${reason})` : ""}, so this file is a simple placeholder, NOT a real generated image. Do not copy it into the app as a finished asset — retry the generation or use another image source instead.`;
+      }
 
       logger.log(`Image generation completed, saved to: ${relativePath}`);
 

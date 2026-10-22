@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   removeUnusedAppPackageFiles,
   removeUnusedCopiedResources,
+  assertRipgrepBundled,
 } from "@/lib/packaging_cleanup";
 
 const tempDirectories: string[] = [];
@@ -386,5 +387,72 @@ describe("removeUnusedCopiedResources", () => {
 
     await expect(fs.readFile(keptPak, "utf8")).resolves.toBe("fixture");
     await expectMissing(removedPak);
+  });
+});
+
+describe("assertRipgrepBundled", () => {
+  it("passes when the ripgrep binary is present in the bundle", async () => {
+    const buildPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "dyad-package-ripgrep-ok-"),
+    );
+    tempDirectories.push(buildPath);
+
+    await writeFixtureFile(
+      path.join(
+        buildPath,
+        "dyad.app/Contents/Resources/@vscode/ripgrep/bin/rg",
+      ),
+      "binary",
+    );
+
+    await expect(
+      assertRipgrepBundled(buildPath, "darwin"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("fails the package step when the ripgrep binary is missing", async () => {
+    const buildPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "dyad-package-ripgrep-missing-"),
+    );
+    tempDirectories.push(buildPath);
+
+    // The package is copied but its postinstall never ran, so there is no
+    // bin/rg. Shipping this would break every grep-backed tool at spawn time.
+    await writeFixtureFile(
+      path.join(
+        buildPath,
+        "dyad.app/Contents/Resources/@vscode/ripgrep/package.json",
+      ),
+      "{}",
+    );
+
+    await expect(assertRipgrepBundled(buildPath, "darwin")).rejects.toThrow(
+      /ripgrep binary is missing/,
+    );
+  });
+
+  it("checks for rg.exe on Windows", async () => {
+    const buildPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "dyad-package-ripgrep-win-"),
+    );
+    tempDirectories.push(buildPath);
+
+    await writeFixtureFile(
+      path.join(buildPath, "resources/@vscode/ripgrep/bin/rg"),
+      "binary",
+    );
+
+    await expect(assertRipgrepBundled(buildPath, "win32")).rejects.toThrow(
+      /ripgrep binary is missing/,
+    );
+
+    await writeFixtureFile(
+      path.join(buildPath, "resources/@vscode/ripgrep/bin/rg.exe"),
+      "binary",
+    );
+
+    await expect(
+      assertRipgrepBundled(buildPath, "win32"),
+    ).resolves.toBeUndefined();
   });
 });

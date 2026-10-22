@@ -24,6 +24,104 @@ export type RetryReplayEvent =
       output: unknown;
     };
 
+/**
+ * Cache of serialized tool-result outputs, keyed by the output object.
+ *
+ * `buildRetryReplayMessages` runs twice over the same event list - once for
+ * the model-visible history and once for the persisted transcript - and each
+ * run used to JSON.stringify every tool output again. That produced two
+ * independent copies of every tool result (a 256 KB read_file result became
+ * ~1 MB), doubled the memory cost of every retry, and made the persisted
+ * transcript burn its 10 MB budget twice as fast.
+ *
+ * The cache is keyed by the output object itself, so it lives exactly as
+ * long as the event that owns it.
+ */
+const serializedToolOutputs = new WeakMap<
+  object,
+  { type: "text"; value: string }
+>();
+
+/**
+ * Budget for the retained replay payload of one attempt.
+ *
+ * The replay events keep every tool CALL INPUT and tool OUTPUT of the
+ * attempt so a retried pass can resume from where it stopped. An attempt can
+ * run up to 100 steps, and a single `write_file` input has no size cap, so
+ * the array could retain well over 100 MB for the life of the attempt - in
+ * the main process, whose V8 heap cage is shared with every worker thread.
+ */
+const MAX_REPLAY_EVENT_BYTES = 8 * 1024 * 1024;
+
+/** Running retained size per replay-event array. */
+const replayEventBytes = new WeakMap<RetryReplayEvent[], { bytes: number }>();
+
+function measureReplayEvent(event: RetryReplayEvent): number {
+  if (event.type === "tool-call") {
+    return measureValueBytes(event.input);
+  }
+  if (event.type === "tool-result") {
+    return measureValueBytes(event.output);
+  }
+  if (event.type === "assistant-text") {
+    return event.text.length;
+  }
+  return measureValueBytes(event.message);
+}
+
+function measureValueBytes(value: unknown): number {
+  if (value === null || value === undefined) {
+    return 8;
+  }
+  if (typeof value === "string") {
+    return value.length;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return 8;
+  }
+  if (Array.isArray(value)) {
+    let total = 2;
+    for (const item of value) {
+      total += measureValueBytes(item) + 1;
+    }
+    return total;
+  }
+  if (typeof value === "object") {
+    let total = 2;
+    for (const [key, item] of Object.entries(
+      value as Record<string, unknown>,
+    )) {
+      total += key.length + measureValueBytes(item) + 1;
+    }
+    return total;
+  }
+  return 8;
+}
+
+/**
+ * Drop the oldest replay events until the retained payload fits the budget.
+ *
+ * Dropping an event can orphan its pair; `buildRetryReplayMessages` already
+ * skips tool exchanges that lack a call or a result, so the replay stays
+ * well-formed - it just resumes from a slightly earlier point.
+ */
+export function boundRetryReplayEvents(
+  retryReplayEvents: RetryReplayEvent[],
+): void {
+  const counter = replayEventBytes.get(retryReplayEvents);
+  if (!counter) {
+    return;
+  }
+  while (
+    retryReplayEvents.length > 0 &&
+    counter.bytes > MAX_REPLAY_EVENT_BYTES
+  ) {
+    const removed = retryReplayEvents.shift();
+    if (!removed) break;
+    counter.bytes -= measureReplayEvent(removed);
+  }
+}
+
 export function toToolResultOutput(value: unknown): {
   type: "text";
   value: string;
@@ -31,11 +129,37 @@ export function toToolResultOutput(value: unknown): {
   if (typeof value === "string") {
     return { type: "text", value };
   }
+  if (value !== null && typeof value === "object") {
+    const cached = serializedToolOutputs.get(value);
+    if (cached) {
+      return cached;
+    }
+    const serialized = serializeToolResultOutput(value);
+    serializedToolOutputs.set(value, serialized);
+    return serialized;
+  }
+  return serializeToolResultOutput(value);
+}
+
+function serializeToolResultOutput(value: unknown): {
+  type: "text";
+  value: string;
+} {
   try {
     return { type: "text", value: JSON.stringify(value) };
   } catch {
     return { type: "text", value: String(value) };
   }
+}
+
+function trackReplayEventBytes(
+  retryReplayEvents: RetryReplayEvent[],
+  event: RetryReplayEvent,
+): void {
+  const counter = replayEventBytes.get(retryReplayEvents) ?? { bytes: 0 };
+  counter.bytes += measureReplayEvent(event);
+  replayEventBytes.set(retryReplayEvents, counter);
+  boundRetryReplayEvents(retryReplayEvents);
 }
 
 export function maybeCaptureRetryReplayEvent(
@@ -67,7 +191,7 @@ export function maybeCaptureRetryReplayEvent(
       return;
     }
 
-    retryReplayEvents.push({
+    const event: RetryReplayEvent = {
       type: "tool-call",
       toolCallId: record.toolCallId,
       toolName: record.toolName,
@@ -75,7 +199,9 @@ export function maybeCaptureRetryReplayEvent(
         typeof record.input === "object" && record.input !== null
           ? record.input
           : {},
-    });
+    };
+    retryReplayEvents.push(event);
+    trackReplayEventBytes(retryReplayEvents, event);
     return;
   }
 
@@ -94,12 +220,14 @@ export function maybeCaptureRetryReplayEvent(
       return;
     }
 
-    retryReplayEvents.push({
+    const event: RetryReplayEvent = {
       type: "tool-result",
       toolCallId: record.toolCallId,
       toolName: record.toolName,
       output: record.output,
-    });
+    };
+    retryReplayEvents.push(event);
+    trackReplayEventBytes(retryReplayEvents, event);
   }
 }
 
@@ -117,10 +245,12 @@ export function maybeCaptureRetryReplayText(
     return;
   }
 
-  retryReplayEvents.push({
+  const event: RetryReplayEvent = {
     type: "assistant-text",
     text,
-  });
+  };
+  retryReplayEvents.push(event);
+  trackReplayEventBytes(retryReplayEvents, event);
 }
 
 /**

@@ -24,6 +24,7 @@ import { selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { useSelectChat } from "@/hooks/useSelectChat";
 import { useChats } from "@/hooks/useChats";
 import { showError, showSuccess } from "@/lib/toast";
+import { beginNewChat, endNewChat } from "@/lib/new_chat_lock";
 import { useEffect } from "react";
 import { useStreamChat } from "@/hooks/useStreamChat";
 import { useCurrentBranch } from "@/hooks/useCurrentBranch";
@@ -94,12 +95,15 @@ export function ChatHeader({
 
   const handleNewChat = async () => {
     if (appId) {
+      if (!beginNewChat()) return;
       try {
         const chatId = await ipc.chat.createChat({ appId });
         await invalidateChats();
         selectChat({ chatId, appId });
       } catch (error) {
         showError(t("failedCreateChat", { error: (error as any).toString() }));
+      } finally {
+        endNewChat();
       }
     } else {
       navigate({ to: "/" });

@@ -28,6 +28,7 @@ import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { dropdownOpenAtom } from "@/atoms/uiAtoms";
 import { ipc } from "@/ipc/types";
 import { showError, showSuccess } from "@/lib/toast";
+import { beginNewChat, endNewChat } from "@/lib/new_chat_lock";
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -209,6 +210,7 @@ export function ChatList({
   const handleNewChat = async () => {
     // Only create a new chat if an app is selected
     if (selectedAppId) {
+      if (!beginNewChat()) return;
       try {
         // Create a new chat with an empty title for now
         const chatId = await ipc.chat.createChat({ appId: selectedAppId });
@@ -222,6 +224,8 @@ export function ChatList({
       } catch (error) {
         // DO A TOAST
         showError(t("failedCreateChat", { error: (error as any).toString() }));
+      } finally {
+        endNewChat();
       }
     } else {
       // If no app is selected, navigate to home page

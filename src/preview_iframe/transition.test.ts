@@ -16,6 +16,7 @@ import {
   type PreviewIframeCommand,
   type PreviewIframeState,
 } from "./state";
+import { CHUNK_RECOVERY_MAX_ATTEMPTS } from "./chunk_recovery";
 import { transition } from "./transition";
 
 const URL = "http://localhost:3000";
@@ -52,6 +53,7 @@ const EVENTS: readonly PreviewIframeEvent[] = [
 const ERROR_EVENTS: readonly PreviewIframeEvent[] = [
   { type: "IFRAME_ERROR", message: "iframe failed", source: "preview-app" },
   { type: "IFRAME_ERROR", message: "sandbox failed", source: "dyad-app" },
+  { type: "CHUNK_RECOVERY_APPLIED" },
   { type: "SYNC_ERROR", message: "sync failed" },
   { type: "SYNC_RECOVERED" },
   { type: "APP_ERROR", message: "run failed" },
@@ -586,6 +588,55 @@ describe("preview iframe transition", () => {
       expect(sync.state).toBe(errored.state);
       expect(ignoreReasonOf(sync)).toBe("higher-priority-error");
     }
+  });
+
+  // A dev-server restart leaves the preview holding a hashed chunk path the
+  // server no longer serves, and the browser cannot import it. Reloading the
+  // iframe asks for the document again, so the preview recovers by itself —
+  // but only a bounded number of times, or a chunk that never comes back
+  // would reload the iframe forever.
+  it("reloads the iframe for a stale dev-server chunk, and bounds the retries", () => {
+    const staleChunk =
+      "Error Failed to fetch dynamically imported module: http://app-5.localhost:42105/.svelte-kit/generated/client/nodes/0.js";
+
+    const errored = transition(INITIAL_PREVIEW_IFRAME_STATE, {
+      type: "IFRAME_ERROR",
+      message: staleChunk,
+      source: "preview-app",
+    });
+    expect(commandsOf(errored)).toEqual([{ type: "schedule-chunk-recovery" }]);
+
+    const reloaded = transition(errored.state, {
+      type: "CHUNK_RECOVERY_APPLIED",
+    });
+    expect(reloaded.state.iframeEpoch).toBe(1);
+    // The banner outlives the reload: only the new document clears it, so a
+    // reload that never lands still leaves the manual affordances in place.
+    expect(reloaded.state.error?.message).toBe(staleChunk);
+
+    // The same failure reported again before the new document loads still
+    // earns a recovery: the dedupe must not swallow it.
+    const repeated = transition(reloaded.state, {
+      type: "IFRAME_ERROR",
+      message: staleChunk,
+      source: "preview-app",
+    });
+    expect(commandsOf(repeated)).toEqual([{ type: "schedule-chunk-recovery" }]);
+    expect(repeated.state.chunkRecoveryAttempts).toBe(
+      CHUNK_RECOVERY_MAX_ATTEMPTS,
+    );
+
+    // The bound: the next stale chunk is left to the error banner.
+    const exhausted = transition(
+      transition(repeated.state, { type: "CHUNK_RECOVERY_APPLIED" }).state,
+      {
+        type: "IFRAME_ERROR",
+        message: staleChunk,
+        source: "preview-app",
+      },
+    );
+    expect(commandsOf(exhausted)).toEqual([]);
+    expect(exhausted.state.error?.message).toBe(staleChunk);
   });
 
   it("only clears sync-owned errors on recovery and dismisses any source", () => {

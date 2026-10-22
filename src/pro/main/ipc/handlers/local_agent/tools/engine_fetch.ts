@@ -46,6 +46,21 @@ function createCallerCancellationError(cause: unknown): DyadError {
 }
 
 /**
+ * `true` when the failure is the request being aborted.
+ */
+function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const name = (error as { name?: unknown }).name;
+  if (name === "AbortError") {
+    return true;
+  }
+  const code = (error as { code?: unknown }).code;
+  return code === "ABORT_ERR" || code === "20";
+}
+
+/**
  * Fetch wrapper for Dyad engine API calls.
  * Automatically adds Authorization and X-Dyad-Request-Id headers.
  *
@@ -126,6 +141,30 @@ export async function engineFetch(
     }
     return error;
   };
+  /**
+   * A stream failure that is not a tracked abort is an upstream failure: it
+   * must be typed, otherwise it surfaces as an untyped error that is always
+   * reported as a product exception.
+   */
+  const normalizeStreamError = (error: unknown) => {
+    if (abortSource === "timeout") {
+      return new EngineFetchTimeoutError(endpoint, timeoutMs);
+    }
+    if (abortSource === "caller") {
+      return createCallerCancellationError(callerAbortReason);
+    }
+    if (isAbortError(error)) {
+      // Aborted without a tracked source: still a cancellation.
+      return createCallerCancellationError(error);
+    }
+    return new DyadError(
+      `Dyad engine request to ${endpoint} failed while reading the response: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      DyadErrorKind.External,
+      { cause: error },
+    );
+  };
 
   try {
     requestController.signal.throwIfAborted();
@@ -158,7 +197,7 @@ export async function engineFetch(
           controller.enqueue(value);
         } catch (error) {
           cleanup();
-          controller.error(normalizeAbortError(error));
+          controller.error(normalizeStreamError(error));
         }
       },
       async cancel(reason) {
@@ -184,7 +223,22 @@ export async function engineFetch(
       headers: response.headers,
       body: monitoredBody,
       text: consumeText,
-      json: async () => JSON.parse(await consumeText()),
+      json: async () => {
+        // A non-JSON body (e.g. an HTML error page from a proxy) must not
+        // surface as a raw SyntaxError.
+        const text = await consumeText();
+        try {
+          return JSON.parse(text);
+        } catch (error) {
+          throw new DyadError(
+            `Dyad engine returned a response that is not valid JSON: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+            DyadErrorKind.External,
+            { cause: error },
+          );
+        }
+      },
     };
   } catch (error) {
     cleanup();

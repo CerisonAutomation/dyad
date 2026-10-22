@@ -585,6 +585,30 @@ describe("runExploreChatHistorySubagent", () => {
     ).rejects.toThrow("provider exploded");
   });
 
+  it("rethrows a provider failure reported through onError", async () => {
+    vi.spyOn(searchChatsTool, "execute").mockResolvedValue(
+      craftedSearchResultJson(),
+    );
+    mocks.streamText.mockImplementationOnce((options: any) => ({
+      fullStream: (async function* () {
+        await options.tools.search_chats.execute({ query: "auth" });
+        // The AI SDK reports provider failures as an error part instead of
+        // throwing from the iterator, so without an onError callback the run
+        // would end as an evidence-only "nothing found" report.
+        options.onError({ error: new Error("provider stream failed") });
+        yield { type: "text-delta", text: "partial" };
+      })(),
+      textStream: createTextStream([]),
+    }));
+
+    await expect(
+      runExploreChatHistorySubagent({
+        query: "auth decision",
+        ctx: makeAgentContext({ isDyadPro: true }),
+      }),
+    ).rejects.toThrow("provider stream failed");
+  });
+
   it("propagates abort errors without swallowing them into the fallback", async () => {
     vi.spyOn(searchChatsTool, "execute").mockResolvedValue(
       craftedSearchResultJson(),

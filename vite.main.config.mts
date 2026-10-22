@@ -43,6 +43,11 @@ export default defineConfig(({ forgeConfigSelf }) => ({
         "mustardscript",
         "pg",
         "ws",
+        // Keep playwright out of the bundle. Rollup hoists playwright-core's
+        // lazy `require("chromium-bidi/lib/cjs/...")` into the chunk prologue,
+        // which turns an optional require into a fatal MODULE_NOT_FOUND at
+        // import time (chromium-bidi ships no `lib/cjs` path any more).
+        "playwright-core",
       ],
     },
   },

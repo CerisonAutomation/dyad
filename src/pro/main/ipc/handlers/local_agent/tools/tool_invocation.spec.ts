@@ -226,6 +226,29 @@ describe("file mutation policy", () => {
     execGit.mockRestore();
   });
 
+  it("treats a failed Git status as Git-visible instead of failing the edit", async () => {
+    const execGit = vi.spyOn(gitUtils, "execGit").mockResolvedValue({
+      exitCode: 128,
+      stdout: "",
+      stderr: "fatal: not a git repository",
+    } as never);
+    const ctx = {
+      appPath: "/tmp/app",
+      preCommitHookAvailable: true,
+    } as AgentContext;
+
+    await expect(
+      shouldTrackToolFileMutation(
+        tool("write_file"),
+        { path: "src/file.ts" },
+        "success",
+        ctx,
+      ),
+    ).resolves.toBe(true);
+    expect(execGit).toHaveBeenCalledTimes(1);
+    execGit.mockRestore();
+  });
+
   it("classifies deletes and both sides of renames from actual Git state", () => {
     expect(FILE_MUTATION_POLICIES.delete_file).toBe("path");
     expect(FILE_MUTATION_POLICIES.rename_file).toBe("paths");

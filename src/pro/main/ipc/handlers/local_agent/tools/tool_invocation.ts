@@ -109,13 +109,19 @@ async function arePathsGitVisible(
       { maxBuffer: 64_000 },
     );
     if (result.exitCode !== 0) {
-      throw new Error(result.stderr || "git status failed");
+      throw new DyadError(
+        result.stderr || "git status failed",
+        DyadErrorKind.External,
+      );
     }
     const visible = result.stdout.length > 0;
     cache.set(cacheKey, visible);
     return visible;
   } catch {
-    // Failure to classify must not suppress verification of a real edit.
+    // Failure to classify must not suppress verification of a real edit: the
+    // Git failure (including the typed error above) is deliberately swallowed
+    // here and the path is treated as Git-visible, so a real edit is still
+    // verified instead of failing the tool call.
     return true;
   }
 }

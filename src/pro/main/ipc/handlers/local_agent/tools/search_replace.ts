@@ -137,8 +137,16 @@ CRITICAL REQUIREMENTS FOR USING THIS TOOL:
           filePath: operationPath,
           error: result.error ?? "unknown",
         });
-        throw new Error(
-          `Failed to apply search-replace: ${result.error ?? "unknown"}`,
+        // Include the closest match so the agent can correct old_string
+        // instead of retrying the same edit blindly.
+        // This is a model-fixable validation failure (the old_string did not
+        // match the file), not a product bug, so it must not be reported as
+        // an unclassified exception.
+        throw new DyadError(
+          `Failed to apply search-replace to ${args.file_path}: ${result.error ?? "unknown"}${
+            result.diagnostic ? `\n${result.diagnostic}` : ""
+          }\nThe old_string must match the file byte-for-byte, including whitespace and indentation. Re-read ${args.file_path} and use the exact lines from the file, with enough surrounding context to be unique.`,
+          DyadErrorKind.Validation,
         );
       }
 

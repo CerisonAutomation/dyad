@@ -125,7 +125,12 @@ function doesStatementLikelyMutateState(statement: string): boolean {
   // function calls appearing inside literals don't skew the result.
   const scannable = stripSqlStringLiterals(statement);
   if (/^with\b/i.test(scannable)) {
-    return /\b(insert|update|delete|merge)\b/i.test(scannable);
+    // A CTE can hide a mutating call (`WITH x AS (SELECT seed_demo_data())
+    // SELECT * FROM x`), so the unknown-function check applies here too.
+    return (
+      /\b(insert|update|delete|merge)\b/i.test(scannable) ||
+      doesSelectCallUnknownFunction(scannable)
+    );
   }
   const explained = scannable.match(/^explain(?:\s+analyze)?\s+(.+)$/i);
   if (explained) {
@@ -217,6 +222,9 @@ export const executeSqlTool: ToolDefinition<z.infer<typeof executeSqlSchema>> =
           supabaseProjectId: ctx.supabaseProjectId,
           query: args.query,
           organizationSlug: ctx.supabaseOrganizationSlug ?? null,
+          // Forward the turn signal so a cancelled turn does not leave the
+          // statement (and its retry loop) running.
+          signal: ctx.abortSignal,
         });
 
         const settings = readSettings();

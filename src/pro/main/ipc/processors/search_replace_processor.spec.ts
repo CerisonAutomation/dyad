@@ -637,6 +637,37 @@ replaced
     `);
   });
 
+  it("returns a diagnostic with the closest match so callers can self-correct", () => {
+    const original = [
+      "function greet() {",
+      "  console.log('Hello');",
+      "  return true;",
+      "}",
+    ].join("\n");
+
+    const diff = `
+<<<<<<< SEARCH
+function greet() {
+  console.log('Hi there');
+  return true;
+}
+=======
+function greet() {
+  console.log('Hello World');
+  return true;
+}
+>>>>>>> REPLACE
+`;
+
+    const { success, error, diagnostic } = applySearchReplace(original, diff);
+    expect(success).toBe(false);
+    expect(error).toContain("did not match");
+    expect(diagnostic).toContain("3/4");
+    expect(diagnostic).toContain("file lines 1-4");
+    expect(diagnostic).toContain("\"  console.log('Hi there');\"");
+    expect(diagnostic).toContain("\"  console.log('Hello');\"");
+  });
+
   it("logs with JSON escaping to show invisible characters", () => {
     const original = "hello\tworld\ntest";
 

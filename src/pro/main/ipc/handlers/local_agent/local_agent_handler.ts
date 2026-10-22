@@ -60,8 +60,11 @@ import { broadcastToRegisteredWindows } from "@/ipc/utils/window_broadcast";
 import { publishQueryInvalidations } from "@/ipc/utils/query_invalidation_delivery";
 import {
   cancelOrphanedBaseStream,
+  countUnclosedThinkTags,
+  escapeModelAuthoredDyadTags,
   fastTextOutput,
 } from "@/ipc/utils/stream_text_utils";
+import { scrubModelToolMarkup } from "@/ipc/utils/model_tool_markup";
 import {
   estimateToolResultTokens,
   getMaxTokens,
@@ -106,6 +109,12 @@ import {
   type MutationActivityOwner,
 } from "./subagents/mutation_activity_tracker";
 import { buildImplementerFailureReport } from "./subagents/subagent_failure_reporting";
+import {
+  boundSubagentSummariesForParent,
+  MAX_ROOT_TOOL_RESULT_CHARS,
+  MAX_ROOT_TOTAL_TOOL_RESULT_CHARS,
+  pruneSubagentToolResults,
+} from "./subagents/subagent_context_budget";
 import { isImplementerSubagentEnabled } from "@/lib/autoSidekick";
 import { COMPLETED_PLANNING_QUESTIONNAIRE_RESULT_PREFIX } from "./tools/planning_questionnaire";
 
@@ -182,6 +191,7 @@ import {
   maybeAppendRetryReplayForRetry,
 } from "./retry_replay_utils";
 import { ToolRepeatTracker } from "./tool_repeat_tracker";
+import { AI_SDK_MAX_RETRIES } from "./ai_retry_budget";
 import { setChatSummaryTool } from "./tools/set_chat_summary";
 import { computeStreamingPatch } from "@/ipc/utils/stream_text_utils";
 import { userInputRegistry } from "@/user_input/main";
@@ -239,8 +249,26 @@ const RETRYABLE_STREAM_ERROR_PATTERNS = [
 interface ToolStreamingEntry {
   toolName: string;
   argsAccumulated: string;
+  /** Length of `argsAccumulated` at the time of the last preview rebuild. */
+  lastPreviewLength: number;
 }
 const toolStreamingEntries = new Map<string, ToolStreamingEntry>();
+
+/**
+ * How many new argument characters must arrive before the streaming preview
+ * is rebuilt.
+ *
+ * The preview re-parses the WHOLE accumulated argument string on every delta
+ * (`jsonrepair` + `JSON.parse` + an XML escape), so a large `write_file`
+ * body cost O(n^2): a 200 KB body delivered in ~40-byte deltas re-parsed
+ * ~500 KB per delta, roughly 500 MB of string processing plus ~1 GB of
+ * allocation, all inside the stream pump where nothing else can run.
+ *
+ * The preview is a UI nicety - the final card is built from the complete
+ * arguments in the `tool-input-end` handler - so rebuilding it on a coarser
+ * cadence is invisible to the user and keeps the work linear.
+ */
+const TOOL_PREVIEW_REBUILD_MIN_CHARS = 1024;
 
 function getOrCreateStreamingEntry(
   id: string,
@@ -251,6 +279,7 @@ function getOrCreateStreamingEntry(
     entry = {
       toolName,
       argsAccumulated: "",
+      lastPreviewLength: -1,
     };
     toolStreamingEntries.set(id, entry);
   }
@@ -668,6 +697,10 @@ export async function handleLocalAgentStream(
   const maxToolCallSteps =
     settings.maxToolCallSteps ?? DEFAULT_MAX_TOOL_CALL_STEPS;
   let fullResponse = "";
+  // Coalesces the per-delta writes of the streamed response into SQLite.
+  // See `createThrottledResponseWriter` for why the write cannot happen on
+  // every chunk.
+  const responseWriter = createThrottledResponseWriter(placeholderMessageId);
   let streamingPreview = ""; // Temporary preview for current tool, not persisted
   let streamingPreviewToolCallId: string | null = null;
   // Tracks what was last sent to the renderer for the placeholder
@@ -739,7 +772,7 @@ export async function handleLocalAgentStream(
       streamingPreview = "";
       streamingPreviewToolCallId = null;
     }
-    updateResponseInDb(placeholderMessageId, fullResponse);
+    void responseWriter.writeNow(fullResponse);
     sendChunk(fullResponse);
     if (shouldClearPreview) {
       sendPreview("");
@@ -758,7 +791,7 @@ export async function handleLocalAgentStream(
     const separator =
       fullResponse.length > 0 && !fullResponse.endsWith("\n") ? "\n" : "";
     fullResponse = `${fullResponse}${separator}${inlineCompaction}${backupPathNote}\n`;
-    await updateResponseInDb(placeholderMessageId, fullResponse);
+    await responseWriter.writeNow(fullResponse);
   };
 
   const loadChat = async () =>
@@ -902,12 +935,9 @@ export async function handleLocalAgentStream(
   await maybePerformPendingCompaction();
 
   if (abortController.signal.aborted) {
-    await db
-      .update(messages)
-      .set({
-        content: appendCancelledResponseNotice(fullResponse ?? ""),
-      })
-      .where(eq(messages.id, placeholderMessageId));
+    await responseWriter.writeNow(
+      appendCancelledResponseNotice(fullResponse ?? ""),
+    );
     return false;
   }
 
@@ -1451,7 +1481,7 @@ export async function handleLocalAgentStream(
             }),
             maxOutputTokens,
             temperature,
-            maxRetries: 2,
+            maxRetries: AI_SDK_MAX_RETRIES,
             system: systemPrompt,
             messages: sanitizedAttemptMessages,
             tools: allTools,
@@ -1627,6 +1657,28 @@ export async function handleLocalAgentStream(
                 };
               }
 
+              // The step loop re-sends the whole transcript on every step, so a
+              // single oversized tool result (a large file read, a wide grep)
+              // would otherwise be paid for again on every following request.
+              // Cap the tool results the provider actually receives. The root
+              // agent still compacts mid-turn, but only *after* an oversized
+              // payload has already gone out once.
+              const budgetedMessages = pruneSubagentToolResults(
+                result?.messages ?? stepOptions.messages,
+                {
+                  maxToolResultChars: MAX_ROOT_TOOL_RESULT_CHARS,
+                  maxTotalToolResultChars: MAX_ROOT_TOTAL_TOOL_RESULT_CHARS,
+                },
+              );
+              if (
+                budgetedMessages !== (result?.messages ?? stepOptions.messages)
+              ) {
+                result = {
+                  ...(result ?? stepOptions),
+                  messages: budgetedMessages,
+                };
+              }
+
               return result;
             },
             onStepFinish: async (step) => {
@@ -1691,6 +1743,7 @@ export async function handleLocalAgentStream(
               const toolResultTokens = estimateToolResultTokens(
                 step.toolResults ?? [],
                 toolErrors,
+                MAX_ROOT_TOOL_RESULT_CHARS,
               );
               const projectedNextRequestTokens =
                 step.usage.totalTokens + toolResultTokens;
@@ -1760,6 +1813,7 @@ export async function handleLocalAgentStream(
           cancelOrphanedBaseStream(streamResult);
 
           let inThinkingBlock = false;
+          let modelMarkupPending = "";
           let streamErrorFromIteration: unknown;
 
           try {
@@ -1806,14 +1860,22 @@ export async function handleLocalAgentStream(
                   }
                   break;
 
-                case "text-delta":
+                case "text-delta": {
                   passProducedChatText = true;
-                  chunk += part.text;
+                  // A provider that cannot express a tool call natively
+                  // serialises it into the text channel (mangled). Scrub it
+                  // so it never lands in the transcript as garbage.
+                  const scrubbed = scrubModelToolMarkup(part.text, {
+                    pending: modelMarkupPending,
+                  });
+                  modelMarkupPending = scrubbed.pending;
+                  chunk += escapeModelAuthoredDyadTags(scrubbed.emit);
                   maybeCaptureRetryReplayText(
                     activeRetryReplayEvents,
                     part.text,
                   );
                   break;
+                }
 
                 case "reasoning-start":
                   if (!inThinkingBlock) {
@@ -1853,13 +1915,24 @@ export async function handleLocalAgentStream(
                       ? findToolDefinition(entry.toolName)
                       : undefined;
                     if (toolDef?.buildXml) {
-                      const argsPartial = parsePartialJson(
-                        entry.argsAccumulated,
-                      );
-                      const xml = toolDef.buildXml(argsPartial, false);
-                      if (xml) {
-                        streamingPreviewToolCallId = part.id;
-                        ctx.onXmlStream(xml);
+                      // Rebuild the preview on a coarse cadence: re-parsing
+                      // the whole argument string on every delta is quadratic
+                      // in the argument size.
+                      const grownSincePreview =
+                        entry.argsAccumulated.length - entry.lastPreviewLength;
+                      if (
+                        entry.lastPreviewLength < 0 ||
+                        grownSincePreview >= TOOL_PREVIEW_REBUILD_MIN_CHARS
+                      ) {
+                        entry.lastPreviewLength = entry.argsAccumulated.length;
+                        const argsPartial = parsePartialJson(
+                          entry.argsAccumulated,
+                        );
+                        const xml = toolDef.buildXml(argsPartial, false);
+                        if (xml) {
+                          streamingPreviewToolCallId = part.id;
+                          ctx.onXmlStream(xml);
+                        }
                       }
                     }
                   }
@@ -1947,7 +2020,7 @@ export async function handleLocalAgentStream(
 
               if (chunk) {
                 fullResponse += chunk;
-                await updateResponseInDb(placeholderMessageId, fullResponse);
+                responseWriter.schedule(fullResponse);
                 sendChunk(fullResponse);
               }
 
@@ -1971,11 +2044,38 @@ export async function handleLocalAgentStream(
             }
           }
 
+          // Flush markup the scrubber held back (a tag that never completed)
+          // so the tail of the message is not lost.
+          if (modelMarkupPending) {
+            const finalScrub = scrubModelToolMarkup("", {
+              pending: modelMarkupPending,
+              final: true,
+            });
+            modelMarkupPending = "";
+            if (finalScrub.emit) {
+              const flushedText = escapeModelAuthoredDyadTags(finalScrub.emit);
+              fullResponse += flushedText;
+              await responseWriter.writeNow(fullResponse);
+              sendChunk(fullResponse);
+            }
+          }
           // Close thinking block if still open
           if (inThinkingBlock) {
             const closingThinkBlock = "</think>\n";
             fullResponse += closingThinkBlock;
-            await updateResponseInDb(placeholderMessageId, fullResponse);
+            await responseWriter.writeNow(fullResponse);
+            sendChunk(fullResponse);
+            inThinkingBlock = false;
+          }
+
+          // A model can write `<think>` into the text channel (the prompt asks
+          // for it) and leave it open. The renderer then folds the rest of the
+          // message into the Thought card, so the answer disappears. Close
+          // every opening that never got a matching close.
+          const unclosedThinkTags = countUnclosedThinkTags(fullResponse);
+          if (unclosedThinkTags > 0) {
+            fullResponse += "</think>\n".repeat(unclosedThinkTags);
+            await responseWriter.writeNow(fullResponse);
             sendChunk(fullResponse);
           }
           activeRetryReplayEvents = null;
@@ -2274,12 +2374,9 @@ export async function handleLocalAgentStream(
     // Handle cancellation paths where stream processing exits cleanly after abort.
     if (abortController.signal.aborted) {
       if (rootMutationOwner) closeMutationActor(rootMutationOwner.actorRunId);
-      await db
-        .update(messages)
-        .set({
-          content: appendCancelledResponseNotice(fullResponse ?? ""),
-        })
-        .where(eq(messages.id, placeholderMessageId));
+      await responseWriter.writeNow(
+        appendCancelledResponseNotice(fullResponse ?? ""),
+      );
       await clearTodosOnCancel(event, appPath, chat.id, persistedTodos);
       return false; // Cancelled - don't consume quota
     }
@@ -2305,7 +2402,7 @@ export async function handleLocalAgentStream(
     if (implementerOutcomeNotices.length > 0) {
       postTurnXmlParts.push(...implementerOutcomeNotices);
       fullResponse += `\n\n${implementerOutcomeNotices.join("\n\n")}`;
-      await updateResponseInDb(placeholderMessageId, fullResponse);
+      await responseWriter.writeNow(fullResponse);
       sendChunk(fullResponse);
     }
 
@@ -2318,7 +2415,7 @@ export async function handleLocalAgentStream(
       const stepLimitXml = `<dyad-step-limit steps="${totalStepsExecuted}" limit="${maxToolCallSteps}">Automatically paused after ${totalStepsExecuted} tool calls.</dyad-step-limit>`;
       postTurnXmlParts.push(stepLimitXml);
       fullResponse += `\n\n${stepLimitXml}`;
-      await updateResponseInDb(placeholderMessageId, fullResponse);
+      await responseWriter.writeNow(fullResponse);
       sendChunk(fullResponse);
     }
 
@@ -2364,7 +2461,7 @@ export async function handleLocalAgentStream(
         "Your model did not reference the attached file. If this was unintended, try a larger model or paste the contents inline.";
       const warningMessage = `\n\n<dyad-output type="warning" message="${escapeXmlAttr(unreadAttachmentWarning)}">${escapeXmlContent(unreadAttachmentWarning)}</dyad-output>`;
       fullResponse += warningMessage;
-      await updateResponseInDb(placeholderMessageId, fullResponse);
+      await responseWriter.writeNow(fullResponse);
       sendChunk(fullResponse);
       sendTelemetryEvent("sandbox.tool.unused_with_attachment", {
         chatId: req.chatId,
@@ -2493,12 +2590,9 @@ export async function handleLocalAgentStream(
 
     if (abortController.signal.aborted) {
       // Handle cancellation
-      await db
-        .update(messages)
-        .set({
-          content: appendCancelledResponseNotice(fullResponse ?? ""),
-        })
-        .where(eq(messages.id, placeholderMessageId));
+      await responseWriter.writeNow(
+        appendCancelledResponseNotice(fullResponse ?? ""),
+      );
       await clearTodosOnCancel(event, appPath, chat.id, persistedTodos);
       return false; // Cancelled - don't consume quota
     }
@@ -2518,6 +2612,9 @@ export async function handleLocalAgentStream(
     return false; // Error - don't consume quota
   } finally {
     stallWatchdog.stop();
+    // Persist whatever the coalesced writer still had pending, so the stored
+    // assistant message always ends up holding the complete response.
+    await responseWriter.flush();
     await claudeRuntime
       ?.close()
       .catch((error) => logger.error("Claude admission cleanup failed", error));
@@ -2725,6 +2822,86 @@ async function updateResponseInDb(messageId: number, content: string) {
     .catch((err) => logger.error("Failed to update message", err));
 }
 
+/**
+ * How often the persisted assistant response is refreshed while a stream runs.
+ */
+const RESPONSE_DB_WRITE_INTERVAL_MS = 250;
+
+interface ThrottledResponseWriter {
+  /** Queue the latest response text for a (possibly deferred) write. */
+  schedule: (content: string) => void;
+  /**
+   * Write `content` now, in order, and drop any pending older content.
+   * Use this at checkpoints that must be persisted exactly (tool completion,
+   * end of stream, cancellation notices).
+   */
+  writeNow: (content: string) => Promise<void>;
+  /** Write any pending content and wait for in-flight writes to settle. */
+  flush: () => Promise<void>;
+}
+
+/**
+ * Coalesce the response writes that happen while the model streams.
+ *
+ * Rewriting the whole accumulated response to SQLite on every text delta is
+ * quadratic in the response length - a 100 KB answer delivered in token-sized
+ * deltas rewrote ~1.3 GB across ~25 000 separate WAL commits, saturating the
+ * main thread and making the window stop painting mid-answer.
+ *
+ * The renderer already receives the response incrementally, so the persisted
+ * copy only has to stay roughly fresh (for crash recovery and for a second
+ * window watching the chat). Every write goes through this writer so the
+ * persisted content is always the newest one written - a deferred write can
+ * never clobber a cancellation notice or a tool-completion checkpoint.
+ */
+function createThrottledResponseWriter(
+  messageId: number,
+): ThrottledResponseWriter {
+  let pendingContent: string | undefined;
+  let timer: NodeJS.Timeout | undefined;
+  let inFlight: Promise<void> = Promise.resolve();
+
+  const clearTimer = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+  };
+
+  const write = (content: string) => {
+    inFlight = inFlight.then(() => updateResponseInDb(messageId, content));
+    return inFlight;
+  };
+
+  return {
+    schedule(content: string) {
+      pendingContent = content;
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = undefined;
+        const next = pendingContent;
+        pendingContent = undefined;
+        if (next !== undefined) void write(next);
+      }, RESPONSE_DB_WRITE_INTERVAL_MS);
+      timer.unref?.();
+    },
+    async writeNow(content: string) {
+      clearTimer();
+      pendingContent = undefined;
+      await write(content);
+    },
+    async flush() {
+      clearTimer();
+      const next = pendingContent;
+      pendingContent = undefined;
+      if (next !== undefined) {
+        await write(next);
+      }
+      await inFlight;
+    },
+  };
+}
+
 function sendResponseChunk(
   event: IpcMainInvokeEvent,
   chatId: number,
@@ -2853,18 +3030,17 @@ function stepOnlyCalledTool(
 export function buildExplorerSynthesisMessage(
   explorers: SubagentThreadSummary[],
 ): string {
-  const maxReportChars = 100_000;
-  const reports = explorers.map((explorer) => {
+  // Bound the reports before injecting them into the root agent's context:
+  // explorer reports are unbounded in size and one full report per explorer
+  // can crowd out the rest of the conversation.
+  const boundedExplorers = boundSubagentSummariesForParent(explorers);
+  const reports = boundedExplorers.map((explorer) => {
     const rawReport =
       typeof explorer.result?.report === "string"
         ? explorer.result.report
         : "No report was produced.";
-    const report =
-      rawReport.length > maxReportChars
-        ? `${rawReport.slice(0, maxReportChars)}\n[Explorer report truncated]`
-        : rawReport;
     const error = explorer.error ? `\nError: ${explorer.error}` : "";
-    return `### Explorer: ${explorer.taskName}\nStatus: ${explorer.status}${error}\n\n${report}`.replaceAll(
+    return `### Explorer: ${explorer.taskName}\nStatus: ${explorer.status}${error}\n\n${rawReport}`.replaceAll(
       "<",
       "\\u003c",
     );
@@ -2954,6 +3130,7 @@ async function getMcpTools(
                 isDyadPro: ctx.isDyadPro,
                 freeModelMode: ctx.freeModelMode,
                 chatId: ctx.chatId,
+                signal: ctx.abortSignal,
                 serverName: s.name,
                 toolName: name,
                 toolDescription: mcpTool.description,

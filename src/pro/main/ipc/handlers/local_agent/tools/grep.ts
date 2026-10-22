@@ -7,6 +7,7 @@ import {
   escapeXmlContent,
 } from "./types";
 import {
+  assertRgExecutableAvailable,
   getRgExecutablePath,
   MAX_FILE_SEARCH_SIZE,
   RIPGREP_EXCLUDED_GLOBS,
@@ -15,7 +16,7 @@ import {
   DYAD_INTERNAL_RIPGREP_EXCLUDE,
   resolveTargetAppPath,
 } from "./resolve_app_context";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import { DyadError, DyadErrorKind, isDyadError } from "@/errors/dyad_error";
 import { isDotenvFilePath } from "@/utils/dotenv_redaction";
 import log from "electron-log";
 
@@ -77,16 +78,6 @@ interface RipgrepMatch {
   path: string;
   lineNumber: number;
   lineText: string;
-}
-
-class RipgrepError extends Error {
-  constructor(
-    message: string,
-    public readonly stderr: string,
-  ) {
-    super(message);
-    this.name = "RipgrepError";
-  }
 }
 
 function buildGrepAttributes(
@@ -205,6 +196,7 @@ async function runRipgrep({
 
     args.push("--", query, ".");
 
+    assertRgExecutableAvailable();
     const rg = spawnWithBadFdRetry(getRgExecutablePath(), args, {
       cwd: appPath,
     });
@@ -280,14 +272,25 @@ async function runRipgrep({
 
       // rg exits with code 1 when no matches are found; treat as success
       if (code !== 0 && code !== 1) {
-        reject(new RipgrepError(`ripgrep exited with code ${code}`, stderr));
+        reject(
+          new DyadError(
+            `ripgrep exited with code ${code}: ${summarizeRipgrepStderr(stderr)}`,
+            DyadErrorKind.NotFound,
+            { cause: stderr },
+          ),
+        );
         return;
       }
       resolve({ matches: results, stoppedEarly });
     });
 
     rg.on("error", (error) => {
-      reject(error);
+      reject(
+        new DyadError(
+          `ripgrep could not be started: ${error.message}`,
+          DyadErrorKind.NotFound,
+        ),
+      );
     });
   });
 }
@@ -363,13 +366,10 @@ export const grepTool: ToolDefinition<z.infer<typeof grepSchema>> = {
       // retry with literal=true) rather than silently re-running the query as a
       // literal search. This preserves the historical "invalid regex fails"
       // behavior, just with a more actionable message.
-      if (
-        !args.literal &&
-        error instanceof RipgrepError &&
-        isRegexParseError(error.stderr)
-      ) {
+      const ripgrepStderr = getRipgrepStderr(error);
+      if (!args.literal && isRegexParseError(ripgrepStderr)) {
         throw new DyadError(
-          formatRegexParseError(args.query, error.stderr),
+          formatRegexParseError(args.query, ripgrepStderr),
           DyadErrorKind.Validation,
         );
       }
@@ -417,6 +417,22 @@ export const grepTool: ToolDefinition<z.infer<typeof grepSchema>> = {
 
 function isRegexParseError(stderr: string): boolean {
   return stderr.includes("regex parse error");
+}
+
+/**
+ * ripgrep's stderr, carried on the typed error's `cause` so the failure can be
+ * classified (e.g. an invalid regex) without keeping an untyped error class
+ * around.
+ */
+function getRipgrepStderr(error: unknown): string {
+  return isDyadError(error) && typeof error.cause === "string"
+    ? error.cause
+    : "";
+}
+
+function summarizeRipgrepStderr(stderr: string): string {
+  const trimmed = stderr.trim();
+  return trimmed ? trimmed.slice(0, 500) : "no details";
 }
 
 function formatRegexParseError(query: string, stderr: string): string {

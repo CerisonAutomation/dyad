@@ -239,6 +239,7 @@ export function sanitizeToolCallTranscript(
       }
 
       sanitized.push(pairedAssistant);
+      reorderToolMessageInPlace(messages[i + 1], collectedToolResults);
       sanitized.push(
         getCanonicalToolMessage(cleaned[i + 1], collectedToolResults) ??
           ({
@@ -265,6 +266,54 @@ export function sanitizeToolCallTranscript(
   }
 
   return sanitized;
+}
+
+/**
+ * The AI SDK appends tool results in completion order while the assistant
+ * message lists the tool calls in call order. Providers reject that mismatch,
+ * and because the SDK rebuilds its history from the unsanitized response
+ * messages, the same mismatch would be re-detected on every following step.
+ * Reordering the original message in place repairs the SDK's own history.
+ */
+function reorderToolMessageInPlace(
+  message: ModelMessage | undefined,
+  orderedToolResults: ToolResultTranscriptPart[],
+): void {
+  if (message?.role !== "tool" || !Array.isArray(message.content)) {
+    return;
+  }
+
+  const parts = message.content;
+  if (parts.length !== orderedToolResults.length) {
+    return;
+  }
+  if (!parts.every(isToolResultPart)) {
+    return;
+  }
+
+  // The guard above proves every part is a tool result. The SDK's content
+  // type also allows approval responses, which carry no tool call id.
+  const toolResultParts = parts as unknown as ToolResultTranscriptPart[];
+
+  const originalIds = toolResultParts.map((part) => part.toolCallId);
+  const orderedIds = orderedToolResults.map((part) => part.toolCallId);
+  if (originalIds.every((id, index) => id === orderedIds[index])) {
+    return;
+  }
+
+  const partsByToolCallId = new Map<string, ToolResultTranscriptPart>();
+  for (const part of toolResultParts) {
+    partsByToolCallId.set(part.toolCallId, part);
+  }
+
+  const reordered = orderedToolResults
+    .map((part) => partsByToolCallId.get(part.toolCallId))
+    .filter((part): part is ToolResultTranscriptPart => part !== undefined);
+  if (reordered.length !== orderedToolResults.length) {
+    return;
+  }
+
+  toolResultParts.splice(0, toolResultParts.length, ...reordered);
 }
 
 function getCanonicalToolMessage(

@@ -143,6 +143,29 @@ describe("executeSqlTool", () => {
     ).toBe(true);
   });
 
+  it("forwards the turn abort signal to the SQL execution", async () => {
+    // Without the signal, a cancelled turn leaves the statement and its retry
+    // loop running against the project.
+    const controller = new AbortController();
+    await executeSqlTool.execute(
+      {
+        query: "SELECT * FROM users;",
+        description: "lookup users",
+      },
+      {
+        appPath: "/app",
+        supabaseProjectId: "project",
+        supabaseOrganizationSlug: "org",
+        supabaseProviderToolsAvailable: true,
+        abortSignal: controller.signal,
+      } as any,
+    );
+
+    expect(mocks.executeSupabaseSqlMock).toHaveBeenCalledWith(
+      expect.objectContaining({ signal: controller.signal }),
+    );
+  });
+
   it("skips Supabase migration files for non-schema SQL", async () => {
     const result = await executeSqlTool.execute(
       {
@@ -201,6 +224,17 @@ describe("executeSqlTool.shouldTrackMutation", () => {
       false,
     );
     expect(tracks("SELECT max(id), now() FROM users;")).toBe(false);
+  });
+
+  it("counts a CTE that calls an unknown function", () => {
+    // The leading `with` used to skip the unknown-function check, so a
+    // mutating call inside the CTE was never counted.
+    expect(tracks("WITH x AS (SELECT seed_demo_data()) SELECT * FROM x;")).toBe(
+      true,
+    );
+    expect(tracks("WITH x AS (SELECT id FROM users) SELECT * FROM x;")).toBe(
+      false,
+    );
   });
 
   it("counts a SELECT ... INTO as a schema mutation", () => {

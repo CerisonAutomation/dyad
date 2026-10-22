@@ -18,6 +18,11 @@ export interface ImageGenerationResult {
   provider: string;
   width: number;
   height: number;
+  /**
+   * Set when the real provider failed and a placeholder image was returned
+   * instead, so callers can tell the model that no real image was generated.
+   */
+  fallbackReason?: string;
 }
 
 export interface ImageGenerationOptions {
@@ -40,6 +45,7 @@ export async function localImageGeneration(
   const startTime = Date.now();
 
   // Try Pollinations.ai (free, no API key)
+  let providerFailure: string | undefined;
   try {
     const result = await generateWithPollinations(
       prompt,
@@ -52,12 +58,18 @@ export async function localImageGeneration(
     return result;
   } catch (error) {
     logger.warn("Pollinations.ai failed:", error);
+    providerFailure = error instanceof Error ? error.message : String(error);
   }
 
-  // Fallback: Generate placeholder image
+  // Fallback: Generate placeholder image. The failure reason travels with the
+  // result so the caller can tell the model that this is a placeholder rather
+  // than a generated image.
   const result = generatePlaceholderImage(prompt, width, height);
+  result.fallbackReason = providerFailure;
   const elapsed = Date.now() - startTime;
-  logger.log(`Generated placeholder image in ${elapsed}ms`);
+  logger.log(
+    `Generated placeholder image in ${elapsed}ms (provider failed: ${providerFailure})`,
+  );
   return result;
 }
 

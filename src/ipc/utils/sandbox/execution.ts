@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { Capability, StructuredValue } from "mustardscript";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import { DyadError, DyadErrorKind, isDyadError } from "@/errors/dyad_error";
 import { getDyadMediaDir } from "@/ipc/utils/media_path_utils";
 import {
   buildSandboxCapabilitiesWithObserver,
@@ -286,6 +286,22 @@ function createVmRuntimeBudget(timeoutMs: number): {
   };
 }
 
+/**
+ * MustardScript turns any error thrown by a host capability into a runtime
+ * error whose message starts with the thrown error's `name`. Re-throwing a
+ * DyadError under its kind name keeps the failure class recoverable after the
+ * error has crossed the interpreter boundary (otherwise every blocked host
+ * call is indistinguishable from a script bug).
+ */
+function normalizeCapabilityError(error: unknown): unknown {
+  if (!isDyadError(error)) {
+    return error;
+  }
+  const normalized = new Error(error.message);
+  normalized.name = error.kind;
+  return normalized;
+}
+
 function wrapCapabilitiesWithVmBudget(
   capabilities: Record<string, (...args: unknown[]) => unknown>,
   budget: Pick<
@@ -316,10 +332,14 @@ function wrapCapabilitiesWithVmBudget(
             "then" in result &&
             typeof result.then === "function"
           ) {
-            return Promise.resolve(result).finally(() => {
-              hooks.onVmBudgetResume?.();
-              budget.resume();
-            });
+            return Promise.resolve(result)
+              .catch((error: unknown) => {
+                throw normalizeCapabilityError(error);
+              })
+              .finally(() => {
+                hooks.onVmBudgetResume?.();
+                budget.resume();
+              });
           }
           hooks.onVmBudgetResume?.();
           budget.resume();
@@ -327,7 +347,7 @@ function wrapCapabilitiesWithVmBudget(
         } catch (error) {
           hooks.onVmBudgetResume?.();
           budget.resume();
-          throw error;
+          throw normalizeCapabilityError(error);
         }
       },
     ]),
@@ -356,7 +376,7 @@ export async function executeSandboxScriptInProcess(
   let wallClockTimeoutError: DyadError | undefined;
 
   try {
-    const program = new Mustard(params.script);
+    const program = new Mustard(params.script, { lenientMode: true });
     const rawCapabilityMap =
       params.capabilities ??
       buildSandboxCapabilitiesWithObserver(params.appPath, params.onHostCall);

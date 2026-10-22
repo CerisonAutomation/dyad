@@ -182,6 +182,42 @@ describe("listFilesTool", () => {
     });
   });
 
+  it("includes directories in the default listing", async () => {
+    const result = await listFilesTool.execute({}, mockContext);
+
+    expect(result).toContain(" - nested/");
+    // Ignored and hidden directories stay hidden in the default listing.
+    expect(result).not.toContain(" - node_modules/");
+    expect(result).not.toContain(" - .git/");
+    expect(result).not.toContain(" - .dyad/");
+  });
+
+  it("lists subdirectories of a directory that has no direct files", async () => {
+    await fs.promises.mkdir(path.join(testDir, "features", "billing"), {
+      recursive: true,
+    });
+    await fs.promises.writeFile(
+      path.join(testDir, "features", "billing", "index.ts"),
+      "export {};",
+    );
+
+    const result = await listFilesTool.execute(
+      { directory: "features" },
+      mockContext,
+    );
+
+    expect(result).toContain(" - features/billing/");
+  });
+
+  it("throws a not-found error when the directory does not exist", async () => {
+    await expect(
+      listFilesTool.execute({ directory: "does-not-exist" }, mockContext),
+    ).rejects.toMatchObject({
+      kind: DyadErrorKind.NotFound,
+      message: "Directory not found: does-not-exist",
+    });
+  });
+
   it("caps returned paths at 1000", async () => {
     const generatedDir = path.join(testDir, "generated");
     await fs.promises.mkdir(generatedDir);

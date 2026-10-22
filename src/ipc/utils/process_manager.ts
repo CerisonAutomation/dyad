@@ -15,6 +15,8 @@ import { endRecordingForApp } from "../services/recording_registry";
 import type { AppRunInvocationRef, PreviewAuthStatus } from "@/app_run/state";
 import type { AppRuntimeOutput } from "@/ipc/types/app_runtime";
 import { killProcessTreeSync } from "./kill_process_tree_sync";
+import { releasePreviewBrowserForApp } from "./preview_browser_cleanup";
+import { releaseLogs } from "@/lib/log_store";
 import type { PreviewAuthTarget } from "../services/preview_auth_target";
 
 const logger = log.scope("process_manager");
@@ -318,6 +320,11 @@ export async function stopAppByInfo(
     appInfo.cloudLogAbortController?.abort();
     appInfo.cloudLogAbortController = undefined;
     unregisterRunningCloudSandbox({ appId });
+    // The stopped app no longer has a preview to drive and no console to read:
+    // release both so a long session does not retain a Chromium process and a
+    // log buffer per app that was ever run.
+    releasePreviewBrowserForApp(appId);
+    releaseLogs(appId);
     runningApps.delete(appId);
   } catch (error) {
     // A failed cloud teardown retains the running app. Drain the cancelled
@@ -360,6 +367,8 @@ export function removeAppIfCurrentProcess(
     currentAppInfo.cloudLogAbortController = undefined;
     stopCloudSandboxFileSync(appId);
     unregisterRunningCloudSandbox({ appId });
+    releasePreviewBrowserForApp(appId);
+    releaseLogs(appId);
     runningApps.delete(appId);
     logger.info(
       `Removed app ${appId} (processId ${currentAppInfo.processId}) from running map. Current size: ${runningApps.size}`,

@@ -15,7 +15,20 @@ type TruncationReason =
   | "byte-budget"
   | "binary-content"
   | "circular-reference"
+  | "depth-limit"
   | "unreadable-property";
+
+// MCP servers are untrusted, so a result can be arbitrarily deep. The byte
+// budget alone does not bound recursion: a narrow-but-deep payload (thousands
+// of nested objects) exhausts the JS stack before it exhausts the budget and
+// the RangeError is swallowed into a generic "unreadable property". Cap the
+// depth explicitly so the walk always terminates with a clear reason.
+const MAX_SANITIZE_DEPTH = 64;
+const DEPTH_LIMIT_PLACEHOLDER = "[omitted: MCP result nested too deeply]";
+const DEPTH_LIMIT_PLACEHOLDER_BYTES = Buffer.byteLength(
+  JSON.stringify(DEPTH_LIMIT_PLACEHOLDER),
+  "utf8",
+);
 
 interface SanitizeState {
   omittedItems: number;
@@ -127,6 +140,7 @@ function sanitizeNode(
   input: unknown,
   state: SanitizeState,
   maxJsonBytes: number,
+  depth = 0,
 ): SanitizedNode {
   if (input === null) return { value: null, jsonBytes: 4 };
   if (typeof input === "boolean") {
@@ -138,7 +152,7 @@ function sanitizeNode(
     return { value, jsonBytes: Buffer.byteLength(serialized, "utf8") };
   }
   if (typeof input === "bigint") {
-    return sanitizeNode(`${input.toString()}n`, state, maxJsonBytes);
+    return sanitizeNode(`${input.toString()}n`, state, maxJsonBytes, depth);
   }
   if (typeof input === "string") {
     const prefix = takeJsonStringPrefix(input, Math.max(2, maxJsonBytes));
@@ -153,6 +167,15 @@ function sanitizeNode(
     return { value: null, jsonBytes: 4 };
   }
 
+  if (depth > MAX_SANITIZE_DEPTH) {
+    markTruncated(state, "depth-limit");
+    state.omittedItems += 1;
+    return {
+      value: DEPTH_LIMIT_PLACEHOLDER,
+      jsonBytes: DEPTH_LIMIT_PLACEHOLDER_BYTES,
+    };
+  }
+
   if (isBinary(input)) {
     markTruncated(state, "binary-content");
     return sanitizeNode(
@@ -164,6 +187,7 @@ function sanitizeNode(
       },
       state,
       maxJsonBytes,
+      depth + 1,
     );
   }
 
@@ -173,6 +197,7 @@ function sanitizeNode(
       "[omitted: circular MCP result reference]",
       state,
       maxJsonBytes,
+      depth,
     );
   }
 
@@ -189,7 +214,7 @@ function sanitizeNode(
           markTruncated(state, "byte-budget");
           break;
         }
-        const child = sanitizeNode(input[index], state, remaining);
+        const child = sanitizeNode(input[index], state, remaining, depth + 1);
         if (child.jsonBytes > remaining) {
           state.omittedItems += input.length - index;
           markTruncated(state, "byte-budget");
@@ -232,7 +257,7 @@ function sanitizeNode(
           propertyValue = "[omitted: unreadable MCP result property]";
           markTruncated(state, "unreadable-property");
         }
-        const child = sanitizeNode(propertyValue, state, remaining);
+        const child = sanitizeNode(propertyValue, state, remaining, depth + 1);
         if (child.jsonBytes > remaining) {
           state.omittedItems += 1;
           markTruncated(state, "byte-budget");

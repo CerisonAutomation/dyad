@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import log from "electron-log";
 import { AgentTodoSchema } from "@/ipc/types";
+import { DyadError, DyadErrorKind, isDyadError } from "@/errors/dyad_error";
 import type { Todo } from "./tools/types";
 
 const logger = log.scope("todo_persistence");
@@ -25,6 +26,10 @@ export function getTodosFilePath(appPath: string, chatId: number): string {
  * Persist the current todos list to disk.
  *
  * Creates the `.dyad/todos/` directory if it does not exist.
+ *
+ * Throws a {@link DyadError} when the write fails: the caller must not
+ * report a successful update for todos that never reached disk, because the
+ * next turn would reload a stale list.
  */
 export async function saveTodos(
   appPath: string,
@@ -42,6 +47,14 @@ export async function saveTodos(
     await fs.promises.writeFile(filePath, data, "utf-8");
   } catch (err) {
     logger.warn("Failed to save todos:", err);
+    if (isDyadError(err)) {
+      throw err;
+    }
+    throw new DyadError(
+      `Failed to save todos to ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
+      DyadErrorKind.Internal,
+      { cause: err },
+    );
   }
 }
 

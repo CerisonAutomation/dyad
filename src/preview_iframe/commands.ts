@@ -1,6 +1,8 @@
 import type { createStore } from "jotai";
 import { selectedComponentsPreviewAtom } from "@/atoms/previewAtoms";
+import { systemClock, type Clock } from "@/state_machines/clock";
 import type { PreviewIframeCommandRunner } from "./controller";
+import { CHUNK_RECOVERY_DELAY_MS } from "./chunk_recovery";
 import type { PreviewIframeEvent, PreviewIframePostMessage } from "./state";
 
 type JotaiStore = ReturnType<typeof createStore>;
@@ -22,6 +24,7 @@ export interface PreviewIframeCommandAdapter extends PreviewIframeCommandRunner 
 
 export function createPreviewIframeCommandAdapter(
   store: JotaiStore,
+  clock: Clock = systemClock,
 ): PreviewIframeCommandAdapter {
   const targets = new Map<number, () => PreviewIframeTarget | null>();
 
@@ -43,6 +46,16 @@ export function createPreviewIframeCommandAdapter(
       return targets.get(appId)?.() != null;
     },
     execute(appId, command, emit) {
+      if (command.type === "schedule-chunk-recovery") {
+        // The reload waits so a dev server that is still coming back can
+        // answer it. The event goes back to the controller that armed it, so a
+        // preview disposed in the meantime simply ignores it.
+        clock.schedule(
+          () => emit({ type: "CHUNK_RECOVERY_APPLIED" }),
+          CHUNK_RECOVERY_DELAY_MS,
+        );
+        return;
+      }
       if (command.message.type !== "restore-overlays") {
         post(appId, command.message);
         return;

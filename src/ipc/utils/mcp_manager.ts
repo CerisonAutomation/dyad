@@ -55,6 +55,19 @@ export class McpListToolsTimeoutError extends DyadError {
   }
 }
 
+/**
+ * The MCP SDK closes a client when its transport dies (stdio child exits,
+ * socket drops) and then refuses every request with "Attempted to send a
+ * request from a closed client". The SDK keeps that state private, so probe it.
+ */
+function isClosedMcpClient(client: MCPClient): boolean {
+  return (client as unknown as { isClosed?: boolean }).isClosed === true;
+}
+
+function isClosedClientError(error: unknown): boolean {
+  return error instanceof Error && /closed client/i.test(error.message);
+}
+
 export class McpManager {
   private static _instance: McpManager;
   static get instance(): McpManager {
@@ -75,7 +88,12 @@ export class McpManager {
     }
 
     const existing = this.clients.get(serverId);
-    if (existing) return existing;
+    if (existing) {
+      if (!isClosedMcpClient(existing)) return existing;
+      // The transport died and the SDK closed the client. Handing it out
+      // again would fail every call, so drop it and connect a fresh one.
+      this.clients.delete(serverId);
+    }
 
     const existingInitialization = this.initializations.get(serverId);
     if (existingInitialization) return existingInitialization.promise;
@@ -136,7 +154,25 @@ export class McpManager {
     }: { timeoutMs?: number; signal?: AbortSignal } = {},
   ): Promise<McpToolSet> {
     signal?.throwIfAborted();
-    const load = this.getClient(serverId).then((client) => client.tools());
+
+    const attempt = async (): Promise<McpToolSet> => {
+      const load = this.getClient(serverId).then((client) => client.tools());
+      // Keep a late rejection after timeout/abort from going unhandled.
+      load.catch(() => undefined);
+      try {
+        return await load;
+      } catch (error) {
+        if (!isClosedClientError(error)) throw error;
+        // The transport died between connecting and listing. Drop the dead
+        // client and try once more with a fresh one.
+        this.clients.delete(serverId);
+        const retry = this.getClient(serverId).then((client) => client.tools());
+        retry.catch(() => undefined);
+        return await retry;
+      }
+    };
+
+    const load = attempt();
     // Keep a late rejection after timeout/abort from going unhandled.
     load.catch(() => undefined);
 

@@ -1,4 +1,19 @@
+import {
+  COMMUNICATION_BLOCK,
+  ENGINEERING_DISCIPLINE_BLOCK,
+  REACT_GUIDANCE_BLOCK,
+} from "./agent_discipline_prompt";
+import { buildSkillsSection } from "./skill_catalog_prompt";
+
 export const PLAN_MODE_SYSTEM_PROMPT = `
+${ENGINEERING_DISCIPLINE_BLOCK}
+
+${REACT_GUIDANCE_BLOCK}
+
+${COMMUNICATION_BLOCK}
+
+[[SKILLS]]
+
 <role>
 You are Dyad Plan Mode, an AI planning assistant specialized in gathering requirements and creating detailed implementation plans for software changes. You operate in a collaborative, exploratory mode focused on understanding before building.
 </role>
@@ -117,10 +132,20 @@ Use this context to inform your implementation plan and ensure consistency with 
 export function constructPlanModePrompt(
   aiRules: string | undefined,
   themePrompt?: string,
+  options?: {
+    /**
+     * Whether this conversation is running the Replica workflow. The pack is
+     * a staged project, so it is carried for the whole conversation rather
+     * than for the turn that happened to mention a clone.
+     */
+    isCloneWorkflow?: boolean;
+  },
 ): string {
   let prompt = PLAN_MODE_SYSTEM_PROMPT.replace(
     "[[AI_RULES]]",
     aiRules ?? DEFAULT_PLAN_AI_RULES,
+  ).replace("[[SKILLS]]", () =>
+    buildSkillsSection(options?.isCloneWorkflow === true),
   );
 
   if (themePrompt) {

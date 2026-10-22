@@ -2,7 +2,7 @@ import { z } from "zod";
 import log from "electron-log";
 import { ToolDefinition, escapeXmlContent, AgentContext } from "./types";
 import { localWebFetch } from "./local_web_fetch";
-import { assertNotPrivateIp } from "./network_utils";
+import { assertNotPrivateIpResolved } from "./network_utils";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 
 const logger = log.scope("web_crawl");
@@ -48,17 +48,28 @@ Pages are fetched with the same protections as \`web_fetch\`, so private and
 internal addresses (localhost, link-local, RFC1918) are refused.
 `;
 
-/** Extract absolute http(s) links from fetched content. */
-function extractLinks(content: string, _baseUrl: string): string[] {
+/**
+ * Extract links from the page's raw HTML.
+ *
+ * The extracted text has every tag removed, so the `href`s only exist in the
+ * markup: scanning the text finds no link at all and the crawl never leaves
+ * the first page. Relative hrefs are resolved against the page URL.
+ */
+function extractLinks(html: string, baseUrl: string): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
-  const pattern = /https?:\/\/[^\s"'<>)\]]+/g;
+  const pattern = /<a\b[^>]*?\bhref\s*=\s*["']?([^"'\s>]+)/gi;
   let match: RegExpExecArray | null;
-  while ((match = pattern.exec(content)) && out.length < MAX_LINKS_PER_PAGE) {
+  while ((match = pattern.exec(html)) && out.length < MAX_LINKS_PER_PAGE) {
+    const href = (match[1] ?? "").trim();
+    if (!href || href.startsWith("#")) continue;
     let resolved: string;
     try {
-      resolved = new URL(match[0]).toString();
+      resolved = new URL(href, baseUrl).toString();
     } catch {
+      continue;
+    }
+    if (!resolved.startsWith("http://") && !resolved.startsWith("https://")) {
       continue;
     }
     if (seen.has(resolved)) continue;
@@ -71,8 +82,9 @@ function extractLinks(content: string, _baseUrl: string): string[] {
 async function crawl(
   startUrl: string,
   maxPages: number,
+  abortSignal?: AbortSignal,
 ): Promise<z.infer<typeof webCrawlResponseSchema>> {
-  await assertNotPrivateIp(startUrl);
+  await assertNotPrivateIpResolved(startUrl);
   const root = new URL(startUrl);
   const visited = new Set<string>();
   const queue: string[] = [startUrl];
@@ -88,8 +100,14 @@ async function crawl(
       page = await localWebFetch(next, {
         maxLength: MAX_CONTENT_PER_PAGE,
         timeout: FETCH_TIMEOUT_MS,
+        abortSignal,
       });
     } catch (error) {
+      // A cancelled turn must abort the crawl instead of walking the rest of
+      // the queue against a signal the caller already abandoned.
+      if ((error as { kind?: string })?.kind === DyadErrorKind.UserCancelled) {
+        throw error;
+      }
       logger.warn(`crawl skipped ${next}:`, (error as Error).message);
       continue;
     }
@@ -100,7 +118,7 @@ async function crawl(
     );
 
     if (visited.size < maxPages) {
-      for (const link of extractLinks(page.content, page.url || next)) {
+      for (const link of extractLinks(page.html ?? "", page.url || next)) {
         // Stay on the starting host: a crawl that wanders off-site is usually
         // an accident, and it multiplies the fetch cost.
         try {
@@ -132,7 +150,7 @@ export const webCrawlTool: ToolDefinition = {
   execute: async (args, ctx: AgentContext) => {
     ctx.onXmlStream(`<dyad-web-crawl url="${escapeXmlContent(args.url)}">`);
     try {
-      const result = await crawl(args.url, args.maxPages ?? 1);
+      const result = await crawl(args.url, args.maxPages ?? 1, ctx.abortSignal);
       ctx.onXmlComplete(`<dyad-web-crawl url="${escapeXmlContent(args.url)}">`);
       return result.markdown ?? "";
     } catch (error) {
@@ -140,6 +158,12 @@ export const webCrawlTool: ToolDefinition = {
       ctx.onXmlComplete(
         `<dyad-web-crawl url="${escapeXmlContent(args.url)}" error="${escapeXmlContent(message)}" />`,
       );
+      // An already-classified failure (validation, not found, cancellation)
+      // must keep its kind: re-wrapping it as `External` would flip the
+      // telemetry filtering.
+      if (error instanceof DyadError) {
+        throw error;
+      }
       throw new DyadError(
         `Web crawl failed: ${message}`,
         DyadErrorKind.External,

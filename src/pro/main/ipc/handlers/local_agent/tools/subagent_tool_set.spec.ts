@@ -10,6 +10,9 @@ vi.mock("@/main/settings", () => ({
 import "../tool_definitions";
 import {
   buildSubagentToolSet,
+  SUBAGENT_EXPLORER_TOOL_NAMES,
+  SUBAGENT_IMPLEMENTER_TOOL_NAMES,
+  subagentToolNamesForPersona,
   validateSubagentAllowedToolNames,
 } from "./subagent_tools";
 import type { AgentContext } from "./types";
@@ -93,5 +96,62 @@ describe("sub-agent tool set", () => {
     expect(names.has("read_file")).toBe(true);
     expect(names.has("write_file")).toBe(false);
     expect(names.has("search_replace")).toBe(false);
+  });
+});
+
+describe("sub-agent tool set per persona", () => {
+  it("gives the Explorer structural search but no browser and no build tools", () => {
+    const names = subagentToolNamesForPersona("explorer");
+
+    expect(names).toContain("code_map");
+    expect(names).toContain("ast_grep_search");
+    expect(names).not.toContain("preview_browser");
+    expect(names).not.toContain("run_type_checks");
+    expect(names).not.toContain("write_file");
+  });
+
+  it("gives the Implementer the tools its own prompt requires", () => {
+    const names = subagentToolNamesForPersona("implementer");
+
+    expect(names).toContain("code_map");
+    expect(names).toContain("ast_grep_search");
+    expect(names).toContain("preview_browser");
+  });
+
+  it("keeps research tools with the Explorer, not the Implementer", () => {
+    const researchTools = [
+      "search_chats",
+      "read_chat",
+      "web_search",
+      "web_crawl",
+      "web_fetch",
+    ];
+
+    for (const name of researchTools) {
+      expect(subagentToolNamesForPersona("explorer")).toContain(name);
+      expect(subagentToolNamesForPersona("implementer")).not.toContain(name);
+    }
+  });
+
+  it("exposes the structural search tools to both personas", () => {
+    expect(toolNamesFor("explorer").has("code_map")).toBe(true);
+    expect(toolNamesFor("explorer").has("ast_grep_search")).toBe(true);
+    expect(toolNamesFor("implementer").has("code_map")).toBe(true);
+    expect(toolNamesFor("implementer").has("ast_grep_search")).toBe(true);
+  });
+
+  it("keeps build tools away from the Explorer", () => {
+    expect(toolNamesFor("explorer").has("run_type_checks")).toBe(false);
+  });
+
+  it("exports one allowlist per persona", () => {
+    expect(SUBAGENT_EXPLORER_TOOL_NAMES).not.toContain("write_file");
+    expect(SUBAGENT_IMPLEMENTER_TOOL_NAMES).toContain("write_file");
+    expect(subagentToolNamesForPersona("explorer")).toBe(
+      SUBAGENT_EXPLORER_TOOL_NAMES,
+    );
+    expect(subagentToolNamesForPersona("implementer")).toBe(
+      SUBAGENT_IMPLEMENTER_TOOL_NAMES,
+    );
   });
 });
