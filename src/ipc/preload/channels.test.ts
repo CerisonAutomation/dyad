@@ -12,6 +12,7 @@ import {
   coolifySetupEvents,
 } from "../types/coolify_setup";
 import { cloudflareContracts } from "../types/cloudflare";
+import { selfHealContracts, selfHealEvents } from "../types/self_heal";
 import {
   VALID_INVOKE_CHANNELS,
   VALID_RECEIVE_CHANNELS,
@@ -88,6 +89,17 @@ describe("cloudflare preload channels", () => {
     // running app, as "Invalid channel", the first time the tab is used.
     for (const contract of Object.values(cloudflareContracts)) {
       expect(VALID_INVOKE_CHANNELS).toContain(contract.channel);
+    }
+  });
+});
+
+describe("self-heal preload channels", () => {
+  it("allows every self-heal invoke and receive contract", () => {
+    for (const contract of Object.values(selfHealContracts)) {
+      expect(VALID_INVOKE_CHANNELS).toContain(contract.channel);
+    }
+    for (const event of Object.values(selfHealEvents)) {
+      expect(VALID_RECEIVE_CHANNELS).toContain(event.channel);
     }
   });
 });
