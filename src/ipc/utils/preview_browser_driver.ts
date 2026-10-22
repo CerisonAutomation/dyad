@@ -196,6 +196,14 @@ export async function previewConsole(appId: number) {
  * Screenshots are returned as a data URL and saved through the same path the
  * test-runner uses, so the agent can attach them without a new transport.
  */
+/**
+ * The screenshot travels as a TEXT tool result, so its size is paid for
+ * repeatedly: it is retained in the SDK step state, the persisted transcript
+ * and every later request of the turn. Cap it so a single retina PNG cannot
+ * dominate the context window.
+ */
+const MAX_PREVIEW_SCREENSHOT_CHARS = 60_000;
+
 export async function previewScreenshot(appId: number) {
   const resolved = await currentPage(appId);
   if (!resolved) return NO_PREVIEW_MESSAGE;
@@ -203,7 +211,13 @@ export async function previewScreenshot(appId: number) {
     type: "png",
     fullPage: false,
   })) as unknown as string;
-  return `data:image/png;base64,${dataUrl.toString().replace(/^data:image\/png;base64,/, "")}`;
+  const dataUrlWithPrefix = `data:image/png;base64,${dataUrl
+    .toString()
+    .replace(/^data:image\/png;base64,/, "")}`;
+  if (dataUrlWithPrefix.length > MAX_PREVIEW_SCREENSHOT_CHARS) {
+    return `Screenshot omitted: the image data (${dataUrlWithPrefix.length} characters) exceeds the ${MAX_PREVIEW_SCREENSHOT_CHARS}-character context budget.`;
+  }
+  return dataUrlWithPrefix;
 }
 
 async function describePage(page: any, url: string) {
