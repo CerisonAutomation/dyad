@@ -88,29 +88,285 @@ Work the stages in order. Each stage reads what the previous one wrote and hands
 /** Stage 1: Recon. */
 export const REPLICA_RECON_BLOCK = `<replica_recon>
 **1. Recon (\`replica/recon.md\`, \`replica/features.csv\`, \`replica/screens/\`)**
-Reverse-engineer the app into a map. Everything else builds from this, so take the time.
-- Scope first: ask which app and platform (web, iOS, Android, desktop), which slice ("All of Notion" is not a project; "Notion's pages, blocks and sharing" is - default to the core loop, the one flow users pay for), and who it is for. Propose answers and get a yes.
-- Build a sources table first, with a URL on every row, in order of value: help center/docs (the most complete feature list there is, and the settings), pricing page (which features matter - they gate them), changelog (what the team thinks is important), app store listing (screenshots of every key screen), public walkthrough videos (real flows, click by click), marketing site (the core loop in their words), the user's own account (the real thing, every state, driven by the user), public API docs (the data model, almost for free).
-- Screen inventory: one row per screen, stable IDs S01, S02..., with route, purpose, key components, and states seen. States matter - empty, loading, filled, error, permission denied, mobile. An empty state you did not record is an empty state you will not build.
-- User flows: F01, F02..., each a goal and the screens it passes through, plus its edge cases. Count the clicks on the happy path; it becomes the number to beat.
-- Components: every repeated UI part - buttons, inputs, date pickers, modals, tables, toasts, nav. Name, variants, states, which screens use it.
-- Inferred data model: entities, fields and relationships, each with its evidence and a confidence (high/medium/low). Mark guesses as guesses.
-- Feature matrix in \`replica/features.csv\` (columns: feature, area, priority, original, clone, notes). Priority is must / should / could. \`clone\` starts at \`no\` for every row and is filled in during the build.
-- What cannot be cloned: list it honestly as \`skip\` rows with a reason - licensed content, the network and its users, data the app owns, partner deals, hardware, regulated licences. "Clone any app" means the features and the flow, not what the app owns.
-- Size it: screens, flows, entities, and the hard parts (realtime, sync, payments, calendar or email integrations, offline). Give a size - S (a weekend), M (a few weeks), L (a quarter), XL (rescope it). No promises of a perfect clone.
-- Hand off: a five-line summary - the core loop, screen and flow counts, the three hardest parts, what is out of scope.
+
+Reverse-engineer the app into a map: the screens, the flows, the components and the data model. Everything else in the pack builds from what this stage writes, so take the time here.
+
+Output goes in the user's project:
+
+\`\`\`
+replica/recon.md        the recon map
+replica/features.csv    the feature matrix
+replica/screens/        reference screenshots of the original. Never shipped.
+\`\`\`
+
+The pack's own templates for this stage are \`replica-recon/recon-map.md\` (the recon map skeleton) and \`replica-recon/features.csv\` (the matrix header and worked rows), in the \`replica-skill\` pack - the installed skills live under \`~/.claude/skills/replica-recon/\`, and the pack checkout sits beside the project. Both are reproduced below, so this stage works with or without the pack.
+
+## The rules, before anything else
+
+This stage rebuilds **functionality and UX patterns**, clean-room style. It studies what the app does and how a user moves through it. It does not take anything the app owns.
+
+- **Public sources and the user's own account only.** Never log into an account that is not the user's, never ask for a password, never get past a paywall or a login by any trick.
+- **Reading, not scraping.** No crawlers, no bulk downloads, no loops. If a browser tool is connected to the user's own browser, read pages at human speed with the user present.
+- **No source code, no private APIs.** Do not read or save the app's JavaScript bundles, decompile its binary, or log its network calls to copy endpoints. Public API docs are fine to read.
+- **Check the terms.** Some products' terms forbid using an account to build a competing product. If the user's account is under terms like that, say so and work from public sources only.
+- **Screenshots are reference.** They live in \`replica/screens/\`, are used to compare layouts, and never go into the clone.
+
+## Step 1: scope
+
+Ask three things, or propose answers and get a yes:
+
+1. **Which app, which platform.** Web, iOS, Android, desktop.
+2. **Which slice.** "All of Notion" is not a project. "Notion's pages, blocks and sharing" is. Default to the core loop: the one flow users pay for.
+3. **Who it is for.** The user's own business, a niche, a product to sell.
+
+## Step 2: list the sources
+
+Build a sources table first, with a URL on every row. In order of value:
+
+| source | what it gives you |
+| --- | --- |
+| help center / docs | the most complete feature list there is, and the settings |
+| pricing page | which features matter (they gate them) |
+| changelog | what was added recently, what the team thinks is important |
+| app store listing | screenshots of every key screen, the pitch, ratings |
+| public walkthrough videos | real flows, click by click |
+| marketing site | positioning, the core loop in their words |
+| the user's own account | the real thing, every state, driven by the user |
+| public API docs | the data model, almost for free |
+
+## Step 3: screen inventory
+
+One row per screen. IDs are stable: S01, S02... Every other file refers to them.
+
+\`ID | screen | route or how you get there | purpose | key components | states seen\`
+
+States matter: empty, loading, filled, error, permission denied, mobile. An empty state you did not record is an empty state you will not build.
+
+## Step 4: user flows
+
+F01, F02... Each one is a goal and the screens it passes through:
+
+\`\`\`
+F01 Guest books a meeting
+    S07 booking page -> S08 pick a time -> S09 details form -> S10 confirmed
+    edge: no slots this week, time zone differs, slot taken while filling the form
+\`\`\`
+
+Count the clicks on the happy path. It becomes the number to beat.
+
+## Step 5: components
+
+Every repeated UI part: buttons, inputs, date pickers, modals, tables, toasts, nav. Name, variants, states, which screens use it. This becomes replica-design's component list.
+
+## Step 6: inferred data model
+
+Entities, fields and relationships, each with its evidence and a confidence:
+
+\`\`\`
+Booking  id, event_type_id, start_at, end_at, guest_name, guest_email,
+         status (confirmed | cancelled | rescheduled), answers (json)
+         evidence: S09 form fields, S10 confirmation, help article "Cancel a booking"
+         confidence: high
+\`\`\`
+
+Mark guesses as guesses. replica-architect turns this into a real schema.
+
+## Step 7: feature matrix
+
+Write \`replica/features.csv\` (columns: feature, area, priority, original, clone, notes). Priority is must / should / could. \`clone\` starts at \`no\` for every row and gets filled in during the build. replica-diff scores it.
+
+The header row, and what each column means:
+
+\`\`\`
+feature,area,priority,original,clone,notes
+\`\`\`
+
+- \`feature\`: what the original app does, in one line.
+- \`area\`: the part of the product it belongs to (onboarding, booking page, payments, notifications...).
+- \`priority\`: must, should or could.
+- \`original\`: yes for a feature the original has, no for one you are adding.
+- \`clone\`: no, partial, yes or skip - filled in during the build.
+- \`notes\`: why it is partial, why it is skipped, or what is missing.
+
+## Step 8: what cannot be cloned
+
+List it honestly, as \`skip\` rows with a reason: licensed content (a music catalogue, a stock library), the network and its users, data the app owns, partner deals, hardware, regulated licences (banking, health). "Clone any app" means the features and the flow, not what the app owns.
+
+## Step 9: size it
+
+Screens, flows, entities, and the hard parts (realtime, sync, payments, calendar or email integrations, offline). Give a size: S (a weekend), M (a few weeks), L (a quarter), XL (rescope it). No promises of a perfect clone.
+
+## The shape of \`replica/recon.md\`
+
+Write the map with these sections, in this order. The pack's template is \`replica-recon/recon-map.md\`; this is the same skeleton.
+
+\`\`\`
+# Recon map: {{app}} ({{platform}})
+
+Scope: {{the slice being cloned}}
+For: {{who the clone is for}}
+Date: {{YYYY-MM-DD}}
+
+## Sources
+| # | source | URL | notes |
+
+## Core loop
+{{one sentence: the thing users pay for}}
+
+## Screens
+| ID | screen | route / how to reach | purpose | key components | states seen |
+
+## Flows
+F01 {{goal}}
+    S01 -> S02 -> S03
+    happy path clicks: {{n}}
+    edge: {{cases}}
+
+## Components
+| component | variants | states | used on |
+
+## Inferred data model
+{{Entity}}  {{fields}}
+            evidence: {{screen IDs, help articles}}
+            confidence: high | medium | guess
+Relationships: {{User 1-n EventType, EventType 1-n Booking, ...}}
+
+## Feature matrix
+See \`features.csv\`. Must: {{n}}, should: {{n}}, could: {{n}}, skip: {{n}}.
+
+## Out of scope (cannot or should not be cloned)
+- {{licensed content, the network, partner deals, ...}}
+
+## Size
+Screens {{n}}, flows {{n}}, entities {{n}}. Hard parts: {{list}}. Size: {{S|M|L|XL}}.
+\`\`\`
+
+## Output
+
+\`replica/recon.md\` and \`replica/features.csv\`, then a five-line summary: the core loop, screen and flow counts, the three hardest parts, what is out of scope, and the next step: \`/replica-architect\`.
 </replica_recon>`;
 
 /** Stage 2: Architect. */
 export const REPLICA_ARCHITECT_BLOCK = `<replica_architect>
 **2. Architect (\`replica/architecture.md\`, \`replica/schema.sql\`)**
-Plan the stack, schema and API. If there is no recon map, stop and do stage 1 first - planning a clone from memory of what an app does is how you miss half of it.
-- Stack: use what the user already knows if they have a stack. Otherwise the default, because every part is managed, documented and cheap at zero users - Next.js (App Router) + TypeScript, Tailwind, Expo for mobile, Postgres on Supabase or Neon, Drizzle or Prisma, Supabase Auth or Auth.js, Stripe Checkout + Billing, Resend or Postmark, Vercel Cron/Inngest/Trigger.dev, Supabase Storage or R2, Vercel. Write each choice with one line of why. One database. No microservices. The clone does not need the original's architecture, it needs the original's features.
-- Schema: turn the inferred model into real SQL. For every table - \`id uuid primary key default gen_random_uuid()\`, \`created_at\`, \`updated_at\`; an owner column (\`user_id\` or \`org_id\`) on everything a user owns; foreign keys with a decided \`on delete\` rule; indexes on every foreign key and every column you filter or sort by; enums or check constraints for status fields; times as \`timestamptz\`, always, stored in UTC; money as integer cents plus a currency column. Then the access rules: Postgres row level security on Supabase, or one authorisation check per query in the data layer. Write which. The hard constraints the recon found are database problems, not UI problems - two guests booking the same slot is an exclusion constraint or a unique index.
-- API: one table per flow from the recon map - \`method path | what it does | who can call it | input | output | flow\`. Plus webhooks in and out, and background jobs with their schedule.
-- The parts that bite: a line on each that applies - time zones and daylight saving, idempotency (webhooks arrive twice), race conditions, rate limits, file size limits, search, realtime, offline, email deliverability, multi-tenancy, GDPR deletion.
-- Build order: (1) a vertical slice - the core loop end to end, ugly: sign up, do the one thing, see the result; (2) must-haves from \`features.csv\` by area; (3) should-haves, then could-haves; (4) the fixes the review research found. Each milestone lists its screens (S-IDs), tables and routes.
-- Hand off: stack in one line, table count, route count, the three riskiest parts.
+
+Reads \`replica/recon.md\` and \`replica/features.csv\`. Writes \`replica/architecture.md\` and the schema.
+
+If there is no recon map, stop and run \`/replica-recon\` first. Planning a clone from memory of what an app does is how you miss half of it.
+
+The pack's own template for this stage is \`replica-architect/architecture.md\`, in the \`replica-skill\` pack - the installed skills live under \`~/.claude/skills/replica-architect/\`. The skeleton is reproduced below.
+
+## Step 1: the stack
+
+Use what the user already knows if they have a stack. Otherwise the default, because every part is managed, documented and cheap at zero users:
+
+| layer | default | swap for |
+| --- | --- | --- |
+| web app | Next.js (App Router) + TypeScript | Remix, SvelteKit, Rails |
+| styling | Tailwind, tokens from replica-design | CSS modules |
+| mobile | Expo (React Native) | SwiftUI, Kotlin |
+| database | Postgres on Supabase or Neon | PlanetScale, SQLite (Turso) |
+| ORM | Drizzle or Prisma | raw SQL |
+| auth | Supabase Auth or Auth.js | Clerk |
+| payments | Stripe Checkout + Billing | Lemon Squeezy, Paddle |
+| email | Resend or Postmark | SES |
+| jobs | Vercel Cron, Inngest or Trigger.dev | a worker on Fly |
+| files | Supabase Storage or Cloudflare R2 | S3 |
+| hosting | Vercel | Netlify, Fly, Render |
+
+Write each choice with one line of why. One database. No microservices. The clone does not need the original's architecture, it needs the original's features.
+
+## Step 2: the schema
+
+Turn the inferred data model into SQL. For every table:
+
+- \`id uuid primary key default gen_random_uuid()\`, \`created_at\`, \`updated_at\`
+- an owner column (\`user_id\` or \`org_id\`) on everything a user owns
+- foreign keys with an \`on delete\` rule decided, not defaulted
+- indexes on every foreign key and every column you filter or sort by
+- enums or check constraints for status fields
+- times as \`timestamptz\`, always, stored in UTC
+- money as integer cents plus a currency column
+- access rules: Postgres row level security on Supabase, or one authorisation check per query in the data layer. Write which.
+
+Example, for a booking app:
+
+\`\`\`sql
+create table bookings (
+  id uuid primary key default gen_random_uuid(),
+  event_type_id uuid not null references event_types(id) on delete cascade,
+  host_id uuid not null references users(id) on delete cascade,
+  start_at timestamptz not null,
+  end_at timestamptz not null,
+  guest_name text not null,
+  guest_email text not null,
+  guest_timezone text not null,
+  status text not null default 'confirmed'
+    check (status in ('confirmed','cancelled','rescheduled')),
+  answers jsonb not null default '{}',
+  created_at timestamptz not null default now(),
+  constraint no_zero_length check (end_at > start_at)
+);
+create index on bookings (host_id, start_at);
+\`\`\`
+
+Then the hard constraints the recon found. Two guests booking the same slot is a database problem (an exclusion constraint or a unique index), not a UI problem.
+
+## Step 3: the API
+
+One table per flow from the recon map. For every route or server action:
+
+\`method path | what it does | who can call it | input | output | flow\`
+
+Plus webhooks in (Stripe, calendar providers) and out, and background jobs (reminders, sync, cleanup) with their schedule.
+
+Only official, public APIs with the user's own keys. Never the original app's private endpoints, even if they are visible in a browser.
+
+## Step 4: the parts that bite
+
+Write a line on each that applies: time zones and daylight saving, idempotency (webhooks arrive twice), race conditions, rate limits, file size limits, search, realtime, offline, email deliverability, multi-tenancy, GDPR deletion.
+
+## Step 5: build order
+
+1. **Vertical slice.** The core loop end to end, ugly: sign up, do the one thing, see the result. Proves the stack.
+2. **Must-haves** from \`features.csv\`, by area.
+3. **Should-haves**, then could-haves.
+4. **The fixes** replica-entrepreneur finds, once it has run.
+
+Each milestone lists its screens (S-IDs), tables and routes.
+
+## The shape of \`replica/architecture.md\`
+
+\`\`\`
+# Architecture: {{your app}} (a rebuild of {{app}}'s core features)
+
+## Stack
+| layer | choice | why |
+
+## Schema
+Tables: {{n}}. Access rules: {{RLS | data-layer checks}}.
+    -- or see replica/schema.sql
+
+## API
+| method path | does | who | input | output | flow |
+Webhooks in: {{...}}  Webhooks out: {{...}}
+Jobs: {{name, schedule, what it does}}
+
+## The parts that bite
+- time zones:
+- idempotency:
+- races:
+
+## Build order
+1. Vertical slice: {{screens, tables, routes}}
+2. Must-haves:
+3. Should-haves:
+4. Fixes from replica-entrepreneur:
+\`\`\`
+
+## Output
+
+\`replica/architecture.md\`, the SQL in \`replica/schema.sql\` or as the first migration, and a summary: stack in one line, table count, route count, the three riskiest parts, and the next step: \`/replica-design\`.
 </replica_architect>`;
 
 /** Stage 3: Design. */

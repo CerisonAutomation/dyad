@@ -16,6 +16,10 @@ import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { registerIpcHandlers } from "./ipc/ipc_host";
+import {
+  startDyadCliBridge,
+  type DyadCliBridgeHandle,
+} from "./ipc/services/cli_bridge_server";
 import dotenv from "dotenv";
 import { updateElectronApp, UpdateSourceType } from "update-electron-app";
 import log from "electron-log";
@@ -419,6 +423,9 @@ if (process.defaultApp) {
   app.setAsDefaultProtocolClient("dyad");
 }
 
+/** Handle of the running Dyad CLI bridge, if it started successfully. */
+let cliBridgeHandle: DyadCliBridgeHandle | null = null;
+
 export async function onReady() {
   // Take over the sentinel before any startup work that can crash. Migrations,
   // the keychain and git all run below; if one of them kills us, a sentinel
@@ -461,6 +468,29 @@ export async function onReady() {
     app.quit();
     return;
   }
+
+  // Start the Dyad CLI bridge (loopback-only HTTP) so an external CLI can
+  // call the same IPC contracts the renderer uses. This runs after the IPC
+  // handlers and the database are ready. The bridge is optional: a failure
+  // here must never keep the app from starting.
+  void startDyadCliBridge({
+    getSender: () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        return mainWindow.webContents;
+      }
+      return undefined;
+    },
+  })
+    .then((handle) => {
+      if (!handle) {
+        logger.warn(
+          "Dyad CLI bridge is disabled (the port is probably already in use).",
+        );
+        return;
+      }
+      cliBridgeHandle = handle;
+    })
+    .catch((error) => logger.error("Failed to start Dyad CLI bridge", error));
 
   void recoverInterruptedSubagents().catch((error) =>
     logger.error("Failed to reconcile interrupted sub-agents", error),
@@ -1811,6 +1841,10 @@ app.on("quit", (_event, exitCode) => {
       Date.now() - LAUNCH_TIME,
     ),
   );
+  // The bridge removes its discovery file synchronously, so the CLI stops
+  // discovering a dead app even though quit does not await the server close.
+  void cliBridgeHandle?.close();
+  cliBridgeHandle = null;
 });
 
 app.on("activate", () => {

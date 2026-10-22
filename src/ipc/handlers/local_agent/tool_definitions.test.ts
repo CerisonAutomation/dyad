@@ -9,6 +9,14 @@ import {
   TOOL_DEFINITIONS,
 } from "./tool_definitions";
 
+vi.mock("./self_heal", () => ({
+  recordToolFailure: vi.fn(async () => ({
+    signature: "read_file|not_found|path:.ts|file does not exist",
+    instruction: "SELF_HEAL_INSTRUCTION",
+  })),
+  decideYesNo: vi.fn(async () => ({ ok: true, score: 9, unavailable: false })),
+}));
+
 describe("Build mode tool profile", () => {
   it("is an exact, engine-free, non-sub-agent allowlist", () => {
     expect(BUILD_MODE_TOOL_NAMES).toEqual([
@@ -251,6 +259,50 @@ describe("shell tool registration", () => {
         },
       }),
     ).toBe(false);
+  });
+});
+
+describe("self-heal failure hook", () => {
+  it("offers a self-heal for a new failure class without changing the tool error", async () => {
+    const { decideYesNo } = await import("./self_heal");
+    const ctx = {
+      appId: 1,
+      appPath: "/tmp/unused-self-heal",
+      chatId: 1,
+      isDyadPro: false,
+      referencedApps: new Map(),
+      onXmlComplete: vi.fn(),
+      onXmlStream: vi.fn(),
+      requireConsent: vi.fn(async () => true),
+      appendUserMessage: vi.fn(),
+      abortSignal: new AbortController().signal,
+    } as unknown as import("./tools/types").AgentContext;
+    const tools = buildAgentToolSet(ctx, { enableAppBlueprint: false });
+
+    // An unavailable decision layer fails closed: no self-heal instruction.
+    vi.mocked(decideYesNo).mockResolvedValueOnce({
+      ok: false,
+      score: 0,
+      unavailable: true,
+    });
+    await expect(
+      tools.read_file.execute({ path: "missing.ts" }),
+    ).rejects.toMatchObject({ kind: "not_found" });
+    expect(ctx.appendUserMessage).not.toHaveBeenCalled();
+
+    // An approved failure injects the instruction into the same turn, and the
+    // tool's own error still propagates unchanged.
+    vi.mocked(decideYesNo).mockResolvedValueOnce({
+      ok: true,
+      score: 9,
+      unavailable: false,
+    });
+    await expect(
+      tools.read_file.execute({ path: "missing.ts" }),
+    ).rejects.toMatchObject({ kind: "not_found" });
+    expect(ctx.appendUserMessage).toHaveBeenCalledWith([
+      { type: "text", text: "SELF_HEAL_INSTRUCTION" },
+    ]);
   });
 });
 

@@ -1,5 +1,9 @@
 import { z } from "zod";
 import {
+  isPreviewClosedError,
+  isTargetClosedError,
+  NO_PREVIEW_MESSAGE,
+  PREVIEW_CLOSED_MESSAGE,
   previewBatch,
   previewClick,
   previewClickAt,
@@ -61,6 +65,12 @@ const previewBatchActionSchema = z.object({
   full_page: z.boolean().optional(),
   x: z.number().optional(),
   y: z.number().optional(),
+  selectors: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "CSS selectors to scope a 'content' step to. Selectors that match nothing are reported back.",
+    ),
 });
 
 const previewBrowserSchema = z.object({
@@ -251,7 +261,7 @@ const previewBrowserSchema = z.object({
     ),
 });
 
-export const previewBrowserTool: ToolDefinition = {
+const previewBrowserToolBase: ToolDefinition = {
   name: "preview_browser",
   description:
     "Inspect and drive the app running in the preview pane. Use this to verify your changes actually work: take an accessibility outline or snapshot of the page, navigate to a route, click or type into an element, click a screen coordinate, fill a form, hover, scroll, press a key, read what the user would see, wait for the page to settle, check the console and the network for errors, evaluate JavaScript in the page, manage preview tabs, capture a screenshot, or run a short batch of actions in one call. Works with any dev server. The app must already be running.",
@@ -487,6 +497,41 @@ export const previewBrowserTool: ToolDefinition = {
           `Unsupported preview_browser action: ${action}`,
           DyadErrorKind.Validation,
         );
+    }
+  },
+};
+
+/**
+ * The preview browser tool.
+ *
+ * The preview can disappear while an action runs: the app stops, the dev
+ * server restarts, the browser is torn down. The driver reports that as a
+ * typed error; this wrapper makes sure that no raw Playwright rejection ever
+ * reaches the model, and that an app which stopped mid-call is reported as
+ * "there is no preview" instead of crashing the action.
+ */
+export const previewBrowserTool: ToolDefinition = {
+  ...previewBrowserToolBase,
+  execute: async (args, ctx) => {
+    // The app may have stopped since the turn started: the tool is still in
+    // the toolset, but there is no preview left to drive.
+    if (!getRunningTestBaseUrl(ctx.appId)) {
+      return NO_PREVIEW_MESSAGE;
+    }
+    try {
+      return await previewBrowserToolBase.execute(args, ctx);
+    } catch (error) {
+      // The driver already reported a closed preview as a typed error; keep it
+      // as it is so the model sees the actionable message.
+      if (isPreviewClosedError(error)) throw error;
+      if (isTargetClosedError(error)) {
+        throw new DyadError(
+          PREVIEW_CLOSED_MESSAGE,
+          DyadErrorKind.Precondition,
+          { cause: error },
+        );
+      }
+      throw error;
     }
   },
 };

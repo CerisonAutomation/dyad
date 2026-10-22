@@ -112,9 +112,10 @@ async function generateWithPollinations(
   });
 
   if (!response.ok) {
+    const { kind, hint } = classifyImageProviderStatus(response.status);
     throw new DyadError(
-      `Pollinations.ai returned ${response.status}. ${classifyImageProviderStatus(response.status).hint}`,
-      classifyImageProviderStatus(response.status).kind,
+      `Pollinations.ai returned ${response.status}. ${hint}`,
+      kind,
     );
   }
 
@@ -173,11 +174,23 @@ export function formatImageResult(result: ImageGenerationResult): string {
  * model can act on. A billing or auth failure must not be papered over
  * with a placeholder image.
  */
-export function classifyImageProviderStatus(status: number): {
+export function classifyImageProviderStatus(
+  status: number,
+  phase: "generate" | "download" = "generate",
+): {
   kind: DyadErrorKind;
   hint: string;
 } {
   if (status === 401 || status === 403) {
+    if (phase === "download") {
+      // The provider refused the fetch of an already-generated image. That is
+      // an external failure, not a missing credential, and it has to stay
+      // reportable: `Auth` is filtered out of exception telemetry.
+      return {
+        kind: DyadErrorKind.External,
+        hint: "The image provider rejected the download, so the generated image is not reachable. The URL may have expired; generate the image again.",
+      };
+    }
     return {
       kind: DyadErrorKind.Auth,
       hint: "The image provider rejected the request. It now needs a token or credit for this account; add a token in Settings or use a different image provider.",
@@ -190,9 +203,15 @@ export function classifyImageProviderStatus(status: number): {
     };
   }
   if (status === 404) {
+    if (phase === "download") {
+      return {
+        kind: DyadErrorKind.NotFound,
+        hint: "The generated image URL is no longer available.",
+      };
+    }
     return {
-      kind: DyadErrorKind.NotFound,
-      hint: "The generated image URL is no longer available.",
+      kind: DyadErrorKind.External,
+      hint: "The image provider has no such model or route. Pick a different model or image provider.",
     };
   }
   if (status === 429) {

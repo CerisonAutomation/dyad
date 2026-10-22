@@ -92,7 +92,10 @@ async function saveGeneratedImage(
       signal: AbortSignal.timeout(30_000),
     });
     if (!response.ok) {
-      const { kind, hint } = classifyImageProviderStatus(response.status);
+      const { kind, hint } = classifyImageProviderStatus(
+        response.status,
+        "download",
+      );
       throw new DyadError(
         `Failed to download generated image: ${response.status}. ${hint}`.trim(),
         kind,

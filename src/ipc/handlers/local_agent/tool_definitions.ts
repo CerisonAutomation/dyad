@@ -112,8 +112,9 @@ import {
 import type { AgentToolConsent } from "@/lib/schemas";
 import { getSupabaseClientCode } from "@/supabase_admin/supabase_context";
 import { getNeonClientCode } from "@/neon_admin/neon_context";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import { DyadError, DyadErrorKind, isDyadError } from "@/errors/dyad_error";
 import { ExecuteAddDependencyError } from "@/ipc/processors/executeAddDependency";
+import { decideYesNo, recordToolFailure } from "./self_heal";
 import { withTrackedMutation } from "./subagents/mutation_activity_tracker";
 import { estimateTokens } from "@/ipc/utils/token_utils";
 
@@ -878,6 +879,58 @@ export function refreshShellReviewToolInventory(
   }
 }
 
+/**
+ * Records a failed tool call in the self-heal ledger and, when the failure
+ * class is new and the fast decision layer approves it, injects a self-heal
+ * instruction into the current turn so the model can fix the defect it just
+ * hit instead of retrying blindly.
+ *
+ * The hook must never change the tool's behaviour: everything it does is
+ * best-effort, and the caller rethrows the original error unchanged.
+ */
+async function maybeInjectSelfHealInstruction(params: {
+  toolName: string;
+  args: unknown;
+  error: unknown;
+  ctx: AgentContext;
+}): Promise<void> {
+  const { toolName, args, error, ctx } = params;
+  try {
+    // A user cancellation is a decision, not a defect: it must never reach
+    // the failure ledger.
+    if (isDyadError(error) && error.kind === DyadErrorKind.UserCancelled) {
+      return;
+    }
+    // One dedupe set per turn, shared by every tool call in the turn.
+    const alreadyHandled = (ctx.selfHealHandledSignatures ??= new Set());
+    const recorded = await recordToolFailure({
+      appPath: ctx.appPath,
+      toolName,
+      args,
+      error,
+      alreadyHandled,
+    });
+    if (!recorded) {
+      return;
+    }
+    // The fast decision layer is advisory: it can skip a self-heal attempt,
+    // but it never blocks the model. An unavailable layer fails closed to
+    // "skip the self-heal".
+    const gate = await decideYesNo(
+      `tool=${toolName} failure_signature=${recorded.signature}`,
+    );
+    if (gate.unavailable || !gate.ok) {
+      logger.info(
+        `Skipped self-heal for ${recorded.signature} (ok=${gate.ok}, unavailable=${gate.unavailable})`,
+      );
+      return;
+    }
+    ctx.appendUserMessage([{ type: "text", text: recorded.instruction }]);
+  } catch (selfHealError) {
+    logger.warn("Self-heal hook failed:", selfHealError);
+  }
+}
+
 /** Build ToolSet for AI SDK from tool definitions. */
 export function buildAgentToolSet(
   ctx: AgentContext,
@@ -1091,6 +1144,14 @@ export function buildAgentToolSet(
               error: errorDetails,
             });
           }
+          // Offer the model a self-heal for this failure before the error
+          // propagates. The hook cannot change the tool's outcome.
+          await maybeInjectSelfHealInstruction({
+            toolName: tool.name,
+            args,
+            error,
+            ctx,
+          });
           throw error;
         }
       },

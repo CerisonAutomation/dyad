@@ -265,6 +265,12 @@ export interface AgentContext {
    */
   appendUserMessage: (content: UserMessageContentPart[]) => void;
   /**
+   * Turn-scoped dedupe for self-heal instructions: one failure signature is
+   * only handled once per turn. The local-agent handler creates a fresh set
+   * per turn; when it is missing, the self-heal hook installs one.
+   */
+  selfHealHandledSignatures?: Set<string>;
+  /**
    * Sends updated todos to the renderer for UI display.
    * Call this when todos are updated to show them in the chat input area.
    */

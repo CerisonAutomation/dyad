@@ -797,6 +797,7 @@ export const constructSystemPrompt = ({
   reinstallAndRestartAppToolAvailable,
   runBuildToolAvailable,
   isCloneWorkflow = false,
+  preventionPromptBlock,
 }: {
   aiRules: string | undefined;
   chatMode?: "build" | "ask" | "local-agent" | "plan";
@@ -859,6 +860,13 @@ export const constructSystemPrompt = ({
    * for the turn that happened to mention a clone.
    */
   isCloneWorkflow?: boolean;
+  /**
+   * The active self-heal prevention rules, already rendered as a prompt
+   * block. Leave it undefined to keep the `[[PREVENTION]]` placeholder in the
+   * prompt: the rules are read asynchronously, so the local-agent handler
+   * resolves them and substitutes the block itself.
+   */
+  preventionPromptBlock?: string;
 }) => {
   if (chatMode === "plan") {
     return constructPlanModePrompt(aiRules, themePrompt, {
@@ -887,6 +895,8 @@ export const constructSystemPrompt = ({
       reinstallAndRestartAppToolAvailable,
       runBuildToolAvailable,
       isCloneWorkflow,
+      preventionPromptBlock,
+      deferPreventionPrompt: preventionPromptBlock === undefined,
     });
   }
 
@@ -902,6 +912,8 @@ export const constructSystemPrompt = ({
       restartAppToolAvailable,
       reinstallAndRestartAppToolAvailable,
       isCloneWorkflow,
+      preventionPromptBlock,
+      deferPreventionPrompt: preventionPromptBlock === undefined,
     });
   }
 

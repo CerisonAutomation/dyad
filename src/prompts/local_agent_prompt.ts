@@ -35,6 +35,36 @@ import {
 } from "./agent_discipline_prompt";
 import { buildSkillsSection } from "./skill_catalog_prompt";
 
+/**
+ * Placeholder for the active self-heal prevention rules.
+ *
+ * The rules live in `<appPath>/.dyad/self-heal/prevention.json` and are read
+ * asynchronously, so the local-agent handler resolves them and substitutes the
+ * block itself. The builders keep the placeholder in place when the caller
+ * defers to that handler, and drop it entirely when there is nothing to
+ * inject: an empty block must leave no placeholder text and no heading behind.
+ */
+export const PREVENTION_PROMPT_PLACEHOLDER = "[[PREVENTION]]";
+
+/**
+ * Renders the `[[PREVENTION]]` placeholder for a prompt.
+ *
+ * An empty block injects nothing at all — no placeholder text and no
+ * heading — so a turn without prevention rules renders exactly the prompt it
+ * rendered before. When the caller defers, the placeholder is kept for the
+ * asynchronous resolver (the local-agent handler).
+ */
+export function renderPreventionPromptBlock(
+  block: string | undefined,
+  defer?: boolean,
+): string {
+  const trimmed = block?.trim() ?? "";
+  if (trimmed) {
+    return `${trimmed}\n\n`;
+  }
+  return defer ? PREVENTION_PROMPT_PLACEHOLDER : "";
+}
+
 // ============================================================================
 // Shared Prompt Blocks (used by both Pro and Basic Agent modes)
 // ============================================================================
@@ -526,7 +556,7 @@ ${GIT_CONTEXT_BLOCK}
 
 ${AI_RULES_BLOCK_READONLY}
 
-[[SKILLS]]
+${PREVENTION_PROMPT_PLACEHOLDER}[[SKILLS]]
 `;
 
 // ============================================================================
@@ -598,6 +628,10 @@ Do not call \`write_app_blueprint\` and do not start implementation. Explain tha
           .replaceAll(
             "[[SERVER_LAYER]]",
             "\\u005b\\u005bSERVER_LAYER\\u005d\\u005d",
+          )
+          .replaceAll(
+            "[[PREVENTION]]",
+            "\\u005b\\u005bPREVENTION\\u005d\\u005d",
           ),
       )
     : undefined;
@@ -720,7 +754,7 @@ ${IMAGE_GENERATION_BLOCK}
 ${enableAppBlueprint ? `\n${appBlueprintBlock({ hasAppBlueprint, planningQuestionnaireAvailable, appBlueprintQuestionnaireCompleted, appBlueprint })}\n` : ""}
 ${AI_RULES_BLOCK}
 
-[[SKILLS]]
+${PREVENTION_PROMPT_PLACEHOLDER}[[SKILLS]]
 `;
 }
 
@@ -768,7 +802,7 @@ ${basicDevelopmentWorkflowBlock(enableAppBlueprint, hasAppBlueprint, planningQue
 ${testingEnabled ? `${AGENT_TEST_WRITING_GUIDANCE}\n` : ""}${enableAppBlueprint ? `\n${appBlueprintBlock({ hasAppBlueprint, planningQuestionnaireAvailable, appBlueprintQuestionnaireCompleted, appBlueprint })}\n` : ""}
 ${AI_RULES_BLOCK}
 
-[[SKILLS]]
+${PREVENTION_PROMPT_PLACEHOLDER}[[SKILLS]]
 `;
 }
 
@@ -835,7 +869,7 @@ ${developmentWorkflow}
 ${enableAppBlueprint ? `\n${appBlueprintBlock({ hasAppBlueprint, planningQuestionnaireAvailable, appBlueprintQuestionnaireCompleted, appBlueprint })}\n` : ""}
 ${AI_RULES_BLOCK}
 
-[[SKILLS]]
+${PREVENTION_PROMPT_PLACEHOLDER}[[SKILLS]]
 `;
 }
 
@@ -1053,6 +1087,17 @@ export function constructLocalAgentPrompt(
      * than for the turn that happened to mention a clone.
      */
     isCloneWorkflow?: boolean;
+    /**
+     * The active self-heal prevention rules, already rendered as a prompt
+     * block. An empty string injects nothing.
+     */
+    preventionPromptBlock?: string;
+    /**
+     * Keep the `[[PREVENTION]]` placeholder in the prompt instead of
+     * resolving it. The rules live on disk and are read asynchronously, so
+     * the local-agent handler resolves them and substitutes the block itself.
+     */
+    deferPreventionPrompt?: boolean;
   },
 ): string {
   const enableAppBlueprint = options?.enableAppBlueprint === true;
@@ -1121,6 +1166,12 @@ export function constructLocalAgentPrompt(
   // (AI_RULES.md, which the model itself can edit) are inserted literally and
   // cannot splice the rest of the prompt via `$'`, `$&`, etc.
   let prompt = basePrompt
+    .replace(PREVENTION_PROMPT_PLACEHOLDER, () =>
+      renderPreventionPromptBlock(
+        options?.preventionPromptBlock,
+        options?.deferPreventionPrompt,
+      ),
+    )
     .replace("[[SERVER_LAYER]]", () => serverLayer)
     .replace("[[SKILLS]]", () =>
       buildSkillsSection(options?.isCloneWorkflow === true),
@@ -1155,6 +1206,17 @@ export function constructBuildAgentPrompt(
      * than for the turn that happened to mention a clone.
      */
     isCloneWorkflow?: boolean;
+    /**
+     * The active self-heal prevention rules, already rendered as a prompt
+     * block. An empty string injects nothing.
+     */
+    preventionPromptBlock?: string;
+    /**
+     * Keep the `[[PREVENTION]]` placeholder in the prompt instead of
+     * resolving it. The rules live on disk and are read asynchronously, so
+     * the local-agent handler resolves them and substitutes the block itself.
+     */
+    deferPreventionPrompt?: boolean;
   },
 ): string {
   const enableAppBlueprint = options?.enableAppBlueprint === true;
@@ -1177,6 +1239,12 @@ export function constructBuildAgentPrompt(
     options?.restartAppToolAvailable !== false,
     options?.reinstallAndRestartAppToolAvailable !== false,
   )
+    .replace(PREVENTION_PROMPT_PLACEHOLDER, () =>
+      renderPreventionPromptBlock(
+        options?.preventionPromptBlock,
+        options?.deferPreventionPrompt,
+      ),
+    )
     .replace("[[SERVER_LAYER]]", () => serverLayer)
     .replace("[[SKILLS]]", () =>
       buildSkillsSection(options?.isCloneWorkflow === true),

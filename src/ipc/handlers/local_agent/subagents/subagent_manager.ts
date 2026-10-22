@@ -35,10 +35,17 @@ import type {
   SubagentThreadSummary,
 } from "@/ipc/types";
 import { isSubagentAcceptingMessages, isSubagentActive } from "@/ipc/types";
-import { isAgent2Enabled, type UserSettings } from "@/lib/schemas";
+import {
+  isAgent2Enabled,
+  type LargeLanguageModel,
+  type UserSettings,
+} from "@/lib/schemas";
 import { getChatInferenceSettings } from "@/ipc/services/chat_inference_settings";
 import { readSettings } from "@/main/settings";
 import { getDyadAppPath } from "@/paths/paths";
+import { findLanguageModel } from "@/ipc/utils/findLanguageModel";
+import { FALLBACK_EFFORT_SETTINGS, getEffortSettings } from "@/lib/modelEffort";
+import { buildPersonaStyleBlocks } from "@/prompts/persona_style_prompt";
 import { sanitizeStepMessages } from "../prepare_step_utils";
 import {
   boundSubagentAssignmentsForModel,
@@ -81,12 +88,37 @@ export { SUBAGENT_NONTERMINAL_STATUSES } from "./state";
  * Per-persona reasoning effort only. The model itself is never pinned here:
  * every sub-agent runs on the model the user has selected, so it must be one
  * they can actually authenticate against.
+ *
+ * `effort` is the level the persona asks for - one step above the level it
+ * used to run at - and `minEffort` is the level it falls back to when the
+ * selected model does not have `effort`. The fallback is the persona's old
+ * level, so a model without the higher level keeps the thinking it had
+ * instead of losing it.
  */
 const MODELS = {
-  explorer: { effort: "high" },
-  reviewer: { effort: "medium" },
-  implementer: { effort: "high" },
+  explorer: { effort: "xhigh", minEffort: "high" },
+  reviewer: { effort: "high", minEffort: "medium" },
+  implementer: { effort: "xhigh", minEffort: "high" },
 } as const;
+
+/**
+ * The canonical effort ladder. A model's own levels are a subset of it, so
+ * the ladder is what makes "one step up" comparable across models.
+ */
+const EFFORT_LADDER = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const;
+
+function effortRank(level: string): number {
+  return EFFORT_LADDER.indexOf(level as (typeof EFFORT_LADDER)[number]);
+}
+
 const MAX_DURABLE_REPORT_CHARS = 100_000;
 const MAX_ACTIVITY_XML_CHARS = 200_000;
 const MAX_ACTIVITY_OUTPUT_CHARS = 200_000;
@@ -2095,24 +2127,96 @@ async function recordModelUsage(
   emit(thread.chatId, threadId);
 }
 
+/**
+ * The highest effort level the model supports that is at most `target` and at
+ * least the persona's current level. A model without the target level keeps
+ * the persona's current level rather than dropping below it.
+ */
+function pickPersonaEffortLevel({
+  target,
+  minEffort,
+  supported,
+}: {
+  target: string;
+  minEffort: string;
+  supported: readonly string[];
+}): string {
+  const targetRank = effortRank(target);
+  const minRank = effortRank(minEffort);
+  const candidates = supported
+    .map((level) => ({ level, rank: effortRank(level) }))
+    .filter(({ rank }) => rank >= minRank && rank <= targetRank)
+    .sort((a, b) => b.rank - a.rank);
+  return candidates[0]?.level ?? minEffort;
+}
+
+/**
+ * The effort levels the selected model actually serves.
+ *
+ * The catalog is the same source the model picker uses, so a level it lists
+ * is a level the model accepts. The Auto route picks its runtime model per
+ * request, so its catalog entry cannot promise a level the runtime model will
+ * take: it gets the default set instead.
+ */
+async function supportedEffortLevels(
+  selectedModel: LargeLanguageModel,
+): Promise<readonly string[]> {
+  if (selectedModel.provider === "auto") {
+    return FALLBACK_EFFORT_SETTINGS.possibleEffortLevels;
+  }
+  try {
+    const catalogModel = await findLanguageModel(selectedModel);
+    if (!catalogModel) {
+      return FALLBACK_EFFORT_SETTINGS.possibleEffortLevels;
+    }
+    return getEffortSettings(catalogModel, selectedModel.provider)
+      .possibleEffortLevels;
+  } catch (error) {
+    logger.warn(
+      "Could not read the effort levels of the selected model; using the default set",
+      error,
+    );
+    return FALLBACK_EFFORT_SETTINGS.possibleEffortLevels;
+  }
+}
+
+/**
+ * The effort level a persona runs at: one step above its old level, clamped to
+ * what the selected model supports.
+ */
+async function resolvePersonaEffortLevel(
+  persona: SubagentPersona,
+  selectedModel: LargeLanguageModel,
+): Promise<string> {
+  const defaults = MODELS[persona];
+  return pickPersonaEffortLevel({
+    target: defaults.effort,
+    minEffort: defaults.minEffort,
+    supported: await supportedEffortLevels(selectedModel),
+  });
+}
+
 async function personaModelSettings(
   persona: SubagentPersona,
   chatId: number,
   acceptedSettings?: UserSettings,
 ) {
-  const defaults = MODELS[persona];
   const base = await getChatInferenceSettings(chatId, acceptedSettings);
   // Sub-agents run on the model the user has actually selected. The persona
   // only supplies a reasoning-effort preference; pinning provider/name here
   // would target a model the user may not have a key for (and previously made
   // every sub-agent fail its preflight with a Pro-upsell error).
+  const effortLevel = await resolvePersonaEffortLevel(
+    persona,
+    base.selectedModel,
+  );
   return {
     ...base,
     selectedModel: {
       ...base.selectedModel,
-      effortLevel: defaults.effort,
+      effortLevel,
     },
-    thinkingBudget: defaults.effort,
+    thinkingBudget: effortLevel,
   };
 }
 
@@ -2286,11 +2390,15 @@ export function toolRulesForPersona(persona: SubagentPersona): string {
 
 function systemPrompt(persona: SubagentPersona): string {
   const toolRules = toolRulesForPersona(persona);
+  // Every persona speaks the same house voice and gets the same reasoning
+  // headroom, so the style blocks are appended to each persona's prompt.
+  const styleBlocks = buildPersonaStyleBlocks(persona);
   if (persona === "reviewer")
     return (
       "You are Dyad Reviewer. Be independent, concise, evidence-based, and read-only. " +
       "A review that only reads the diff is incomplete: verify behaviour before approving." +
-      toolRules
+      toolRules +
+      styleBlocks
     );
   if (persona === "implementer")
     return (
@@ -2298,13 +2406,15 @@ function systemPrompt(persona: SubagentPersona): string {
       "Treat assigned paths as the expected focus, but cross them when correctness requires " +
       "it and report every changed file and unresolved issue. Do not declare the work done " +
       "until you have exercised it in the running app." +
-      toolRules
+      toolRules +
+      styleBlocks
     );
   return (
     "You are Dyad Explorer. Investigate read-only, cite files and evidence, and return a " +
     "concise report with confidence and recommended next action. Locate code structurally " +
     "rather than guessing at paths." +
-    toolRules
+    toolRules +
+    styleBlocks
   );
 }
 
@@ -2312,9 +2422,13 @@ export function resolveSubagentSystemPrompt(
   persona: SubagentPersona,
   implementerPrompt?: string,
 ): string {
-  return persona === "implementer" && implementerPrompt
-    ? implementerPrompt
-    : systemPrompt(persona);
+  if (persona === "implementer" && implementerPrompt) {
+    // The root supplies the Implementer's prompt (role, assignment contract,
+    // provider rules). The house style and the reasoning headroom are added
+    // here so the Implementer speaks like every other persona.
+    return `${implementerPrompt}\n\n${buildPersonaStyleBlocks(persona)}`;
+  }
+  return systemPrompt(persona);
 }
 
 async function createThread(params: {
@@ -2327,11 +2441,16 @@ async function createThread(params: {
   contextJson: Record<string, unknown>;
   review?: ReviewTarget;
 }) {
-  const defaults = MODELS[params.persona];
   // Record the model this thread will actually run on — the user's selected
   // model — so the persisted row is not a stale compiled-in default.
   const inference = await getChatInferenceSettings(params.chatId);
   const modelSelection = inference.selectedModel;
+  // Record the effort the thread will actually run at, not the persona's
+  // target: a model without the target level runs one step lower.
+  const reasoningEffort = await resolvePersonaEffortLevel(
+    params.persona,
+    modelSelection,
+  );
   const [row] = await db
     .insert(agentThreads)
     .values({
@@ -2343,7 +2462,7 @@ async function createThread(params: {
       status: "queued",
       provider: modelSelection.provider,
       model: modelSelection.name,
-      reasoningEffort: defaults.effort,
+      reasoningEffort,
       invocationSource: params.invocationSource,
       contextJson: params.contextJson,
       reviewBaseCommit: params.review?.baseCommit,

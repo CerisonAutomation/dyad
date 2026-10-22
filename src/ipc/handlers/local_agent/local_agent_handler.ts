@@ -199,6 +199,11 @@ import {
   toRendererMessages,
   type RendererMessageRow,
 } from "@/ipc/utils/renderer_chat_message";
+import { buildPreventionPromptBlock } from "./self_heal";
+import {
+  PREVENTION_PROMPT_PLACEHOLDER,
+  renderPreventionPromptBlock,
+} from "@/prompts/local_agent_prompt";
 
 export function clearPendingLocalAgentInputsForChat(chatId: number): void {
   userInputRegistry.sweepChat(chatId);
@@ -947,6 +952,9 @@ export async function handleLocalAgentStream(
 
   // Track pending user messages to inject after tool results
   const pendingUserMessages: UserMessageContentPart[][] = [];
+  // Turn-scoped dedupe for self-heal instructions: one failure signature is
+  // only handled once per turn.
+  const selfHealHandledSignatures = new Set<string>();
   // Consecutive-repeat detector for this turn. A new turn constructs a new
   // tracker, so repetition is only ever counted within one user request.
   const repeatTracker = new ToolRepeatTracker();
@@ -1147,6 +1155,7 @@ export async function handleLocalAgentStream(
       appendUserMessage: (content: UserMessageContentPart[]) => {
         pendingUserMessages.push(content);
       },
+      selfHealHandledSignatures,
       onUpdateTodos: (todos) => {
         broadcastToRegisteredWindows(event.sender, "agent-tool:todos-update", {
           chatId: chat.id,
@@ -1242,6 +1251,23 @@ export async function handleLocalAgentStream(
     const agentTools = buildAgentToolSet(ctx, buildOptions);
     if (agentTools.run_shell) {
       systemPrompt += `\n\n<shell_execution>\n${shellExecutionGuidance(process.platform, ctx.appPath)}\n</shell_execution>`;
+    }
+    // Active self-heal prevention rules must reach the model on every turn.
+    // The rules live on disk, so they are read here (the prompt builders keep
+    // the `[[PREVENTION]]` placeholder for this asynchronous resolution) and
+    // substituted into the prompt the model actually receives.
+    try {
+      const preventionBlock = await buildPreventionPromptBlock(appPath);
+      if (systemPrompt.includes(PREVENTION_PROMPT_PLACEHOLDER)) {
+        systemPrompt = systemPrompt.replace(PREVENTION_PROMPT_PLACEHOLDER, () =>
+          renderPreventionPromptBlock(preventionBlock),
+        );
+      } else if (preventionBlock) {
+        // The plan prompt has no placeholder, so append the rules instead.
+        systemPrompt = `${systemPrompt}\n\n${preventionBlock}`;
+      }
+    } catch (error) {
+      logger.warn("Failed to load self-heal prevention rules:", error);
     }
     ctx.planningQuestionnaireAvailable =
       agentTools.planning_questionnaire != undefined;

@@ -20,6 +20,67 @@ type RegisteredHandler = (
 // without mocking electron or introspecting ipcMain.handle calls.
 const registeredHandlers = new Map<string, RegisteredHandler>();
 
+// Registry of the contracts backing each channel. The Dyad CLI bridge uses
+// this to discover the invocable surface (and to re-validate input before
+// dispatching a request that did not come from the renderer).
+const registeredContracts = new Map<
+  string,
+  IpcContract<string, z.ZodType, z.ZodType>
+>();
+
+/**
+ * Returns every registered IPC contract keyed by channel.
+ *
+ * This is the discovery surface used by the Dyad CLI bridge so an external
+ * CLI can enumerate the same channels the renderer can invoke.
+ */
+export function getRegisteredIpcContracts(): ReadonlyMap<
+  string,
+  IpcContract<string, z.ZodType, z.ZodType>
+> {
+  return registeredContracts;
+}
+
+/**
+ * Invokes a registered IPC handler directly, bypassing Electron's IPC
+ * transport but keeping the contract's input validation.
+ *
+ * Unlike the trusted IPC path this returns the RAW handler result (not an IPC
+ * envelope) and lets handler errors propagate, so callers can serialize them
+ * themselves. See `src/ipc/services/cli_bridge_server.ts`.
+ */
+export async function invokeRegisteredIpcHandler(
+  channel: string,
+  input: unknown,
+  event: Partial<IpcMainInvokeEvent>,
+): Promise<unknown> {
+  const handler = registeredHandlers.get(channel);
+  if (!handler) {
+    throw new DyadError(
+      `No IPC handler is registered for channel "${channel}".`,
+      DyadErrorKind.NotFound,
+    );
+  }
+
+  const contract = registeredContracts.get(channel);
+  let parsedInput = input;
+  if (contract) {
+    const parsed = contract.input.safeParse(input);
+    if (!parsed.success) {
+      const errorMessage = parsed.error.issues
+        .map((e) => `${e.path.join(".")}: ${e.message}`)
+        .join("; ");
+      throw new DyadError(
+        `[${channel}] Invalid input: ${errorMessage}`,
+        DyadErrorKind.Validation,
+      );
+    }
+    parsedInput = parsed.data;
+  }
+
+  return await handler(event as IpcMainInvokeEvent, parsedInput);
+}
+
 export function getRegisteredHandlerForTesting(
   channel: string,
 ): RegisteredHandler {
@@ -70,6 +131,10 @@ export function createTypedHandler<
     return result;
   };
   registeredHandlers.set(contract.channel, runHandler);
+  registeredContracts.set(
+    contract.channel,
+    contract as IpcContract<string, z.ZodType, z.ZodType>,
+  );
   registerTrustedIpcHandler(
     contract.channel,
     async (event: IpcMainInvokeEvent, rawInput: unknown) => {
@@ -154,6 +219,10 @@ export function createLoggedTypedHandler(logger: {
       return result;
     };
     registeredHandlers.set(contract.channel, runHandler);
+    registeredContracts.set(
+      contract.channel,
+      contract as IpcContract<string, z.ZodType, z.ZodType>,
+    );
     registerTrustedIpcHandler(
       contract.channel,
       async (event: IpcMainInvokeEvent, rawInput: unknown) => {

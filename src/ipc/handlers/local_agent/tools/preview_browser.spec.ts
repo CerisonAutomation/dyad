@@ -1,37 +1,72 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { AgentContext } from "./types";
+import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 
-const mocks = vi.hoisted(() => ({
-  previewBatch: vi.fn(),
-  previewClick: vi.fn(),
-  previewClickAt: vi.fn(),
-  previewClickRef: vi.fn(),
-  previewConsole: vi.fn(),
-  previewContent: vi.fn(),
-  previewDom: vi.fn(),
-  previewEval: vi.fn(),
-  previewFind: vi.fn(),
-  previewFormInput: vi.fn(),
-  previewGoBack: vi.fn(),
-  previewHover: vi.fn(),
-  previewNavigate: vi.fn(),
-  previewNetwork: vi.fn(),
-  previewPressKey: vi.fn(),
-  previewRead: vi.fn(),
-  previewReload: vi.fn(),
-  previewScroll: vi.fn(),
-  previewScrollToRef: vi.fn(),
-  previewScreenshot: vi.fn(),
-  previewSnapshot: vi.fn(),
-  previewTabs: vi.fn(),
-  previewType: vi.fn(),
-  previewTypeRef: vi.fn(),
-  previewWait: vi.fn(),
-  assertNotPrivateIp: vi.fn(),
-  getRunningTestBaseUrl: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+  const previewClosedMessage =
+    "The preview closed while the action was running. Restart the app preview and retry.";
+  return {
+    previewClosedMessage,
+    noPreviewMessage:
+      "The app is not currently running, so there is no preview to drive. Start the app first (preview the app), then retry.",
+    isTargetClosedError: vi.fn((error: unknown) => {
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === "string"
+            ? error
+            : "";
+      const name =
+        error && typeof error === "object"
+          ? (error as { name?: string }).name
+          : "";
+      return (
+        name === "TargetClosedError" ||
+        message.includes("Target page, context or browser has been closed") ||
+        message.includes("Target closed")
+      );
+    }),
+    isPreviewClosedError: vi.fn(
+      (error: unknown) =>
+        error instanceof Error &&
+        error.name === "DyadError" &&
+        error.message === previewClosedMessage,
+    ),
+    previewBatch: vi.fn(),
+    previewClick: vi.fn(),
+    previewClickAt: vi.fn(),
+    previewClickRef: vi.fn(),
+    previewConsole: vi.fn(),
+    previewContent: vi.fn(),
+    previewDom: vi.fn(),
+    previewEval: vi.fn(),
+    previewFind: vi.fn(),
+    previewFormInput: vi.fn(),
+    previewGoBack: vi.fn(),
+    previewHover: vi.fn(),
+    previewNavigate: vi.fn(),
+    previewNetwork: vi.fn(),
+    previewPressKey: vi.fn(),
+    previewRead: vi.fn(),
+    previewReload: vi.fn(),
+    previewScroll: vi.fn(),
+    previewScrollToRef: vi.fn(),
+    previewScreenshot: vi.fn(),
+    previewSnapshot: vi.fn(),
+    previewTabs: vi.fn(),
+    previewType: vi.fn(),
+    previewTypeRef: vi.fn(),
+    previewWait: vi.fn(),
+    assertNotPrivateIp: vi.fn(),
+    getRunningTestBaseUrl: vi.fn(),
+  };
+});
 
 vi.mock("@/ipc/utils/preview_browser_driver", () => ({
+  PREVIEW_CLOSED_MESSAGE: mocks.previewClosedMessage,
+  NO_PREVIEW_MESSAGE: mocks.noPreviewMessage,
+  isTargetClosedError: mocks.isTargetClosedError,
+  isPreviewClosedError: mocks.isPreviewClosedError,
   previewBatch: mocks.previewBatch,
   previewClick: mocks.previewClick,
   previewClickAt: mocks.previewClickAt,
@@ -286,5 +321,46 @@ describe("previewBrowserTool", () => {
         y: 6,
       }),
     ).toContain("(5, 6)");
+  });
+
+  it("surfaces a closed preview as an actionable error", async () => {
+    mocks.previewRead.mockRejectedValue(
+      new DyadError(mocks.previewClosedMessage, DyadErrorKind.Precondition),
+    );
+
+    const error = await previewBrowserTool
+      .execute({ action: "read" }, ctx)
+      .catch((thrown) => thrown);
+
+    expect(error).toBeInstanceOf(DyadError);
+    expect((error as DyadError).kind).toBe(DyadErrorKind.Precondition);
+    expect((error as DyadError).message).toBe(mocks.previewClosedMessage);
+  });
+
+  it("never leaks the raw Playwright failure to the model", async () => {
+    mocks.previewRead.mockRejectedValue(
+      new Error(
+        "page.waitForTimeout: Target page, context or browser has been closed",
+      ),
+    );
+
+    const error = await previewBrowserTool
+      .execute({ action: "read" }, ctx)
+      .catch((thrown) => thrown);
+
+    expect(error).toBeInstanceOf(DyadError);
+    expect((error as DyadError).message).toBe(mocks.previewClosedMessage);
+    expect((error as DyadError).message).not.toContain(
+      "Target page, context or browser has been closed",
+    );
+  });
+
+  it("reports a stopped app as no preview instead of crashing", async () => {
+    mocks.getRunningTestBaseUrl.mockReturnValue(undefined);
+
+    await expect(
+      previewBrowserTool.execute({ action: "read" }, ctx),
+    ).resolves.toBe(mocks.noPreviewMessage);
+    expect(mocks.previewRead).not.toHaveBeenCalled();
   });
 });

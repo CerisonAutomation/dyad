@@ -24,6 +24,15 @@ import {
   MAX_SQL_QUERY_CHARS,
   MAX_SQL_RESULT_CHARS,
 } from "./tool_output_limits";
+import {
+  applyIdentityOverride,
+  buildIdentityColumnQuery,
+  describeIdentityColumnError,
+  isIdentityColumnError,
+  parseIdentityColumns,
+  parseInsertForIdentityCheck,
+  type IdentityColumn,
+} from "./execute_sql_identity";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -186,6 +195,106 @@ const executeSqlSchema = z.object({
   description: z.string().optional().describe("Brief description of the query"),
 });
 
+type SqlRunner = (query: string) => Promise<string>;
+
+interface PreparedSql {
+  /** The SQL that should actually be executed. */
+  sql: string;
+  /** Model-facing note describing the `OVERRIDING SYSTEM VALUE` rewrite. */
+  notice?: string;
+}
+
+/**
+ * Look up the identity columns of an insert target and, when the statement
+ * supplies a value for a `GENERATED ALWAYS` identity column, inject
+ * `OVERRIDING SYSTEM VALUE` (PostgreSQL rejects the explicit value otherwise,
+ * SQLSTATE 428C9).
+ *
+ * The catalog lookup is best effort: when it cannot run, the statement is
+ * executed unchanged so the check can never break a valid statement.
+ */
+async function prepareIdentitySafeSql(
+  query: string,
+  runSql: SqlRunner,
+): Promise<PreparedSql> {
+  const parsed = parseInsertForIdentityCheck(query);
+  if (!parsed) {
+    return { sql: query };
+  }
+  const metadataQuery = buildIdentityColumnQuery(parsed);
+  if (!metadataQuery) {
+    return { sql: query };
+  }
+  let identityColumns: IdentityColumn[];
+  try {
+    identityColumns = parseIdentityColumns(await runSql(metadataQuery));
+  } catch {
+    return { sql: query };
+  }
+  const rewrite = applyIdentityOverride(query, parsed, identityColumns);
+  if (!rewrite) {
+    return { sql: query };
+  }
+  const columns = rewrite.overriddenColumns
+    .map((name) => `"${name}"`)
+    .join(", ");
+  const table = parsed.schema
+    ? `${parsed.schema}.${parsed.table}`
+    : parsed.table;
+  return {
+    sql: rewrite.sql,
+    notice:
+      `Note: ${columns} in table ${table} is an identity column defined as ` +
+      `GENERATED ALWAYS, so PostgreSQL rejects an explicit value for it by ` +
+      `default. The statement was executed with OVERRIDING SYSTEM VALUE, so ` +
+      `the value you passed for ${columns} was accepted (a DEFAULT for ` +
+      `${columns} still comes from the sequence). Omit ${columns} from the ` +
+      `INSERT column list if the sequence should assign it.`,
+  };
+}
+
+/**
+ * Run the statement, turning an identity-column rejection into a typed error
+ * that names the cause and the fix instead of a raw provider blob.
+ */
+async function executeSqlWithIdentityClassification(
+  sql: string,
+  runSql: SqlRunner,
+): Promise<string> {
+  try {
+    return await runSql(sql);
+  } catch (error) {
+    if (isIdentityColumnError(error)) {
+      // Deliberate re-classification: the provider reports this as an
+      // opaque external failure, but the cause and the fix are known.
+      throw new DyadError(
+        describeIdentityColumnError(error),
+        DyadErrorKind.Validation,
+        { cause: error },
+      );
+    }
+    throw error;
+  }
+}
+
+function formatSqlResult({
+  migrationFileWritten,
+  notice,
+  sqlResult,
+}: {
+  migrationFileWritten: boolean;
+  notice?: string;
+  sqlResult: string;
+}): string {
+  // The leading sentence is asserted by `shouldTrackFileMutation`, so the
+  // override note goes after it.
+  const header = migrationFileWritten
+    ? "Successfully executed SQL query and wrote a migration file."
+    : "Successfully executed SQL query.";
+  const noticeBlock = notice ? `\n\n${notice}` : "";
+  return `${header}${noticeBlock}\n\nSQL result:\n${sqlResult}`;
+}
+
 export const executeSqlTool: ToolDefinition<z.infer<typeof executeSqlSchema>> =
   {
     name: "execute_sql",
@@ -226,15 +335,23 @@ export const executeSqlTool: ToolDefinition<z.infer<typeof executeSqlSchema>> =
       });
 
       if (provider === "supabase" && canUseSupabaseTools(ctx)) {
-        const sqlResult = boundToolOutput(
-          await executeSupabaseSql({
+        const runSql: SqlRunner = (query) =>
+          executeSupabaseSql({
             supabaseProjectId: ctx.supabaseProjectId,
-            query: args.query,
+            query,
             organizationSlug: ctx.supabaseOrganizationSlug ?? null,
             // Forward the turn signal so a cancelled turn does not leave the
             // statement (and its retry loop) running.
             signal: ctx.abortSignal,
-          }),
+          });
+
+        const { sql, notice } = await prepareIdentitySafeSql(
+          args.query,
+          runSql,
+        );
+
+        const sqlResult = boundToolOutput(
+          await executeSqlWithIdentityClassification(sql, runSql),
           MAX_SQL_RESULT_CHARS,
         );
 
@@ -245,28 +362,43 @@ export const executeSqlTool: ToolDefinition<z.infer<typeof executeSqlSchema>> =
           doesSqlMutateSchema(args.query)
         ) {
           try {
-            await writeMigrationFile(ctx.appPath, args.query, args.description);
+            // Record the statement that actually ran.
+            await writeMigrationFile(ctx.appPath, sql, args.description);
             migrationFileWritten = true;
           } catch (error) {
             return `SQL executed, but failed to write migration file: ${error}\n\nSQL result:\n${sqlResult}`;
           }
         }
 
-        return migrationFileWritten
-          ? `Successfully executed SQL query and wrote a migration file.\n\nSQL result:\n${sqlResult}`
-          : `Successfully executed SQL query.\n\nSQL result:\n${sqlResult}`;
+        return formatSqlResult({
+          migrationFileWritten,
+          notice,
+          sqlResult,
+        });
       }
 
       if (provider === "neon" && canUseNeonTools(ctx)) {
-        const sqlResult = boundToolOutput(
-          await executeNeonSql({
+        const runSql: SqlRunner = (query) =>
+          executeNeonSql({
             projectId: ctx.neonProjectId,
             branchId: ctx.neonActiveBranchId,
-            query: args.query,
-          }),
+            query,
+          });
+
+        const { sql, notice } = await prepareIdentitySafeSql(
+          args.query,
+          runSql,
+        );
+
+        const sqlResult = boundToolOutput(
+          await executeSqlWithIdentityClassification(sql, runSql),
           MAX_SQL_RESULT_CHARS,
         );
-        return `Successfully executed SQL query.\n\nSQL result:\n${sqlResult}`;
+        return formatSqlResult({
+          migrationFileWritten: false,
+          notice,
+          sqlResult,
+        });
       }
 
       throw new DyadError(

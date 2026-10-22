@@ -2,7 +2,7 @@ import log from "electron-log/main";
 import { getRunningTestBaseUrl } from "@/ipc/handlers/tests_handlers";
 import { setPreviewBrowserReleaser } from "./preview_browser_cleanup";
 import { detectSystemBrowserChannel } from "./playwright_bootstrap";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import { DyadError, DyadErrorKind, isDyadError } from "@/errors/dyad_error";
 import {
   formatNetworkEntries,
   formatPageContent,
@@ -53,6 +53,118 @@ const sessions = new Map<number, Session>();
 const launching = new Map<number, Promise<Session>>();
 const NAV_TIMEOUT_MS = 20_000;
 const ACTION_TIMEOUT_MS = 10_000;
+
+/**
+ * The preview can die at any moment: the app navigated away, the dev server
+ * restarted, the preview iframe was replaced, the preview was stopped. Every
+ * one of those leaves Playwright with a dead page, context or browser, and
+ * Playwright reports that in a few different shapes. Recognise all of them so
+ * a dead preview never reaches the model as an opaque failure.
+ */
+const TARGET_CLOSED_ERROR_NAME = "TargetClosedError";
+
+const TARGET_CLOSED_MESSAGE_FRAGMENTS = [
+  "target page, context or browser has been closed",
+  "target closed",
+  "browser has been closed",
+  "page has been closed",
+];
+
+/** How deep to follow a wrapped error's `cause` chain. */
+const MAX_ERROR_CAUSE_DEPTH = 5;
+
+function errorName(error: unknown): string {
+  if (error && typeof error === "object" && "name" in error) {
+    return String((error as { name?: unknown }).name ?? "");
+  }
+  return "";
+}
+
+function errorMessage(error: unknown): string {
+  if (typeof error === "string") return error;
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error) {
+    return String((error as { message?: unknown }).message ?? "");
+  }
+  return "";
+}
+
+/**
+ * True when the rejection means "the preview's page, context or browser is
+ * gone".
+ *
+ * Handles a non-Error rejection value and a wrapped error (the raw Playwright
+ * failure kept as the `cause` of a classified error) without throwing.
+ */
+export function isTargetClosedError(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth <= MAX_ERROR_CAUSE_DEPTH; depth++) {
+    if (!current) return false;
+    if (errorName(current) === TARGET_CLOSED_ERROR_NAME) return true;
+    // The wording differs in case between Playwright versions and call sites,
+    // so the fragments are matched case-insensitively.
+    const message = errorMessage(current).toLowerCase();
+    if (
+      message &&
+      TARGET_CLOSED_MESSAGE_FRAGMENTS.some((fragment) =>
+        message.includes(fragment),
+      )
+    ) {
+      return true;
+    }
+    current =
+      current && typeof current === "object" && "cause" in current
+        ? (current as { cause?: unknown }).cause
+        : undefined;
+  }
+  return false;
+}
+
+/**
+ * What the model sees when the preview went away mid-action.
+ */
+export const PREVIEW_CLOSED_MESSAGE =
+  "The preview closed while the action was running. Restart the app preview and retry.";
+
+/**
+ * The typed error for a preview that went away.
+ *
+ * A closed target is not a defect in the user's app: it is the operation's
+ * precondition - a live preview session - no longer holding. It is therefore
+ * reported as a `Precondition` error, which keeps a common, user-fixable
+ * event out of the exception telemetry while still telling the model exactly
+ * what to do next.
+ */
+function previewClosedError(cause: unknown): DyadError {
+  return new DyadError(PREVIEW_CLOSED_MESSAGE, DyadErrorKind.Precondition, {
+    cause,
+  });
+}
+
+/** True for the typed error this driver raises for a closed preview. */
+export function isPreviewClosedError(error: unknown): boolean {
+  return (
+    isDyadError(error) &&
+    error.kind === DyadErrorKind.Precondition &&
+    error.message === PREVIEW_CLOSED_MESSAGE
+  );
+}
+
+/**
+ * Await a page operation without hiding a closed target.
+ *
+ * The preview can disappear at any moment. A closed target must stop the
+ * action instead of being swallowed as "no data"; every other failure keeps
+ * the caller's existing handling.
+ */
+async function awaitPage<T>(operation: Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await operation;
+  } catch (error) {
+    if (isTargetClosedError(error)) throw error;
+    return fallback;
+  }
+}
 
 async function launchPage() {
   // Resolved lazily: the browser binary is only needed once an agent actually
@@ -106,14 +218,20 @@ async function launchPage() {
  * reports a false "page is empty", so settle before observing or interacting.
  */
 async function settle(page: any) {
-  await page
-    .waitForLoadState("networkidle", { timeout: 8_000 })
-    .catch(() => undefined);
+  await awaitPage(
+    page.waitForLoadState("networkidle", { timeout: 8_000 }),
+    undefined,
+  );
   // Web fonts change the layout, so waiting for them avoids reading a page
-  // mid-swap.
-  await page
-    .evaluate(() => (document as any)?.fonts?.ready)
-    .catch(() => undefined);
+  // mid-swap. A webfont that never resolves would otherwise hang every
+  // preview action, so give up on the fonts and keep going.
+  await awaitPage(
+    Promise.race([
+      page.evaluate(() => (document as any)?.fonts?.ready),
+      new Promise((resolve) => setTimeout(resolve, 5_000)),
+    ]),
+    undefined,
+  );
   await waitForStableDom(page);
   // React/TanStack commit after the network goes quiet; give the paint a beat.
   await page.waitForTimeout(400);
@@ -131,18 +249,19 @@ async function settle(page: any) {
 async function waitForStableDom(page: any, attempts = 8): Promise<void> {
   let previous = "";
   for (let attempt = 0; attempt < attempts; attempt++) {
-    const signature = await page
-      .evaluate(() => {
+    const signature = await awaitPage(
+      page.evaluate(() => {
         const body = document.body;
         if (!body) return "";
         return `${document.querySelectorAll("*").length}:${
           (body.innerText ?? "").length
         }`;
-      })
-      .catch(() => "");
+      }),
+      "",
+    );
     if (signature && signature === previous) return;
     previous = signature;
-    await page.waitForTimeout(250).catch(() => undefined);
+    await awaitPage(page.waitForTimeout(250), undefined);
   }
 }
 
@@ -313,21 +432,74 @@ export async function closeAllPreviewBrowserSessions(): Promise<void> {
   );
 }
 
+/**
+ * How many preview browser sessions are currently open.
+ *
+ * A session whose browser died is evicted, so this stays equal to the number
+ * of live browsers.
+ */
+export function previewBrowserSessionCount(): number {
+  return sessions.size;
+}
+
 // The process manager cannot import this module (it would create a cycle), so
 // it releases stopped apps' sessions through the registry.
 setPreviewBrowserReleaser(closePreviewBrowserSessionSync);
 
-const NO_PREVIEW_MESSAGE =
+export const NO_PREVIEW_MESSAGE =
   "The app is not currently running, so there is no preview to drive. Start the app first (preview the app), then retry.";
+
+/**
+ * Drop a session whose browser is gone.
+ *
+ * Keeping it would make every later call reuse a dead page, so the next call
+ * launches a fresh browser instead.
+ */
+function evictSession(appId: number, session: Session): void {
+  if (sessions.get(appId) === session) {
+    sessions.delete(appId);
+  }
+  // Best effort: the browser may already be gone.
+  void session.close().catch(() => undefined);
+}
 
 async function currentPage(appId: number) {
   const session = await getSession(appId);
-  if (!session) return null;
   // The preview proxy can stop between the session lookup and here; without
-  // this check the non-null assertion below would build a broken URL.
+  // this check the action below would build a broken URL.
   const baseUrl = getRunningTestBaseUrl(appId);
-  if (!baseUrl) return null;
+  if (!baseUrl) {
+    // The app stopped while the session was open: drop the stale session so
+    // the next call starts a fresh browser instead of reusing a dead page.
+    if (session) evictSession(appId, session);
+    return null;
+  }
+  if (!session) return null;
   return { session, baseUrl };
+}
+
+/**
+ * Run one preview action against a live session.
+ *
+ * Every page interaction can fail because the preview went away. Such a
+ * failure must stop the action with a typed, actionable error instead of
+ * Playwright's raw "Target page, context or browser has been closed", and the
+ * dead session must be dropped so the next call starts a fresh browser.
+ */
+async function runAction(
+  appId: number,
+  action: (resolved: { session: Session; baseUrl: string }) => Promise<string>,
+): Promise<string> {
+  const resolved = await currentPage(appId);
+  if (!resolved) return NO_PREVIEW_MESSAGE;
+  try {
+    return await action(resolved);
+  } catch (error) {
+    if (!isTargetClosedError(error)) throw error;
+    evictSession(appId, resolved.session);
+    if (isPreviewClosedError(error)) throw error;
+    throw previewClosedError(error);
+  }
 }
 
 /**
@@ -342,7 +514,7 @@ async function recordVisit(session: Session) {
   if (!url) return;
   const last = session.visited[session.visited.length - 1];
   if (last?.url === url) return;
-  const title = await session.page.title().catch(() => "");
+  const title = await awaitPage(session.page.title(), "");
   session.visited.push({ url, title });
   if (session.visited.length > 50) {
     session.visited.splice(0, session.visited.length - 50);
@@ -350,32 +522,30 @@ async function recordVisit(session: Session) {
 }
 
 export async function previewNavigate(appId: number, path: string) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session, baseUrl } = resolved;
-  const target = /^https?:\/\//.test(path)
-    ? path
-    : new URL(path, baseUrl).toString();
-  await session.page.goto(target, {
-    waitUntil: "domcontentloaded",
-    timeout: NAV_TIMEOUT_MS,
+  return runAction(appId, async ({ session, baseUrl }) => {
+    const target = /^https?:\/\//.test(path)
+      ? path
+      : new URL(path, baseUrl).toString();
+    await session.page.goto(target, {
+      waitUntil: "domcontentloaded",
+      timeout: NAV_TIMEOUT_MS,
+    });
+    session.consoleLog.length = 0;
+    await removeClickMarker(session.page);
+    await settle(session.page);
+    await recordVisit(session);
+    return describePage(session.page, target);
   });
-  session.consoleLog.length = 0;
-  await removeClickMarker(session.page);
-  await settle(session.page);
-  await recordVisit(session);
-  return describePage(session.page, target);
 }
 
 export async function previewClick(appId: number, selector: string) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session } = resolved;
-  const locator = session.page.locator(selector).first();
-  await locator.waitFor({ state: "visible", timeout: ACTION_TIMEOUT_MS });
-  await locator.click({ timeout: ACTION_TIMEOUT_MS });
-  await settle(session.page);
-  return `Clicked ${selector}. ${await describePage(session.page, session.page.url())}`;
+  return runAction(appId, async ({ session }) => {
+    const locator = session.page.locator(selector).first();
+    await locator.waitFor({ state: "visible", timeout: ACTION_TIMEOUT_MS });
+    await locator.click({ timeout: ACTION_TIMEOUT_MS });
+    await settle(session.page);
+    return `Clicked ${selector}. ${await describePage(session.page, session.page.url())}`;
+  });
 }
 
 export async function previewType(
@@ -384,40 +554,39 @@ export async function previewType(
   text: string,
   submit: boolean,
 ) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session } = resolved;
-  const locator = session.page.locator(selector).first();
-  await locator.waitFor({ state: "visible", timeout: ACTION_TIMEOUT_MS });
-  await locator.fill(text, { timeout: ACTION_TIMEOUT_MS });
-  if (submit) {
-    await locator.press("Enter", { timeout: ACTION_TIMEOUT_MS });
-    await settle(session.page);
-  }
-  return `Typed into ${selector}${submit ? " and pressed Enter" : ""}. ${await describePage(
-    session.page,
-    session.page.url(),
-  )}`;
+  return runAction(appId, async ({ session }) => {
+    const locator = session.page.locator(selector).first();
+    await locator.waitFor({ state: "visible", timeout: ACTION_TIMEOUT_MS });
+    await locator.fill(text, { timeout: ACTION_TIMEOUT_MS });
+    if (submit) {
+      await locator.press("Enter", { timeout: ACTION_TIMEOUT_MS });
+      await settle(session.page);
+    }
+    return `Typed into ${selector}${submit ? " and pressed Enter" : ""}. ${await describePage(
+      session.page,
+      session.page.url(),
+    )}`;
+  });
 }
 
 /** Read the rendered page: title, url, and the text a user would actually see. */
 export async function previewRead(appId: number) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  await settle(resolved.session.page);
-  return describePage(resolved.session.page, resolved.session.page.url());
+  return runAction(appId, async ({ session }) => {
+    await settle(session.page);
+    return describePage(session.page, session.page.url());
+  });
 }
 
 export async function previewConsole(appId: number) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { consoleLog } = resolved.session;
-  if (consoleLog.length === 0)
-    return "The preview has logged no console output.";
-  return consoleLog
-    .map((entry) => `[${entry.type}] ${entry.text}`)
-    .join("\n")
-    .slice(0, 8000);
+  return runAction(appId, async ({ session }) => {
+    const { consoleLog } = session;
+    if (consoleLog.length === 0)
+      return "The preview has logged no console output.";
+    return consoleLog
+      .map((entry) => `[${entry.type}] ${entry.text}`)
+      .join("\n")
+      .slice(0, 8000);
+  });
 }
 
 /**
@@ -437,55 +606,60 @@ export interface PreviewWaitOptions {
 }
 
 export async function previewWait(appId: number, options: PreviewWaitOptions) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session } = resolved;
   const timeout = Math.min(
     Math.max(options.timeoutMs ?? ACTION_TIMEOUT_MS, 1_000),
     60_000,
   );
-  const state = options.state ?? "visible";
-  const selector = options.selector;
-  const text = options.text;
-  const urlNeedle = options.url;
-  try {
-    if (selector) {
-      await session.page.locator(selector).first().waitFor({ state, timeout });
-      return `Selector "${selector}" is now ${state}. ${await describePage(
+  return runAction(appId, async ({ session }) => {
+    const state = options.state ?? "visible";
+    const selector = options.selector;
+    const text = options.text;
+    const urlNeedle = options.url;
+    try {
+      if (selector) {
+        await session.page
+          .locator(selector)
+          .first()
+          .waitFor({ state, timeout });
+        return `Selector "${selector}" is now ${state}. ${await describePage(
+          session.page,
+          session.page.url(),
+        )}`;
+      }
+      if (text) {
+        await session.page
+          .getByText(text, { exact: false })
+          .first()
+          .waitFor({ state, timeout });
+        return `Text "${text}" is now ${state}. ${await describePage(
+          session.page,
+          session.page.url(),
+        )}`;
+      }
+      if (urlNeedle) {
+        await session.page.waitForURL(
+          (candidate: URL) => candidate.toString().includes(urlNeedle),
+          { timeout },
+        );
+        return `The URL now matches "${urlNeedle}". ${await describePage(
+          session.page,
+          session.page.url(),
+        )}`;
+      }
+      await session.page.waitForLoadState("networkidle", { timeout });
+      return `The preview finished loading. ${await describePage(
         session.page,
         session.page.url(),
       )}`;
+    } catch (error) {
+      // A closed preview is not a timeout: it has to surface as a typed error
+      // the model can act on, not as "the wait did not complete".
+      if (isTargetClosedError(error)) throw error;
+      return `The wait did not complete within ${timeout}ms: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
     }
-    if (text) {
-      await session.page
-        .getByText(text, { exact: false })
-        .first()
-        .waitFor({ state, timeout });
-      return `Text "${text}" is now ${state}. ${await describePage(
-        session.page,
-        session.page.url(),
-      )}`;
-    }
-    if (urlNeedle) {
-      await session.page.waitForURL(
-        (candidate: URL) => candidate.toString().includes(urlNeedle),
-        { timeout },
-      );
-      return `The URL now matches "${urlNeedle}". ${await describePage(
-        session.page,
-        session.page.url(),
-      )}`;
-    }
-    await session.page.waitForLoadState("networkidle", { timeout });
-    return `The preview finished loading. ${await describePage(
-      session.page,
-      session.page.url(),
-    )}`;
-  } catch (error) {
-    return `The wait did not complete within ${timeout}ms: ${
-      error instanceof Error ? error.message : String(error)
-    }`;
-  }
+  });
 }
 
 /**
@@ -496,84 +670,85 @@ export async function previewWait(appId: number, options: PreviewWaitOptions) {
  * that a snapshot cannot describe.
  */
 export async function previewContent(appId: number, selectors?: string[]) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session } = resolved;
-  await settle(session.page);
+  return runAction(appId, async ({ session }) => {
+    await settle(session.page);
 
-  if (selectors && selectors.length > 0) {
-    const scoped: { selector: string; count: number; text: string }[] =
-      await session.page.evaluate((wanted: string[]) => {
-        return wanted.map((selector) => {
-          const nodes = Array.from(document.querySelectorAll(selector));
-          const text = nodes
-            .map((node) =>
-              ((node as HTMLElement).innerText ?? node.textContent ?? "")
-                .replace(/\s+/g, " ")
-                .trim(),
-            )
-            .filter(Boolean)
-            .join("\n\n")
-            .trim();
-          return { selector, count: nodes.length, text };
-        });
-      }, selectors);
-    return formatScopedSections(
-      scoped
-        .filter((section) => section.count > 0)
-        .map((section) => ({ selector: section.selector, text: section.text })),
-      scoped
-        .filter((section) => section.count === 0)
-        .map((section) => section.selector),
-    );
-  }
+    if (selectors && selectors.length > 0) {
+      const scoped: { selector: string; count: number; text: string }[] =
+        await session.page.evaluate((wanted: string[]) => {
+          return wanted.map((selector) => {
+            const nodes = Array.from(document.querySelectorAll(selector));
+            const text = nodes
+              .map((node) =>
+                ((node as HTMLElement).innerText ?? node.textContent ?? "")
+                  .replace(/\s+/g, " ")
+                  .trim(),
+              )
+              .filter(Boolean)
+              .join("\n\n")
+              .trim();
+            return { selector, count: nodes.length, text };
+          });
+        }, selectors);
+      return formatScopedSections(
+        scoped
+          .filter((section) => section.count > 0)
+          .map((section) => ({
+            selector: section.selector,
+            text: section.text,
+          })),
+        scoped
+          .filter((section) => section.count === 0)
+          .map((section) => section.selector),
+      );
+    }
 
-  const extracted = await session.page.evaluate(() => {
-    const root = (document.querySelector("main, article, [role=main]") ??
-      document.body) as HTMLElement;
-    const clean = (value: string | null | undefined) =>
-      (value ?? "").replace(/\s+/g, " ").trim();
-    return {
-      title: document.title ?? "",
-      headings: Array.from(document.querySelectorAll("h1, h2, h3"))
-        .map((element) => clean(element.textContent))
-        .filter(Boolean)
-        .slice(0, 40),
-      text: (root.innerText ?? "")
-        .replace(/[ \t]+/g, " ")
-        .replace(/\n{3,}/g, "\n\n")
-        .trim(),
-      links: Array.from(document.querySelectorAll("a[href]"))
-        .slice(0, 60)
-        .map((element) => ({
-          text: clean(element.textContent).slice(0, 80),
-          href: (element as HTMLAnchorElement).href,
-        }))
-        .filter((link) => link.text || link.href),
-    };
-  });
-  return formatPageContent({
-    url: session.page.url(),
-    title: extracted.title,
-    headings: extracted.headings,
-    text: extracted.text,
-    links: extracted.links,
+    const extracted = await session.page.evaluate(() => {
+      const root = (document.querySelector("main, article, [role=main]") ??
+        document.body) as HTMLElement;
+      const clean = (value: string | null | undefined) =>
+        (value ?? "").replace(/\s+/g, " ").trim();
+      return {
+        title: document.title ?? "",
+        headings: Array.from(document.querySelectorAll("h1, h2, h3"))
+          .map((element) => clean(element.textContent))
+          .filter(Boolean)
+          .slice(0, 40),
+        text: (root.innerText ?? "")
+          .replace(/[ \t]+/g, " ")
+          .replace(/\n{3,}/g, "\n\n")
+          .trim(),
+        links: Array.from(document.querySelectorAll("a[href]"))
+          .slice(0, 60)
+          .map((element) => ({
+            text: clean(element.textContent).slice(0, 80),
+            href: (element as HTMLAnchorElement).href,
+          }))
+          .filter((link) => link.text || link.href),
+      };
+    });
+    return formatPageContent({
+      url: session.page.url(),
+      title: extracted.title,
+      headings: extracted.headings,
+      text: extracted.text,
+      links: extracted.links,
+    });
   });
 }
 
 /** The requests the preview made that failed, errored or are still pending. */
 export async function previewNetwork(appId: number) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session } = resolved;
-  const pending: NetworkEntry[] = Array.from(session.pending.values()).map(
-    (request) => ({
-      kind: "pending",
-      method: request.method,
-      url: request.url,
-    }),
-  );
-  return formatNetworkEntries([...session.networkLog, ...pending]);
+  return runAction(appId, async ({ session }) => {
+    const pending: NetworkEntry[] = Array.from(session.pending.values()).map(
+      (request) => ({
+        kind: "pending",
+        method: request.method,
+        url: request.url,
+      }),
+    );
+    return formatNetworkEntries([...session.networkLog, ...pending]);
+  });
 }
 
 /**
@@ -608,55 +783,53 @@ export async function previewScreenshot(
   appId: number,
   options: PreviewScreenshotOptions = {},
 ) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
+  return runAction(appId, async ({ session }) => {
+    const target = options.ref
+      ? refLocator(session.page, options.ref)
+      : session.page;
+    const fullPage = options.fullPage === true && !options.ref;
 
-  const { session } = resolved;
-  const target = options.ref
-    ? refLocator(session.page, options.ref)
-    : session.page;
-  const fullPage = options.fullPage === true && !options.ref;
-
-  const png = (await target.screenshot({
-    type: "png",
-    fullPage,
-    // CSS pixels, not device pixels: a retina capture of the 1280x800
-    // viewport is 4.1M pixels, which is over the ~1.15M pixel budget a
-    // vision model can read usefully, and costs twice the tokens.
-    scale: "css",
-  })) as unknown as Buffer;
-  const pngDataUrl = `data:image/png;base64,${png.toString("base64")}`;
-  if (pngDataUrl.length <= MAX_PREVIEW_SCREENSHOT_CHARS) {
-    return pngDataUrl;
-  }
-
-  // A PNG screenshot of a detailed UI is mostly noise for a model. Re-take it
-  // as JPEG at decreasing quality until it fits the budget.
-  for (const quality of SCREENSHOT_JPEG_QUALITIES) {
-    const jpeg = (await target.screenshot({
-      type: "jpeg",
-      quality,
+    const png = (await target.screenshot({
+      type: "png",
       fullPage,
+      // CSS pixels, not device pixels: a retina capture of the 1280x800
+      // viewport is 4.1M pixels, which is over the ~1.15M pixel budget a
+      // vision model can read usefully, and costs twice the tokens.
       scale: "css",
     })) as unknown as Buffer;
-    const jpegDataUrl = `data:image/jpeg;base64,${jpeg.toString("base64")}`;
-    if (jpegDataUrl.length <= MAX_PREVIEW_SCREENSHOT_CHARS) {
-      return jpegDataUrl;
+    const pngDataUrl = `data:image/png;base64,${png.toString("base64")}`;
+    if (pngDataUrl.length <= MAX_PREVIEW_SCREENSHOT_CHARS) {
+      return pngDataUrl;
     }
-  }
 
-  return (
-    `The screenshot is too large to return (${Math.round(
-      pngDataUrl.length / 1024,
-    )} KB of base64, budget is ${Math.round(
-      MAX_PREVIEW_SCREENSHOT_CHARS / 1024,
-    )} KB). Use the 'read' action for the visible text or 'console' for the ` +
-    "console output instead."
-  );
+    // A PNG screenshot of a detailed UI is mostly noise for a model. Re-take it
+    // as JPEG at decreasing quality until it fits the budget.
+    for (const quality of SCREENSHOT_JPEG_QUALITIES) {
+      const jpeg = (await target.screenshot({
+        type: "jpeg",
+        quality,
+        fullPage,
+        scale: "css",
+      })) as unknown as Buffer;
+      const jpegDataUrl = `data:image/jpeg;base64,${jpeg.toString("base64")}`;
+      if (jpegDataUrl.length <= MAX_PREVIEW_SCREENSHOT_CHARS) {
+        return jpegDataUrl;
+      }
+    }
+
+    return (
+      `The screenshot is too large to return (${Math.round(
+        pngDataUrl.length / 1024,
+      )} KB of base64, budget is ${Math.round(
+        MAX_PREVIEW_SCREENSHOT_CHARS / 1024,
+      )} KB). Use the 'read' action for the visible text or 'console' for the ` +
+      "console output instead."
+    );
+  });
 }
 
 async function describePage(page: any, url: string) {
-  const title = await page.title().catch(() => "");
+  const title = await awaitPage(page.title(), "");
   const text = (await page.evaluate(() => document.body?.innerText ?? ""))
     .toString()
     .replace(/\s+/g, " ")
@@ -822,40 +995,39 @@ function refLocator(page: any, ref: string) {
  * with a `ref_N` handle the agent can click, type into or hover.
  */
 export async function previewSnapshot(appId: number) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session } = resolved;
-  await settle(session.page);
-  const elements = await collectSnapshot(session.page);
-  const url = session.page.url();
-  const title = await session.page.title().catch(() => "");
-  if (elements.length === 0) {
+  return runAction(appId, async ({ session }) => {
+    await settle(session.page);
+    const elements = await collectSnapshot(session.page);
+    const url = session.page.url();
+    const title = await awaitPage(session.page.title(), "");
+    if (elements.length === 0) {
+      return [
+        `URL: ${url}`,
+        `Title: ${title}`,
+        "The page exposes no interactive elements. Use the 'read' action for the visible text.",
+      ].join("\n");
+    }
+    const lines = elements.map((element) => {
+      const indent = "  ".repeat(element.depth);
+      const role = element.role ? `[${element.role}]` : "";
+      const state = [
+        element.disabled ? "disabled" : "",
+        element.checked ? "checked" : "",
+        element.value ? `value=${JSON.stringify(element.value)}` : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      return `${indent}- ${element.ref} <${element.tag}${role}> "${element.name}"${
+        state ? ` (${state})` : ""
+      }`;
+    });
     return [
       `URL: ${url}`,
       `Title: ${title}`,
-      "The page exposes no interactive elements. Use the 'read' action for the visible text.",
+      `Elements (${elements.length}):`,
+      ...lines,
     ].join("\n");
-  }
-  const lines = elements.map((element) => {
-    const indent = "  ".repeat(element.depth);
-    const role = element.role ? `[${element.role}]` : "";
-    const state = [
-      element.disabled ? "disabled" : "",
-      element.checked ? "checked" : "",
-      element.value ? `value=${JSON.stringify(element.value)}` : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
-    return `${indent}- ${element.ref} <${element.tag}${role}> "${element.name}"${
-      state ? ` (${state})` : ""
-    }`;
   });
-  return [
-    `URL: ${url}`,
-    `Title: ${title}`,
-    `Elements (${elements.length}):`,
-    ...lines,
-  ].join("\n");
 }
 
 /**
@@ -868,69 +1040,69 @@ export async function previewFind(
   selector?: string,
   index?: number,
 ) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session } = resolved;
-  const wanted = Math.max(0, index ?? 0);
-  const locator = selector
-    ? session.page.locator(selector)
-    : session.page.getByText(text, { exact: false });
-  const count = await locator.count().catch(() => 0);
-  if (count === 0) {
-    return selector
-      ? `No element matches the selector "${selector}". Take a 'snapshot' to see what the page exposes.`
-      : `No element with the visible text "${text}" was found. Take a 'snapshot' to see what the page exposes.`;
-  }
-  if (wanted >= count) {
-    return `Found ${count} match(es) but index ${wanted} was requested.`;
-  }
-  const target = locator.nth(wanted);
-  const visible = await target.isVisible().catch(() => false);
-  if (!visible) {
-    return `Match ${wanted} of ${count} for "${
-      selector ?? text
-    }" is not visible.`;
-  }
-  const ref = await target
-    .evaluate((element: any, attribute: string) => {
-      const scope = window as unknown as { __dyadRefCounter?: number };
-      const existing = element.getAttribute(attribute);
-      if (existing) return existing;
-      scope.__dyadRefCounter = (scope.__dyadRefCounter ?? 0) + 1;
-      const ref = `ref_${scope.__dyadRefCounter}`;
-      element.setAttribute(attribute, ref);
-      return ref;
-    }, REF_ATTRIBUTE)
-    .catch(() => "");
-  if (!ref) {
+  return runAction(appId, async ({ session }) => {
+    const wanted = Math.max(0, index ?? 0);
+    const locator = selector
+      ? session.page.locator(selector)
+      : session.page.getByText(text, { exact: false });
+    const count = await awaitPage(locator.count(), 0);
+    if (count === 0) {
+      return selector
+        ? `No element matches the selector "${selector}". Take a 'snapshot' to see what the page exposes.`
+        : `No element with the visible text "${text}" was found. Take a 'snapshot' to see what the page exposes.`;
+    }
+    if (wanted >= count) {
+      return `Found ${count} match(es) but index ${wanted} was requested.`;
+    }
+    const target = locator.nth(wanted);
+    const visible = await awaitPage(target.isVisible(), false);
+    if (!visible) {
+      return `Match ${wanted} of ${count} for "${
+        selector ?? text
+      }" is not visible.`;
+    }
+    const ref = await awaitPage(
+      target.evaluate((element: any, attribute: string) => {
+        const scope = window as unknown as { __dyadRefCounter?: number };
+        const existing = element.getAttribute(attribute);
+        if (existing) return existing;
+        scope.__dyadRefCounter = (scope.__dyadRefCounter ?? 0) + 1;
+        const ref = `ref_${scope.__dyadRefCounter}`;
+        element.setAttribute(attribute, ref);
+        return ref;
+      }, REF_ATTRIBUTE),
+      "",
+    );
+    if (!ref) {
+      return `Found ${count} match(es) for "${
+        selector ?? text
+      }", but the element could not be tagged with a handle.`;
+    }
+    const description = await awaitPage(
+      target.evaluate((element: any) => ({
+        tag: element.tagName.toLowerCase(),
+        text: (element.textContent ?? "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 120),
+      })),
+      { tag: "?", text: "" },
+    );
     return `Found ${count} match(es) for "${
       selector ?? text
-    }", but the element could not be tagged with a handle.`;
-  }
-  const description = await target
-    .evaluate((element: any) => ({
-      tag: element.tagName.toLowerCase(),
-      text: (element.textContent ?? "")
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 120),
-    }))
-    .catch(() => ({ tag: "?", text: "" }));
-  return `Found ${count} match(es) for "${
-    selector ?? text
-  }". Selected index ${wanted}: ${ref} <${description.tag}> "${description.text}"`;
+    }". Selected index ${wanted}: ${ref} <${description.tag}> "${description.text}"`;
+  });
 }
 
 /** Click an element addressed by a `ref_N` handle. */
 export async function previewClickRef(appId: number, ref: string) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session } = resolved;
-  const locator = refLocator(session.page, ref);
-  await locator.waitFor({ state: "visible", timeout: ACTION_TIMEOUT_MS });
-  await locator.click({ timeout: ACTION_TIMEOUT_MS });
-  await settle(session.page);
-  return `Clicked ${ref}. ${await describePage(session.page, session.page.url())}`;
+  return runAction(appId, async ({ session }) => {
+    const locator = refLocator(session.page, ref);
+    await locator.waitFor({ state: "visible", timeout: ACTION_TIMEOUT_MS });
+    await locator.click({ timeout: ACTION_TIMEOUT_MS });
+    await settle(session.page);
+    return `Clicked ${ref}. ${await describePage(session.page, session.page.url())}`;
+  });
 }
 
 /** Type into an element addressed by a `ref_N` handle. */
@@ -940,32 +1112,30 @@ export async function previewTypeRef(
   text: string,
   submit: boolean,
 ) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session } = resolved;
-  const locator = refLocator(session.page, ref);
-  await locator.waitFor({ state: "visible", timeout: ACTION_TIMEOUT_MS });
-  await locator.fill(text, { timeout: ACTION_TIMEOUT_MS });
-  if (submit) {
-    await locator.press("Enter", { timeout: ACTION_TIMEOUT_MS });
-  }
-  await settle(session.page);
-  return `Typed into ${ref}${submit ? " and pressed Enter" : ""}. ${await describePage(
-    session.page,
-    session.page.url(),
-  )}`;
+  return runAction(appId, async ({ session }) => {
+    const locator = refLocator(session.page, ref);
+    await locator.waitFor({ state: "visible", timeout: ACTION_TIMEOUT_MS });
+    await locator.fill(text, { timeout: ACTION_TIMEOUT_MS });
+    if (submit) {
+      await locator.press("Enter", { timeout: ACTION_TIMEOUT_MS });
+    }
+    await settle(session.page);
+    return `Typed into ${ref}${submit ? " and pressed Enter" : ""}. ${await describePage(
+      session.page,
+      session.page.url(),
+    )}`;
+  });
 }
 
 /** Hover an element addressed by a `ref_N` handle. */
 export async function previewHover(appId: number, ref: string) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session } = resolved;
-  const locator = refLocator(session.page, ref);
-  await locator.waitFor({ state: "visible", timeout: ACTION_TIMEOUT_MS });
-  await locator.hover({ timeout: ACTION_TIMEOUT_MS });
-  await settle(session.page);
-  return `Hovered ${ref}. ${await describePage(session.page, session.page.url())}`;
+  return runAction(appId, async ({ session }) => {
+    const locator = refLocator(session.page, ref);
+    await locator.waitFor({ state: "visible", timeout: ACTION_TIMEOUT_MS });
+    await locator.hover({ timeout: ACTION_TIMEOUT_MS });
+    await settle(session.page);
+    return `Hovered ${ref}. ${await describePage(session.page, session.page.url())}`;
+  });
 }
 
 /** Scroll the preview by a pixel delta. */
@@ -974,71 +1144,70 @@ export async function previewScroll(
   deltaX: number,
   deltaY: number,
 ) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session } = resolved;
-  await session.page.mouse.wheel(deltaX, deltaY);
-  await settle(session.page);
-  return `Scrolled by (${deltaX}, ${deltaY}). ${await describePage(
-    session.page,
-    session.page.url(),
-  )}`;
+  return runAction(appId, async ({ session }) => {
+    await session.page.mouse.wheel(deltaX, deltaY);
+    await settle(session.page);
+    return `Scrolled by (${deltaX}, ${deltaY}). ${await describePage(
+      session.page,
+      session.page.url(),
+    )}`;
+  });
 }
 
 /** Go back to the previous page in the preview's history. */
 export async function previewGoBack(appId: number) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session } = resolved;
-  const response = await session.page
-    .goBack({ waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS })
-    .catch(() => null);
-  await settle(session.page);
-  if (!response) {
-    return "There is no previous page to go back to.";
-  }
-  await recordVisit(session);
-  return `Went back. ${await describePage(session.page, session.page.url())}`;
+  return runAction(appId, async ({ session }) => {
+    const response = await awaitPage(
+      session.page.goBack({
+        waitUntil: "domcontentloaded",
+        timeout: NAV_TIMEOUT_MS,
+      }),
+      null,
+    );
+    await settle(session.page);
+    if (!response) {
+      return "There is no previous page to go back to.";
+    }
+    await recordVisit(session);
+    return `Went back. ${await describePage(session.page, session.page.url())}`;
+  });
 }
 
 /** Reload the current preview page. */
 export async function previewReload(appId: number) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session } = resolved;
-  await session.page.reload({
-    waitUntil: "domcontentloaded",
-    timeout: NAV_TIMEOUT_MS,
+  return runAction(appId, async ({ session }) => {
+    await session.page.reload({
+      waitUntil: "domcontentloaded",
+      timeout: NAV_TIMEOUT_MS,
+    });
+    await settle(session.page);
+    return `Reloaded the preview. ${await describePage(
+      session.page,
+      session.page.url(),
+    )}`;
   });
-  await settle(session.page);
-  return `Reloaded the preview. ${await describePage(
-    session.page,
-    session.page.url(),
-  )}`;
 }
 
 /** Scroll an element addressed by a `ref_N` handle into view. */
 export async function previewScrollToRef(appId: number, ref: string) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session } = resolved;
-  const locator = refLocator(session.page, ref);
-  await locator.scrollIntoViewIfNeeded({ timeout: ACTION_TIMEOUT_MS });
-  await settle(session.page);
-  return `Scrolled ${ref} into view. ${await describePage(
-    session.page,
-    session.page.url(),
-  )}`;
+  return runAction(appId, async ({ session }) => {
+    const locator = refLocator(session.page, ref);
+    await locator.scrollIntoViewIfNeeded({ timeout: ACTION_TIMEOUT_MS });
+    await settle(session.page);
+    return `Scrolled ${ref} into view. ${await describePage(
+      session.page,
+      session.page.url(),
+    )}`;
+  });
 }
 
 /** Press a key (for example "Enter", "Escape", "Tab") in the preview. */
 export async function previewPressKey(appId: number, key: string) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session } = resolved;
-  await session.page.keyboard.press(key);
-  await settle(session.page);
-  return `Pressed ${key}. ${await describePage(session.page, session.page.url())}`;
+  return runAction(appId, async ({ session }) => {
+    await session.page.keyboard.press(key);
+    await settle(session.page);
+    return `Pressed ${key}. ${await describePage(session.page, session.page.url())}`;
+  });
 }
 
 /**
@@ -1052,49 +1221,48 @@ export async function previewFormInput(
   checked?: boolean,
   filePath?: string,
 ) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session } = resolved;
-  const locator = refLocator(session.page, ref);
-  await locator.waitFor({ state: "attached", timeout: ACTION_TIMEOUT_MS });
-  switch (kind) {
-    case "text":
-      await locator.fill(value ?? "", { timeout: ACTION_TIMEOUT_MS });
-      break;
-    case "select":
-      await locator.selectOption(value ?? "", { timeout: ACTION_TIMEOUT_MS });
-      break;
-    case "checkbox":
-    case "radio": {
-      if (checked === undefined) {
-        throw new DyadError(
-          `'form_input' with kind "${kind}" requires a 'checked' value.`,
-          DyadErrorKind.Validation,
-        );
+  return runAction(appId, async ({ session }) => {
+    const locator = refLocator(session.page, ref);
+    await locator.waitFor({ state: "attached", timeout: ACTION_TIMEOUT_MS });
+    switch (kind) {
+      case "text":
+        await locator.fill(value ?? "", { timeout: ACTION_TIMEOUT_MS });
+        break;
+      case "select":
+        await locator.selectOption(value ?? "", { timeout: ACTION_TIMEOUT_MS });
+        break;
+      case "checkbox":
+      case "radio": {
+        if (checked === undefined) {
+          throw new DyadError(
+            `'form_input' with kind "${kind}" requires a 'checked' value.`,
+            DyadErrorKind.Validation,
+          );
+        }
+        if (checked) {
+          await locator.check({ timeout: ACTION_TIMEOUT_MS });
+        } else if (kind === "checkbox") {
+          await locator.uncheck({ timeout: ACTION_TIMEOUT_MS });
+        }
+        break;
       }
-      if (checked) {
-        await locator.check({ timeout: ACTION_TIMEOUT_MS });
-      } else if (kind === "checkbox") {
-        await locator.uncheck({ timeout: ACTION_TIMEOUT_MS });
+      case "file": {
+        if (!filePath) {
+          throw new DyadError(
+            "'form_input' with kind \"file\" requires a 'file_path'.",
+            DyadErrorKind.Validation,
+          );
+        }
+        await locator.setInputFiles(filePath, { timeout: ACTION_TIMEOUT_MS });
+        break;
       }
-      break;
     }
-    case "file": {
-      if (!filePath) {
-        throw new DyadError(
-          "'form_input' with kind \"file\" requires a 'file_path'.",
-          DyadErrorKind.Validation,
-        );
-      }
-      await locator.setInputFiles(filePath, { timeout: ACTION_TIMEOUT_MS });
-      break;
-    }
-  }
-  await settle(session.page);
-  return `Set ${kind} on ${ref}. ${await describePage(
-    session.page,
-    session.page.url(),
-  )}`;
+    await settle(session.page);
+    return `Set ${kind} on ${ref}. ${await describePage(
+      session.page,
+      session.page.url(),
+    )}`;
+  });
 }
 
 /**
@@ -1102,26 +1270,28 @@ export async function previewFormInput(
  * serialized result - the equivalent of typing into the browser console.
  */
 export async function previewEval(appId: number, expression: string) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session } = resolved;
-  try {
-    const result = await session.page.evaluate((source: string) => {
-      // Indirect eval keeps the expression in global scope, like a console.
-      const value = (0, eval)(source);
-      if (value === undefined) return { ok: true, text: "undefined" };
-      try {
-        return { ok: true, text: JSON.stringify(value) ?? String(value) };
-      } catch {
-        return { ok: true, text: String(value) };
-      }
-    }, expression);
-    return `Expression result: ${result.text}`;
-  } catch (error) {
-    return `Expression failed: ${
-      error instanceof Error ? error.message : String(error)
-    }`;
-  }
+  return runAction(appId, async ({ session }) => {
+    try {
+      const result = await session.page.evaluate((source: string) => {
+        // Indirect eval keeps the expression in global scope, like a console.
+        const value = (0, eval)(source);
+        if (value === undefined) return { ok: true, text: "undefined" };
+        try {
+          return { ok: true, text: JSON.stringify(value) ?? String(value) };
+        } catch {
+          return { ok: true, text: String(value) };
+        }
+      }, expression);
+      return `Expression result: ${result.text}`;
+    } catch (error) {
+      // A closed preview is not a failed expression: it has to surface as a
+      // typed error the model can act on.
+      if (isTargetClosedError(error)) throw error;
+      return `Expression failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
+    }
+  });
 }
 
 /** Manage preview tabs: list, open, switch to, close. */
@@ -1131,73 +1301,74 @@ export async function previewTabs(
   index?: number,
   url?: string,
 ) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session } = resolved;
-  const context = session.context;
-  const pages = context.pages();
-  switch (action) {
-    case "list": {
-      const lines: string[] = [];
-      for (let i = 0; i < pages.length; i++) {
-        const title = await pages[i].title().catch(() => "");
-        const marker = pages[i] === session.page ? " (active)" : "";
-        lines.push(`${i}: ${pages[i].url()} - ${title}${marker}`);
+  return runAction(appId, async ({ session }) => {
+    const context = session.context;
+    const pages = context.pages();
+    switch (action) {
+      case "list": {
+        const lines: string[] = [];
+        for (let i = 0; i < pages.length; i++) {
+          const title = await awaitPage(pages[i].title(), "");
+          const marker = pages[i] === session.page ? " (active)" : "";
+          lines.push(`${i}: ${pages[i].url()} - ${title}${marker}`);
+        }
+        return `Preview tabs (${pages.length}):\n${lines.join("\n")}`;
       }
-      return `Preview tabs (${pages.length}):\n${lines.join("\n")}`;
-    }
-    case "new": {
-      const page = await context.newPage();
-      attachConsole(page, session.consoleLog);
-      attachNetwork(page, session.networkLog, session.pending);
-      attachDialogs(page);
-      session.page = page;
-      if (url) {
-        await page.goto(url, {
-          waitUntil: "domcontentloaded",
-          timeout: NAV_TIMEOUT_MS,
-        });
-      }
-      await settle(page);
-      return `Opened a new preview tab${
-        url ? ` at ${url}` : ""
-      }. ${await describePage(page, page.url())}`;
-    }
-    case "switch": {
-      const target = index === undefined ? undefined : pages[index];
-      if (!target) {
-        return `No preview tab at index ${index ?? 0}. Use tab_action 'list' to see the open tabs.`;
-      }
-      session.page = target;
-      await settle(target);
-      return `Switched to the preview tab at index ${index}. ${await describePage(
-        target,
-        target.url(),
-      )}`;
-    }
-    case "close": {
-      const target = index === undefined ? session.page : pages[index];
-      if (!target) {
-        return `No preview tab at index ${index ?? 0}.`;
-      }
-      // Closing the tab the agent is currently driving would leave it without
-      // a page to work with, so the active tab is never closed.
-      if (target === session.page) {
-        return "Refusing to close the active preview tab. Switch to another tab first and close that one instead.";
-      }
-      const remaining = context.pages().filter((page: any) => page !== target);
-      await target.close().catch(() => undefined);
-      if (remaining.length > 0) {
-        session.page = remaining[0];
-      } else {
+      case "new": {
         const page = await context.newPage();
         attachConsole(page, session.consoleLog);
         attachNetwork(page, session.networkLog, session.pending);
+        attachDialogs(page);
         session.page = page;
+        if (url) {
+          await page.goto(url, {
+            waitUntil: "domcontentloaded",
+            timeout: NAV_TIMEOUT_MS,
+          });
+        }
+        await settle(page);
+        return `Opened a new preview tab${
+          url ? ` at ${url}` : ""
+        }. ${await describePage(page, page.url())}`;
       }
-      return "Closed the preview tab.";
+      case "switch": {
+        const target = index === undefined ? undefined : pages[index];
+        if (!target) {
+          return `No preview tab at index ${index ?? 0}. Use tab_action 'list' to see the open tabs.`;
+        }
+        session.page = target;
+        await settle(target);
+        return `Switched to the preview tab at index ${index}. ${await describePage(
+          target,
+          target.url(),
+        )}`;
+      }
+      case "close": {
+        const target = index === undefined ? session.page : pages[index];
+        if (!target) {
+          return `No preview tab at index ${index ?? 0}.`;
+        }
+        // Closing the tab the agent is currently driving would leave it without
+        // a page to work with, so the active tab is never closed.
+        if (target === session.page) {
+          return "Refusing to close the active preview tab. Switch to another tab first and close that one instead.";
+        }
+        const remaining = context
+          .pages()
+          .filter((page: any) => page !== target);
+        await awaitPage(target.close(), undefined);
+        if (remaining.length > 0) {
+          session.page = remaining[0];
+        } else {
+          const page = await context.newPage();
+          attachConsole(page, session.consoleLog);
+          attachNetwork(page, session.networkLog, session.pending);
+          session.page = page;
+        }
+        return "Closed the preview tab.";
+      }
     }
-  }
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -1445,7 +1616,7 @@ async function tabContext(session: Session): Promise<string> {
   const activeIndex = pages.indexOf(session.page);
   const lines: string[] = [];
   for (const [index, page] of pages.entries()) {
-    const title = await page.title().catch(() => "");
+    const title = await awaitPage(page.title(), "");
     lines.push(
       `${index}: ${page.url()} - ${title}${page === session.page ? " (active)" : ""}`,
     );
@@ -1464,39 +1635,45 @@ export async function previewDom(
   appId: number,
   options: PreviewDomOptions = {},
 ) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session } = resolved;
-  await settle(session.page);
-  const filter = options.filter ?? "interactive";
-  const depth = Math.min(Math.max(options.depth ?? MAX_DOM_DEPTH, 1), 30);
-  const rows = await collectDomOutline(session.page, filter, MAX_DOM_ELEMENTS);
-  const nodes: DomNode[] = rows.map((row) => ({
-    ref: row.ref || undefined,
-    role: domRoleForTag(row.tag, {
-      role: row.roleAttr || undefined,
-      type: row.typeAttr || undefined,
-      href: row.href || undefined,
-    }),
-    name: row.name,
-    x: Math.round(row.x),
-    y: Math.round(row.y),
-    width: Math.round(row.width),
-    height: Math.round(row.height),
-    disabled: row.disabled || undefined,
-    checked: row.checked || undefined,
-    value: row.value || undefined,
-    depth: row.depth,
-  }));
-  const url = session.page.url();
-  const title = await session.page.title().catch(() => "");
-  return [
-    `URL: ${url}`,
-    `Title: ${title}`,
-    `DOM outline (${filter}, ${nodes.length} nodes):`,
-    formatDomOutline(nodes, { maxDepth: depth, maxElements: MAX_DOM_ELEMENTS }),
-    await tabContext(session),
-  ].join("\n");
+  return runAction(appId, async ({ session }) => {
+    await settle(session.page);
+    const filter = options.filter ?? "interactive";
+    const depth = Math.min(Math.max(options.depth ?? MAX_DOM_DEPTH, 1), 30);
+    const rows = await collectDomOutline(
+      session.page,
+      filter,
+      MAX_DOM_ELEMENTS,
+    );
+    const nodes: DomNode[] = rows.map((row) => ({
+      ref: row.ref || undefined,
+      role: domRoleForTag(row.tag, {
+        role: row.roleAttr || undefined,
+        type: row.typeAttr || undefined,
+        href: row.href || undefined,
+      }),
+      name: row.name,
+      x: Math.round(row.x),
+      y: Math.round(row.y),
+      width: Math.round(row.width),
+      height: Math.round(row.height),
+      disabled: row.disabled || undefined,
+      checked: row.checked || undefined,
+      value: row.value || undefined,
+      depth: row.depth,
+    }));
+    const url = session.page.url();
+    const title = await awaitPage(session.page.title(), "");
+    return [
+      `URL: ${url}`,
+      `Title: ${title}`,
+      `DOM outline (${filter}, ${nodes.length} nodes):`,
+      formatDomOutline(nodes, {
+        maxDepth: depth,
+        maxElements: MAX_DOM_ELEMENTS,
+      }),
+      await tabContext(session),
+    ].join("\n");
+  });
 }
 
 /** A single action inside a batch. */
@@ -1521,6 +1698,7 @@ export interface PreviewBatchAction {
   state?: "visible" | "hidden" | "attached" | "detached";
   timeout_ms?: number;
   full_page?: boolean;
+  selectors?: string[];
   x?: number;
   y?: number;
 }
@@ -1567,7 +1745,7 @@ async function runBatchAction(
     case "read":
       return previewRead(appId);
     case "content":
-      return previewContent(appId);
+      return previewContent(appId, action.selectors);
     case "console":
       return previewConsole(appId);
     case "network":
@@ -1661,15 +1839,15 @@ export async function previewBatch(
   appId: number,
   actions: PreviewBatchAction[],
 ) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const results: string[] = [];
-  for (const [index, action] of actions.entries()) {
-    const outcome = await runBatchAction(appId, action);
-    results.push(`${index + 1}. ${action.action}: ${outcome}`);
-    if (outcome.startsWith(BATCH_FAILURE_PREFIX)) break;
-  }
-  return results.join("\n");
+  return runAction(appId, async () => {
+    const results: string[] = [];
+    for (const [index, action] of actions.entries()) {
+      const outcome = await runBatchAction(appId, action);
+      results.push(`${index + 1}. ${action.action}: ${outcome}`);
+      if (outcome.startsWith(BATCH_FAILURE_PREFIX)) break;
+    }
+    return results.join("\n");
+  });
 }
 
 /**
@@ -1680,16 +1858,15 @@ export async function previewBatch(
  * the DOM outline reports.
  */
 export async function previewClickAt(appId: number, x: number, y: number) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session } = resolved;
-  await showClickMarker(session.page, x, y);
-  await session.page.mouse.click(x, y);
-  await settle(session.page);
-  return `Clicked at (${x}, ${y}). ${await describePage(
-    session.page,
-    session.page.url(),
-  )}`;
+  return runAction(appId, async ({ session }) => {
+    await showClickMarker(session.page, x, y);
+    await session.page.mouse.click(x, y);
+    await settle(session.page);
+    return `Clicked at (${x}, ${y}). ${await describePage(
+      session.page,
+      session.page.url(),
+    )}`;
+  });
 }
 
 /**
@@ -1699,8 +1876,8 @@ export async function previewClickAt(appId: number, x: number, y: number) {
  * makes the two line up. It is removed on the next navigation.
  */
 async function showClickMarker(page: any, x: number, y: number) {
-  await page
-    .evaluate(
+  await awaitPage(
+    page.evaluate(
       (point: { x: number; y: number }) => {
         document.getElementById("__dyad_click_marker")?.remove();
         const marker = document.createElement("div");
@@ -1717,14 +1894,16 @@ async function showClickMarker(page: any, x: number, y: number) {
         document.body?.appendChild(marker);
       },
       { x, y },
-    )
-    .catch(() => undefined);
+    ),
+    undefined,
+  );
 }
 
 async function removeClickMarker(page: any) {
-  await page
-    .evaluate(() => {
+  await awaitPage(
+    page.evaluate(() => {
       document.getElementById("__dyad_click_marker")?.remove();
-    })
-    .catch(() => undefined);
+    }),
+    undefined,
+  );
 }

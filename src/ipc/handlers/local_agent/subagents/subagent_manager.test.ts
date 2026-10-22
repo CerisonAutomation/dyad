@@ -324,9 +324,15 @@ describe("sub-agent manager status policy", () => {
   });
 
   it("uses the root-provided system prompt only for Implementers", () => {
-    expect(
-      resolveSubagentSystemPrompt("implementer", "App implementation rules"),
-    ).toBe("App implementation rules");
+    const implementerPrompt = resolveSubagentSystemPrompt(
+      "implementer",
+      "App implementation rules",
+    );
+    // The root prompt is kept as-is; the house style and the reasoning
+    // headroom are added on top of it.
+    expect(implementerPrompt).toContain("App implementation rules");
+    expect(implementerPrompt).toContain("<caveman_style>");
+    expect(implementerPrompt).toContain("<reasoning_headroom>");
     expect(resolveSubagentSystemPrompt("explorer", "Ignored")).toContain(
       "Dyad Explorer",
     );
