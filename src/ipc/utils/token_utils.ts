@@ -95,6 +95,38 @@ function boundOutputForEstimate(
   return output;
 }
 
+/**
+ * The provider only ever sees the bounded tool output, so the estimate must
+ * be computed against the bounded value or compaction would fire on bytes
+ * that are never sent.
+ */
+function boundOutputForEstimate(
+  output: unknown,
+  maxCharsPerResult?: number,
+): unknown {
+  if (maxCharsPerResult == null) {
+    return output;
+  }
+  if (typeof output === "string") {
+    return output.length > maxCharsPerResult
+      ? output.slice(0, maxCharsPerResult)
+      : output;
+  }
+  if (output && typeof output === "object" && "value" in output) {
+    const value = (output as { value?: unknown }).value;
+    if (typeof value === "string") {
+      return {
+        ...output,
+        value:
+          value.length > maxCharsPerResult
+            ? value.slice(0, maxCharsPerResult)
+            : value,
+      };
+    }
+  }
+  return output;
+}
+
 export const estimateMessagesTokens = (messages: Message[]): number => {
   return messages.reduce(
     (acc, message) => acc + estimateTokens(message.content),
