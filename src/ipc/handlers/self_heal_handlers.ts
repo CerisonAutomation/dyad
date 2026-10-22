@@ -38,13 +38,13 @@ import {
   ensureSelfImproveChat,
   resolveDyadSourceRoot,
   type SelfImproveChatRef,
-} from "./local_agent/self_heal/chat";
+} from "./local_agent/self_heal";
 import {
   createAutoTriggerScheduler,
   readOpenSignatures,
   type AutoTriggerScheduler,
   type AutoTriggerState,
-} from "./local_agent/self_heal/auto_trigger";
+} from "./local_agent/self_heal";
 
 const logger = log.scope("self_heal_handlers");
 
@@ -205,17 +205,10 @@ export function startSelfHealSurface(): Promise<void> {
 }
 
 async function startupSelfHealSurface(): Promise<void> {
-  let dyadRoot: string;
-  try {
-    dyadRoot = resolveDyadSourceRoot();
-  } catch (error) {
-    logger.warn("Failed to resolve the Dyad source root:", error);
-    return;
-  }
+  const dyadRoot = resolveDyadSourceRoot();
 
-  let ref: SelfImproveChatRef | undefined;
   try {
-    ref = await ensureSelfImproveChat({ dyadRoot });
+    const ref = await ensureSelfImproveChat({ dyadRoot });
     logger.info("The self-improvement chat is ready", {
       chatId: ref.chatId,
       created: ref.created,

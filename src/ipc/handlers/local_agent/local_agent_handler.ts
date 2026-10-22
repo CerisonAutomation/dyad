@@ -200,7 +200,7 @@ import {
   type RendererMessageRow,
 } from "@/ipc/utils/renderer_chat_message";
 import { buildPreventionPromptBlock, loadPreventionRules } from "./self_heal";
-import { interceptPrompt } from "./self_heal/interceptor";
+import { interceptPrompt } from "./self_heal";
 import {
   PREVENTION_PROMPT_PLACEHOLDER,
   renderPreventionPromptBlock,
@@ -619,7 +619,7 @@ function replaceUserMessageText(
  *
  * Returns the message history unchanged when nothing was applied.
  */
-async function interceptUserPrompt(params: {
+export async function interceptUserPrompt(params: {
   messageHistory: ModelMessage[];
   settings: UserSettings;
   appPath: string;
