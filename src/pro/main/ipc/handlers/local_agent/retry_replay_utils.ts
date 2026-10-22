@@ -249,9 +249,12 @@ export function maybeAppendRetryReplayForRetry(params: {
     return;
   }
 
+  // The replay is re-sent on every following step, so bound it with the same
+  // root context budget before it is appended to the turn history.
+  const boundedReplayMessages = pruneRootMessages(replayMessages);
   onCurrentMessageHistoryUpdate([
     ...currentMessageHistoryRef,
-    ...replayMessages,
+    ...boundedReplayMessages,
   ]);
   accumulatedAiMessagesRef.push(...replayMessages);
 }
