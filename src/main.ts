@@ -17,6 +17,10 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { registerIpcHandlers } from "./ipc/ipc_host";
 import {
+  startSelfHealSurface,
+  stopSelfHealSurface,
+} from "./ipc/handlers/self_heal_handlers";
+import {
   startDyadCliBridge,
   type DyadCliBridgeHandle,
 } from "./ipc/services/cli_bridge_server";
@@ -468,6 +472,13 @@ export async function onReady() {
     app.quit();
     return;
   }
+
+  // Start the self-improvement surface: the always-open self-improvement chat
+  // and the auto-trigger scheduler. It runs after the database is ready and is
+  // best-effort: a failing self-heal must never keep the app from starting.
+  void startSelfHealSurface().catch((error) => {
+    logger.error("Failed to start the self-improvement surface", error);
+  });
 
   // Start the Dyad CLI bridge (loopback-only HTTP) so an external CLI can
   // call the same IPC contracts the renderer uses. This runs after the IPC
@@ -1828,6 +1839,10 @@ app.on("will-quit", () => {
 
   // Stop the chat-search index maintenance timers
   stopChatSearchIndexer();
+
+  // Stop the self-improvement auto-trigger scheduler so its timer never
+  // outlives the app.
+  stopSelfHealSurface();
 });
 
 app.on("quit", (_event, exitCode) => {

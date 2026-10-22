@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAtom, useSetAtom } from "jotai";
+import { useQuery } from "@tanstack/react-query";
 import {
   selectedChatIdAtom,
   removeChatIdFromAllTrackingAtom,
@@ -27,6 +28,7 @@ import {
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { dropdownOpenAtom } from "@/atoms/uiAtoms";
 import { ipc } from "@/ipc/types";
+import { queryKeys } from "@/lib/queryKeys";
 import { showError, showSuccess } from "@/lib/toast";
 import { beginNewChat, endNewChat } from "@/lib/new_chat_lock";
 import {
@@ -44,6 +46,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useChats } from "@/hooks/useChats";
+import { useStreamChat } from "@/hooks/useStreamChat";
 import { AppAvatar } from "@/components/AppAvatar";
 import { RenameChatDialog } from "@/components/chat/RenameChatDialog";
 import { DeleteChatDialog } from "@/components/chat/DeleteChatDialog";
@@ -61,6 +64,15 @@ const CHAT_ACTION_SPRING = {
   damping: 34,
   mass: 0.45,
 };
+
+/**
+ * The label of the pinned, always-open self-improvement chat.
+ *
+ * The chat is not an ordinary chat: it is the only chat that may change Dyad
+ * itself, so it is surfaced at the TOP of the chat list instead of being
+ * buried in a date group.
+ */
+const SELF_IMPROVE_CHAT_LABEL = "Dyad self-improvement · always open";
 
 export function ChatList({
   show,
@@ -80,6 +92,29 @@ export function ChatList({
   const { chats, loading, invalidateChats } = useChats(selectedAppId);
   const { apps } = useLoadApps();
   const selectedApp = apps.find((app) => app.id === selectedAppId);
+
+  // The always-open self-improvement chat. It lives on a synthetic app that
+  // points at the Dyad source root, so it is NOT part of the selected app's
+  // chat list: it is fetched separately and pinned at the top.
+  const { data: selfImproveChat } = useQuery({
+    queryKey: queryKeys.selfHeal.chat,
+    queryFn: async () => ipc.selfHeal.getSelfImproveChat(),
+  });
+
+  // A self-improvement run is a chat turn, and a chat turn is submitted by the
+  // renderer into the main-owned chat stream actor. Main decides WHEN the run
+  // happens; this listener submits it.
+  const { streamMessage } = useStreamChat({ hasChatId: false });
+  useEffect(() => {
+    return ipc.events.selfHeal.onRunRequested(({ chatId, appId, prompt }) => {
+      void streamMessage({
+        prompt,
+        chatId,
+        appId,
+        requestedChatMode: "local-agent",
+      });
+    });
+  }, [streamMessage]);
 
   const chatGroups = useMemo(() => {
     const favorites: typeof chats = [];
@@ -412,6 +447,42 @@ export function ChatList({
                 <Search size={16} />
               </Button>
             </div>
+
+            {selfImproveChat && (
+              <div data-testid="self-improve-chat-section">
+                <div className="px-3 pb-1 text-xs font-medium text-muted-foreground">
+                  {SELF_IMPROVE_CHAT_LABEL}
+                </div>
+                <SidebarMenu className="space-y-1">
+                  <SidebarMenuItem className="mb-1">
+                    <Button
+                      variant="ghost"
+                      onClick={() =>
+                        handleChatClick({
+                          chatId: selfImproveChat.chatId,
+                          appId: selfImproveChat.appId,
+                        })
+                      }
+                      className={cn(
+                        "justify-start w-full text-left py-3 hover:bg-sidebar-accent/80",
+                        selectedChatId === selfImproveChat.chatId &&
+                          "bg-sidebar-accent text-sidebar-accent-foreground",
+                      )}
+                      data-testid="self-improve-chat-item"
+                    >
+                      <div className="flex flex-col w-full">
+                        <span className="truncate">
+                          {selfImproveChat.title}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          Always open · improves Dyad itself
+                        </span>
+                      </div>
+                    </Button>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </div>
+            )}
 
             {loading ? (
               <div className="py-3 px-4 text-sm text-gray-500">

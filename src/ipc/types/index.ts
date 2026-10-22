@@ -82,6 +82,7 @@ export { upgradeContracts } from "./upgrade";
 export { visualEditingContracts } from "./visual-editing";
 export { securityContracts } from "./security";
 export { miscContracts, miscEvents } from "./misc";
+export { selfHealContracts, selfHealEvents } from "./self_heal";
 export { freeAgentQuotaContracts } from "./free_agent_quota";
 export { freeModelQuotaContracts } from "./free_model_quota";
 export { audioContracts } from "./audio";
@@ -149,6 +150,7 @@ export { upgradeClient } from "./upgrade";
 export { visualEditingClient } from "./visual-editing";
 export { securityClient } from "./security";
 export { miscClient, miscEventClient } from "./misc";
+export { selfHealClient, selfHealEventClient } from "./self_heal";
 export { freeAgentQuotaClient } from "./free_agent_quota";
 export { freeModelQuotaClient } from "./free_model_quota";
 export { audioClient } from "./audio";
@@ -444,6 +446,13 @@ export type {
   EnvVar,
 } from "./misc";
 
+// Self-heal types
+export type {
+  SelfImproveChat,
+  SelfImproveRunResult,
+  SelfImproveRunRequestedPayload,
+} from "./self_heal";
+
 // Free agent quota types
 export type { FreeAgentQuotaStatus } from "./free_agent_quota";
 export type { FreeModelQuotaStatus } from "./free_model_quota";
@@ -566,6 +575,7 @@ import { upgradeClient } from "./upgrade";
 import { visualEditingClient } from "./visual-editing";
 import { securityClient } from "./security";
 import { miscClient, miscEventClient } from "./misc";
+import { selfHealClient, selfHealEventClient } from "./self_heal";
 import { freeAgentQuotaClient } from "./free_agent_quota";
 import { freeModelQuotaClient } from "./free_model_quota";
 import { audioClient } from "./audio";
@@ -654,6 +664,7 @@ export const ipc = {
   visualEditing: visualEditingClient,
   security: securityClient,
   misc: miscClient,
+  selfHeal: selfHealClient,
   freeAgentQuota: freeAgentQuotaClient,
   freeModelQuota: freeModelQuotaClient,
   audio: audioClient,
@@ -682,6 +693,7 @@ export const ipc = {
     supabase: supabaseEventClient,
     system: systemEventClient,
     misc: miscEventClient,
+    selfHeal: selfHealEventClient,
     appBlueprint: appBlueprintEventClient,
     tests: testsEventClient,
     userInput: userInputEventClient,

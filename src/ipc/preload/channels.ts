@@ -50,6 +50,7 @@ import { upgradeContracts } from "../types/upgrade";
 import { visualEditingContracts } from "../types/visual-editing";
 import { securityContracts } from "../types/security";
 import { miscContracts, miscEvents } from "../types/misc";
+import { selfHealContracts, selfHealEvents } from "../types/self_heal";
 import { freeAgentQuotaContracts } from "../types/free_agent_quota";
 import { freeModelQuotaContracts } from "../types/free_model_quota";
 import { planEvents, planContracts } from "../types/plan";
@@ -143,6 +144,7 @@ export const VALID_INVOKE_CHANNELS = [
   ...getInvokeChannels(visualEditingContracts),
   ...getInvokeChannels(securityContracts),
   ...getInvokeChannels(miscContracts),
+  ...getInvokeChannels(selfHealContracts),
   ...getInvokeChannels(freeAgentQuotaContracts),
   ...getInvokeChannels(freeModelQuotaContracts),
   ...getInvokeChannels(planContracts),
@@ -199,6 +201,7 @@ export const VALID_RECEIVE_CHANNELS = [
   ...getReceiveChannels(systemEvents),
   ...getReceiveChannels(versionEvents),
   ...getReceiveChannels(miscEvents),
+  ...getReceiveChannels(selfHealEvents),
   ...getReceiveChannels(planEvents),
   ...getReceiveChannels(appBlueprintEvents),
   ...getReceiveChannels(testsEvents),

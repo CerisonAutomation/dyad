@@ -232,7 +232,32 @@ quantitatively instead of vibes:
 A fix is finalised only when `consensus score >= 7` AND `fix score >= 7` AND
 the verification gate passed AND the critic approved.
 
-**Fast decision layer (Laya / Jev).** Most of the gates above do not need a
+**The Ralph loop is the only path to a finalised fix.** Nothing is written to
+`prevention.json` and nothing is reported as fixed unless the loop's GATE
+passed: verification evidence exists AND the critique did not veto. A loop that
+exhausts its budget ends as `needs_human` with the evidence attached, never as a
+silent success.
+
+**Fast decision layer (Laya / Jev) — via the CLI, not an in-process API.**
+The layer shells out to the `jev` CLI (Jev = cloud typed judgment, Laya = the
+local/private variant):
+
+```
+jev yes  "<question>" --true "<desc>" --false "<desc>" -s "<state>" --json --timeout <sec> --retries 0
+jev score "<question>" --range 1-10         -s "<state>" --json --timeout <sec> --retries 0
+```
+
+- The CLI is resolved as `JEV_CLI_PATH` -> `which jev` -> `npx --no-install jev`.
+- Every invocation has a HARD TIMEOUT (2 s default); the child is killed on expiry.
+- Output is parsed as JSON first (`answer.noul` -> `score = round(p * 10, 1)`,
+  `ok = answer.yes ?? p >= 0.5`; `answer.value` / `answer.score` -> a 0-10 score),
+  with a plain-stdout fallback (`yes\t0.97`, `8.40\t8`). Anything without a
+  usable number is treated as unavailable.
+- `jev yes` exiting 1 is a "no" answer, NOT an error.
+- The layer is ADVISORY: a score is an input to a decision, never the decision
+  itself, and it can never widen scope or finalise a fix on its own.
+
+Most of the gates above do not need a
 full model call. The cheap typed decision layer answers them in milliseconds
 and is the DEFAULT for the gates below; a full auxiliary-model pass is only
 used where judgement is genuinely required.
@@ -262,6 +287,16 @@ The self-improvement agent is hard-scoped to the Dyad repository:
   user's intent or redirect the task;
 - the prevention ledger lives under `<dyadRepo>/.dyad/self-heal/`, never in a
   user app.
+- `assertSelfHealScope(dyadRoot, targetPath)` is the only sanctioned way to
+  resolve a write target; a path outside the Dyad root is a hard rejection,
+  not a warning.
+- the agent can therefore ONLY improve and fix Dyad issues. Any request that
+  would touch a user app is refused and redirected to that app's own chat.
+- RESEARCH: before proposing a fix the agent looks up the library's real
+  documentation through Context7 (`resolve-library-id` -> `query-docs`, one
+  concept per call, version-pinned id, code examples preferred over prose) and
+  cites what it found. A fix that contradicts the documented contract of the
+  library it touches is rejected by the critique step.
 
 ## 5. Safety and budget
 
@@ -383,3 +418,68 @@ appended below.
   6×. Bugbot Autofix: stops after 3 attempts/PR.
 - Prompt rewriting: >20-point helpfulness jump on the study's models, but the best
   rewriter made 19% of responses worse; intent preservation only 74% rated 2.5–3.
+
+## 9. The always-open chat, the auto-trigger and the interceptor
+
+### 9.1 The dedicated chat (Surface B) — it can ONLY improve Dyad
+
+- A synthetic app row `Dyad (self-improvement)` whose path is the Dyad source
+  root, created lazily; a pinned chat titled `Dyad self-improvement (always open)`
+  so the chat list always surfaces it.
+- Its system prompt is the architect-designer prompt: PLAN-ONLY. It may not edit
+  code itself — it produces a plan plus a fail-to-pass reproduction test, and
+  the `implementer` sub-agent applies the patch under the scope guard.
+- It mines the OTHER chats (`search_chats` / `explore_chat_history`) for
+  failures and workarounds, clusters them into classes, and works one class at
+  a time, most-severe first (ledger `occurrences` x severity).
+- Every class it fixes ends with a prevention rule, so the same class cannot
+  silently return.
+
+### 9.2 The auto-trigger
+
+- `shouldAutoTrigger(state, now)` is a pure function: it fires only when the
+  ledger has OPEN entries, the repo tree is clean, no turn is active for that
+  chat, and the 30-minute rate limit has elapsed.
+- The slot is consumed by the ATTEMPT, so a failed enqueue cannot storm.
+- It is a scheduler over injectable ports (clock, tree-clean probe, chat-run
+  enqueue) so it is testable without a running app.
+
+### 9.3 The prompt interceptor (Surface C)
+
+- `interceptPrompt({ prompt, settings, mcpTools, skills, preventionRules })` runs
+  ONE bounded auxiliary pass (8 s) and returns
+  `{ improvedPrompt, injectedMcpTools, injectedSkills, injectedRuleIds, researchRequests, applied, reason }`.
+- FAIL-CLOSED: the auxiliary model may only ADD guidance. If the decision layer
+  is unavailable, declines, scores < 7, the aux call times out or misparses, or
+  the intent-preservation check fails, the ORIGINAL prompt is used unchanged with
+  ZERO injections.
+- Intent preservation: every key term (paths, file names, identifiers, code
+  spans, numbers) must survive the rewrite AND the content-word coverage must
+  stay >= 0.85.
+- The injection lists are computed DETERMINISTICALLY (skills come from
+  `BUILTIN_SKILL_CATALOG`, MCP tools from the enabled set, rules from
+  `prevention.json`), so the model can never invent a tool, skill, rule or
+  library id.
+- Documentation lookups are REQUESTED, not inlined: the interceptor names the
+  Context7 calls the main model should make (`resolve-library-id` ->
+  `query-docs`), and the main model performs them through the MCP tools. The
+  added text is capped (1200 chars).
+- Conditional, never unconditional: docs are only requested when the task
+  touches an API that is not in the known-common set, because unconditional doc
+  fetching has been measured to REDUCE accuracy on common APIs.
+
+## 10. What "never happens again" means
+
+The prevention ledger is the mechanism, and it is enforced by the loop:
+
+1. A failure is recorded with a normalised signature (the same bug with a
+   different path or id collapses to one entry).
+2. The signature is injected into future turns as a rule, path-triggered: the
+   rule fires when a tool touches a matching path, lands in the TOOL RESULT
+   (not the user's prompt), costs zero tokens when inactive, and can never be
+   invoked by the model.
+3. A fix is only recorded once the Ralph loop's verification gate passed and the
+   critique did not veto. A regression re-opens the entry as `regressed` and
+   re-enters the loop instead of silently reattaching to the closed one.
+4. Known-bad signatures are suppressed before they trigger a self-heal, and the
+   suppression EXPIRES, so a real regression is not hidden forever.

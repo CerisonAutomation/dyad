@@ -199,7 +199,8 @@ import {
   toRendererMessages,
   type RendererMessageRow,
 } from "@/ipc/utils/renderer_chat_message";
-import { buildPreventionPromptBlock } from "./self_heal";
+import { buildPreventionPromptBlock, loadPreventionRules } from "./self_heal";
+import { interceptPrompt } from "./self_heal/interceptor";
 import {
   PREVENTION_PROMPT_PLACEHOLDER,
   renderPreventionPromptBlock,
@@ -577,6 +578,99 @@ function getMessageText(message: ModelMessage): string {
         : "",
     )
     .join("\n");
+}
+
+/**
+ * Replaces the text of the last user message with the intercepted prompt.
+ *
+ * Only a plain-text user message is replaced. A message whose content is a
+ * list of parts (attachments, on-disk file references) is left alone: the
+ * interceptor works on one prompt string, so rewriting part of a multi-part
+ * message would risk changing what the user asked for.
+ */
+function replaceUserMessageText(
+  messages: ModelMessage[],
+  text: string,
+): ModelMessage[] | null {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (message.role !== "user") {
+      continue;
+    }
+    if (typeof message.content !== "string") {
+      return null;
+    }
+    return [
+      ...messages.slice(0, index),
+      { ...message, content: text },
+      ...messages.slice(index + 1),
+    ];
+  }
+  return null;
+}
+
+/**
+ * Runs the self-heal prompt interceptor over the user's request.
+ *
+ * The interceptor may only ADD guidance: it never changes the intent, and it
+ * is fail-closed by design. When it declines, scores too low, times out or
+ * fails, it reports `applied: false` and the ORIGINAL prompt is used
+ * unchanged.
+ *
+ * Returns the message history unchanged when nothing was applied.
+ */
+async function interceptUserPrompt(params: {
+  messageHistory: ModelMessage[];
+  settings: UserSettings;
+  appPath: string;
+  signal?: AbortSignal;
+}): Promise<ModelMessage[]> {
+  const lastUserMessage = [...params.messageHistory]
+    .reverse()
+    .find((message) => message.role === "user");
+  if (!lastUserMessage || lastUserMessage.role !== "user") {
+    return params.messageHistory;
+  }
+  if (typeof lastUserMessage.content !== "string") {
+    // A multi-part message (attachments, on-disk file references) is left
+    // alone: the interceptor works on one prompt string.
+    return params.messageHistory;
+  }
+  const originalPrompt = lastUserMessage.content;
+  if (originalPrompt.trim().length === 0) {
+    return params.messageHistory;
+  }
+
+  try {
+    const interception = await interceptPrompt({
+      prompt: originalPrompt,
+      settings: params.settings,
+      preventionRules: await loadPreventionRules(params.appPath),
+      signal: params.signal,
+    });
+    if (!interception.applied) {
+      return params.messageHistory;
+    }
+    const replaced = replaceUserMessageText(
+      params.messageHistory,
+      interception.improvedPrompt,
+    );
+    if (!replaced) {
+      return params.messageHistory;
+    }
+    logger.info("The self-heal interceptor added guidance to the prompt", {
+      injectedMcpTools: interception.injectedMcpTools.length,
+      injectedSkills: interception.injectedSkills.length,
+      injectedRuleIds: interception.injectedRuleIds.length,
+      researchRequests: interception.researchRequests.length,
+    });
+    return replaced;
+  } catch (error) {
+    // The interceptor must never break a turn: a failure leaves the prompt
+    // exactly as the user wrote it.
+    logger.warn("The self-heal prompt interceptor failed:", error);
+    return params.messageHistory;
+  }
 }
 
 function isAttachmentAccessToolCall(toolName: string, input: unknown): boolean {
@@ -1330,7 +1424,7 @@ export async function handleLocalAgentStream(
     // Use messageOverride if provided (e.g., for summarization)
     // If a compaction summary exists, only include messages from that point onward
     // (pre-compaction messages are preserved in DB for the user but not sent to LLM)
-    const messageHistory: ModelMessage[] =
+    let messageHistory: ModelMessage[] =
       messageOverride ??
       buildChatMessageHistory(chat.messages, {
         inferenceSource: currentInferenceSource() ?? undefined,
@@ -1343,6 +1437,17 @@ export async function handleLocalAgentStream(
         PDF_INPUT_UNSUPPORTED_MESSAGE,
         DyadErrorKind.Validation,
       );
+    }
+    // The self-heal prompt interceptor (surface C) runs BEFORE the prompt is
+    // sent. It may only ADD guidance and is fail-closed: when it declines or
+    // fails, the ORIGINAL prompt is used unchanged.
+    if (!messageOverride) {
+      messageHistory = await interceptUserPrompt({
+        messageHistory,
+        settings,
+        appPath,
+        signal: abortController.signal,
+      });
     }
     const latestUserMessage = [...messageHistory]
       .reverse()
