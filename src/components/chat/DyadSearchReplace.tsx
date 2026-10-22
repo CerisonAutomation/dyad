@@ -7,7 +7,7 @@ import { CustomTagState } from "./stateTypes";
 import {
   type SearchReplaceBlock,
   parseSearchReplaceBlocks,
-} from "@/pro/shared/search_replace_parser";
+} from "@/shared/search_replace_parser";
 import {
   DyadCard,
   DyadCardHeader,

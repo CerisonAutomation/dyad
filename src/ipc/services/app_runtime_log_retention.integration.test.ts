@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppRunInvocationRef } from "@/app_run/state";
 import type { ConsoleEntry } from "@/ipc/types";
 import { addLog, clearLogs } from "@/lib/log_store";
-import type { AgentContext } from "@/pro/main/ipc/handlers/local_agent/tools/types";
+import type { AgentContext } from "@/ipc/handlers/local_agent/tools/types";
 
 const APP_ID = 42;
 const NOW = Date.now();
@@ -30,7 +30,7 @@ import {
   type AppRuntimeOutput,
   type AppRuntimeServiceDependencies,
 } from "./app_runtime_service";
-import { readLogsTool } from "@/pro/main/ipc/handlers/local_agent/tools/read_logs";
+import { readLogsTool } from "@/ipc/handlers/local_agent/tools/read_logs";
 
 function createService(): AppRuntimeService {
   let running = false;

@@ -10,7 +10,7 @@ import {
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import { MAX_AI_MESSAGES_SIZE } from "@/ipc/utils/ai_messages_utils";
 import { isSandboxSupportedPlatform } from "@/ipc/utils/sandbox/runner";
-import { isSandboxScriptExecutionEnabled } from "@/pro/main/ipc/handlers/local_agent/tools/execute_sandbox_script";
+import { isSandboxScriptExecutionEnabled } from "@/ipc/handlers/local_agent/tools/execute_sandbox_script";
 import {
   toAttachmentLogicalPath,
   type StoredAttachmentInfo,

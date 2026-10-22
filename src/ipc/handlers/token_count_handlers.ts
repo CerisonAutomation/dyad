@@ -41,12 +41,12 @@ import {
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import { resolveChatModeForTurn } from "./chat_mode_resolution";
 import { isImplementerSubagentEnabled } from "@/lib/autoSidekick";
-import { estimateAgentToolTokens } from "@/pro/main/ipc/handlers/local_agent/tool_definitions";
+import { estimateAgentToolTokens } from "@/ipc/handlers/local_agent/tool_definitions";
 import {
   buildChatMessageHistory,
   hasCompletedAppBlueprintQuestionnaire,
-} from "@/pro/main/ipc/handlers/local_agent/local_agent_handler";
-import { getCachedMcpToolDefs } from "@/pro/main/ipc/handlers/local_agent/tools/mcp_type_defs";
+} from "@/ipc/handlers/local_agent/local_agent_handler";
+import { getCachedMcpToolDefs } from "@/ipc/handlers/local_agent/tools/mcp_type_defs";
 import { resolveRootDatabasePromptState } from "@/shared/database_provider";
 import { getAppBlueprintForChat } from "./app_blueprint_handlers";
 

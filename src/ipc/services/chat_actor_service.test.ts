@@ -116,13 +116,10 @@ vi.mock("@/chat_stream/persistence", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/chat_stream/persistence")>()),
   getIntentAcceptance: persistence.getIntentAcceptance,
 }));
-vi.mock(
-  "@/pro/main/ipc/handlers/local_agent/subagents/subagent_manager",
-  () => ({
-    blockSubagentAdmissionsForChat: vi.fn(() => vi.fn()),
-    settleSubagentsForChatDeletion: subagents.settle,
-  }),
-);
+vi.mock("@/ipc/handlers/local_agent/subagents/subagent_manager", () => ({
+  blockSubagentAdmissionsForChat: vi.fn(() => vi.fn()),
+  settleSubagentsForChatDeletion: subagents.settle,
+}));
 
 import {
   beginAppChatActorMutation,

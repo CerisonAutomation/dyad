@@ -55,9 +55,9 @@ import {
   setupChatFlowHarness,
   type ChatFlowHarness,
 } from "@/testing/chat_flow_harness";
-import { restartAppTool } from "@/pro/main/ipc/handlers/local_agent/tools/app_lifecycle";
-import { readLogsTool } from "@/pro/main/ipc/handlers/local_agent/tools/read_logs";
-import type { AgentContext } from "@/pro/main/ipc/handlers/local_agent/tools/types";
+import { restartAppTool } from "@/ipc/handlers/local_agent/tools/app_lifecycle";
+import { readLogsTool } from "@/ipc/handlers/local_agent/tools/read_logs";
+import type { AgentContext } from "@/ipc/handlers/local_agent/tools/types";
 
 const TEMPLATE = path.resolve(
   __dirname,

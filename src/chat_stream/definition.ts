@@ -21,7 +21,7 @@ import { readSettings } from "@/main/settings";
 import {
   runAutoReviewBarrier,
   skipReviewAutoFix,
-} from "@/pro/main/ipc/handlers/local_agent/subagents/subagent_manager";
+} from "@/ipc/handlers/local_agent/subagents/subagent_manager";
 import type { ChatStreamHostCommand, ChatStreamHostState } from "./host_state";
 import {
   initialChatStreamHostState,

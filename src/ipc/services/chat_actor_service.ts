@@ -30,7 +30,7 @@ import { entityDisposalBus } from "@/window_infrastructure/main/entity_disposal_
 import {
   blockSubagentAdmissionsForChat,
   settleSubagentsForChatDeletion,
-} from "@/pro/main/ipc/handlers/local_agent/subagents/subagent_manager";
+} from "@/ipc/handlers/local_agent/subagents/subagent_manager";
 
 export async function settleChatActorsForDeletion(
   chatId: number,

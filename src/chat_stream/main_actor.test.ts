@@ -46,10 +46,7 @@ const review = vi.hoisted(() => ({
   skipReviewAutoFix: vi.fn(),
 }));
 
-vi.mock(
-  "@/pro/main/ipc/handlers/local_agent/subagents/subagent_manager",
-  () => review,
-);
+vi.mock("@/ipc/handlers/local_agent/subagents/subagent_manager", () => review);
 
 vi.mock("@/lib/chatAttachmentConversion", () => ({
   convertFileAttachmentsToChatAttachments: execution.convertAttachments,

@@ -19,8 +19,18 @@ import { fileURLToPath } from "node:url";
 
 const MARKER = "DYAD_PATCHED_EXTRACT";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const target = path.join(repoRoot, "node_modules", "@electron", "packager", "dist", "unzip.js");
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
+const target = path.join(
+  repoRoot,
+  "node_modules",
+  "@electron",
+  "packager",
+  "dist",
+  "unzip.js",
+);
 
 const patched = `"use strict";
 // ${MARKER}
@@ -61,7 +71,9 @@ exports.extractElectronZip = extractElectronZip;
 
 function main() {
   if (!fs.existsSync(target)) {
-    console.log("[patch-electron-packager] @electron/packager not installed yet; skipping.");
+    console.log(
+      "[patch-electron-packager] @electron/packager not installed yet; skipping.",
+    );
     return;
   }
   const current = fs.readFileSync(target, "utf8");
@@ -70,7 +82,9 @@ function main() {
     return;
   }
   fs.writeFileSync(target, patched, "utf8");
-  console.log("[patch-electron-packager] patched @electron/packager Electron-zip extractor.");
+  console.log(
+    "[patch-electron-packager] patched @electron/packager Electron-zip extractor.",
+  );
 }
 
 try {

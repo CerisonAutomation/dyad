@@ -26,16 +26,16 @@ import {
 } from "ai";
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { searchChatsTool } from "@/pro/main/ipc/handlers/local_agent/tools/search_chats";
-import { readChatTool } from "@/pro/main/ipc/handlers/local_agent/tools/read_chat";
-import { projectChatMessageForSearch } from "@/pro/main/ipc/handlers/local_agent/tools/chat_search_text";
-import { drainChatSearchIndexOnce } from "@/pro/main/ipc/handlers/local_agent/chat_search_indexer";
+import { searchChatsTool } from "@/ipc/handlers/local_agent/tools/search_chats";
+import { readChatTool } from "@/ipc/handlers/local_agent/tools/read_chat";
+import { projectChatMessageForSearch } from "@/ipc/handlers/local_agent/tools/chat_search_text";
+import { drainChatSearchIndexOnce } from "@/ipc/handlers/local_agent/chat_search_indexer";
 import {
   setupChatSearchTestDb,
   makeAgentContext,
   type ChatSearchTestHarness,
-} from "@/pro/main/ipc/handlers/local_agent/tools/chat_search_spec_utils";
-import type { AgentContext } from "@/pro/main/ipc/handlers/local_agent/tools/types";
+} from "@/ipc/handlers/local_agent/tools/chat_search_spec_utils";
+import type { AgentContext } from "@/ipc/handlers/local_agent/tools/types";
 
 // ── Fixture schema ─────────────────────────────────────────────
 

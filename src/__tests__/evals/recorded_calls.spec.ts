@@ -21,9 +21,9 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { applySearchReplace } from "@/pro/main/ipc/processors/search_replace_processor";
+import { applySearchReplace } from "@/ipc/processors/search_replace_processor";
 import { applySearchReplace as legacyApplySearchReplace } from "./helpers/legacy_search_replace";
-import { parseSearchReplaceBlocks } from "@/pro/shared/search_replace_parser";
+import { parseSearchReplaceBlocks } from "@/shared/search_replace_parser";
 
 const CALLS_DIR = resolve(__dirname, "recorded_calls");
 const FIXTURES_DIR = resolve(__dirname, "fixtures");

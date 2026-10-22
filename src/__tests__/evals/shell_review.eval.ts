@@ -14,8 +14,8 @@ import { shellExecutionGuidance } from "@/shared/shell_capability";
 import {
   reviewToolAction,
   SHELL_REVIEW_TIMEOUT_MS,
-} from "@/pro/main/ipc/handlers/local_agent/tool_safety_reviewer";
-import { buildShellInspectionTool } from "@/pro/main/ipc/handlers/local_agent/shell_review";
+} from "@/ipc/handlers/local_agent/tool_safety_reviewer";
+import { buildShellInspectionTool } from "@/ipc/handlers/local_agent/shell_review";
 
 vi.mock("@/ipc/utils/get_model_client", () => ({
   getModelClient: async () => ({
@@ -23,7 +23,7 @@ vi.mock("@/ipc/utils/get_model_client", () => ({
   }),
 }));
 vi.mock("@/main/settings", () => ({ readSettings: () => ({}) }));
-vi.mock("@/pro/main/ipc/handlers/local_agent/mcp_consent_context", () => ({
+vi.mock("@/ipc/handlers/local_agent/mcp_consent_context", () => ({
   getRecentTurnsForConsent: vi.fn(),
 }));
 const descriptions: Record<string, string> = {

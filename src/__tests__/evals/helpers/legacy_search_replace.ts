@@ -14,7 +14,7 @@
  * distinguishable from the real processor's.
  */
 
-import { parseSearchReplaceBlocks } from "@/pro/shared/search_replace_parser";
+import { parseSearchReplaceBlocks } from "@/shared/search_replace_parser";
 import { normalizeString } from "@/utils/text_normalization";
 import log from "electron-log";
 

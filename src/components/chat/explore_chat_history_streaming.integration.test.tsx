@@ -7,9 +7,9 @@ import { selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { ChatStreamRemoteManager } from "@/chat_stream/remote_manager";
 import { ChatStreamProvider } from "@/chat_stream/ChatStreamProvider";
 import { applyPreviewChunk } from "@/lib/streamingPreviewSync";
-import { makeAgentContext } from "@/pro/main/ipc/handlers/local_agent/tools/chat_search_spec_utils";
-import type { HistoryReportStats } from "@/pro/main/ipc/handlers/local_agent/tools/explore_chat_history_report";
-import { readChatTool } from "@/pro/main/ipc/handlers/local_agent/tools/read_chat";
+import { makeAgentContext } from "@/ipc/handlers/local_agent/tools/chat_search_spec_utils";
+import type { HistoryReportStats } from "@/ipc/handlers/local_agent/tools/explore_chat_history_report";
+import { readChatTool } from "@/ipc/handlers/local_agent/tools/read_chat";
 
 const mocks = vi.hoisted(() => ({
   runExploreChatHistorySubagent: vi.fn(),
@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock(
-  "@/pro/main/ipc/handlers/local_agent/tools/explore_chat_history_subagent",
+  "@/ipc/handlers/local_agent/tools/explore_chat_history_subagent",
   () => ({
     runExploreChatHistorySubagent: mocks.runExploreChatHistorySubagent,
   }),
@@ -42,7 +42,7 @@ vi.mock("@/hooks/useChatStream", async (importOriginal) => ({
   useChatStreamState: () => mocks.streamState,
 }));
 
-import { exploreChatHistoryTool } from "@/pro/main/ipc/handlers/local_agent/tools/explore_chat_history";
+import { exploreChatHistoryTool } from "@/ipc/handlers/local_agent/tools/explore_chat_history";
 import { DyadMarkdownParser } from "./DyadMarkdownParser";
 
 const REPORT_STATS: HistoryReportStats = {

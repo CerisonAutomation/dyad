@@ -16,7 +16,7 @@ vi.mock("electron", async () => {
 });
 
 import { agentThreads, chats, messages } from "@/db/schema";
-import { cancelSubagent } from "@/pro/main/ipc/handlers/local_agent/subagents/subagent_manager";
+import { cancelSubagent } from "@/ipc/handlers/local_agent/subagents/subagent_manager";
 import {
   setupChatFlowHarness,
   type ChatFlowHarness,

@@ -192,7 +192,7 @@ async function json(url: string, init?: RequestInit) {
         // Must cover every tool whose defaultConsent is "ask" and that the
         // agent (or its Implementer) can reach, or the run stalls 300s and then
         // denies. Enumerate with:
-        //   grep -rn 'defaultConsent: "ask"' src/pro/main/ipc/handlers/local_agent/tools/
+        //   grep -rn 'defaultConsent: "ask"' src/ipc/handlers/local_agent/tools/
         // `rebuild_app` was renamed `reinstall_and_restart_app`; the old key is
         // kept because a stale entry is free and the rename is recent enough
         // that older cells were built against the previous name.

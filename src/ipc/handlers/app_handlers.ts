@@ -83,7 +83,7 @@ import {
   blockSubagentAdmissionsForChat,
   settleAllSubagentsForReset,
   settleSubagentsForChatDeletion,
-} from "@/pro/main/ipc/handlers/local_agent/subagents/subagent_manager";
+} from "@/ipc/handlers/local_agent/subagents/subagent_manager";
 import { deployKeyDirPath } from "@/ipc/utils/coolify_deploy_key";
 
 /**

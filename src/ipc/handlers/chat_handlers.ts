@@ -50,7 +50,7 @@ import { withChatQueueLock } from "@/chat_stream/queue_lock";
 import {
   blockSubagentAdmissionsForChat,
   settleSubagentsForChatDeletion,
-} from "@/pro/main/ipc/handlers/local_agent/subagents/subagent_manager";
+} from "@/ipc/handlers/local_agent/subagents/subagent_manager";
 
 const logger = log.scope("chat_handlers");
 

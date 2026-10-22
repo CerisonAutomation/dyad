@@ -77,19 +77,16 @@ vi.mock("@/user_input/main", () => ({
   },
 }));
 
-vi.mock(
-  "@/pro/main/ipc/handlers/local_agent/subagents/subagent_manager",
-  () => ({
-    blockSubagentAdmissionsForChat: vi.fn(() => {
-      deletionOrder.push("subagent-barrier");
-      return () => deletionOrder.push("subagent-admission-release");
-    }),
-    settleSubagentsForChatDeletion: vi.fn(async () => {
-      deletionOrder.push("settle-subagents");
-      return () => deletionOrder.push("release-subagents");
-    }),
+vi.mock("@/ipc/handlers/local_agent/subagents/subagent_manager", () => ({
+  blockSubagentAdmissionsForChat: vi.fn(() => {
+    deletionOrder.push("subagent-barrier");
+    return () => deletionOrder.push("subagent-admission-release");
   }),
-);
+  settleSubagentsForChatDeletion: vi.fn(async () => {
+    deletionOrder.push("settle-subagents");
+    return () => deletionOrder.push("release-subagents");
+  }),
+}));
 
 describe("registerChatHandlers", () => {
   let harness: HandlerTestHarness;

@@ -238,3 +238,75 @@ export async function prepareDeletePath(
     fullPath: path.join(realBasePath, ...canonicalRelativePath.split("/")),
   };
 }
+
+/**
+ * Candidate locations for an app-relative path.
+ *
+ * Models often prefix a path with the app's own folder name (for example
+ * "fyk/src/lib/x.ts" when the app root is already "fyk"), so try the
+ * stripped form as well before reporting the file as missing.
+ */
+export function appPathCandidates(
+  appPath: string,
+  relativePath: string,
+): string[] {
+  const normalized = relativePath.replace(/\\/g, "/").replace(/^\/+/, "");
+  const segments = normalized.split("/").filter(Boolean);
+  const candidates = [safeJoin(appPath, normalized)];
+  const appDirName = path.basename(appPath);
+  if (segments.length > 1 && segments[0] === appDirName) {
+    candidates.push(safeJoin(appPath, segments.slice(1).join("/")));
+  }
+  return [...new Set(candidates)];
+}
+
+/** Resolve an app-relative path to an existing file, trying each candidate. */
+export async function resolveExistingAppFile(
+  appPath: string,
+  relativePath: string,
+): Promise<string | undefined> {
+  for (const candidate of appPathCandidates(appPath, relativePath)) {
+    try {
+      const stat = await fs.promises.stat(candidate);
+      if (stat.isFile()) {
+        return candidate;
+      }
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Extra context for a "file does not exist" error: which locations were
+ * tried and what the target directory actually contains, so the model can
+ * correct the path instead of retrying the same one.
+ */
+export async function describeMissingAppFile(
+  appPath: string,
+  relativePath: string,
+): Promise<string> {
+  const candidates = appPathCandidates(appPath, relativePath);
+  const tried = candidates
+    .map((candidate) => path.relative(appPath, candidate) || ".")
+    .join(", ");
+  let listing = "";
+  for (const candidate of candidates) {
+    const dir = path.dirname(candidate);
+    try {
+      const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+      const names = entries
+        .filter((entry) => entry.isFile() || entry.isDirectory())
+        .map((entry) => entry.name)
+        .slice(0, 25);
+      if (names.length > 0) {
+        listing = ` ${path.relative(appPath, dir) || "."} contains: ${names.join(", ")}.`;
+        break;
+      }
+    } catch {
+      // Try the next candidate's directory.
+    }
+  }
+  return `Tried: ${tried}.${listing}`;
+}

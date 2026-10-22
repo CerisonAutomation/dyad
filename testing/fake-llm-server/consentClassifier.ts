@@ -1,6 +1,6 @@
 /**
  * Fake responses for the MCP auto-consent classifier
- * (src/pro/main/ipc/handlers/local_agent/mcp_auto_consent.ts buildUserPayload).
+ * (src/ipc/handlers/local_agent/mcp_auto_consent.ts buildUserPayload).
  * Shared by the chat-completions and responses fake routes so tests exercise
  * both the allow and ask paths regardless of which protocol the selected fake
  * model uses.

@@ -10,7 +10,7 @@ import {
   BACKEND_SWITCH_MESSAGE,
 } from "@/shared/execution_backend";
 import { claudeStatus } from "@/ipc/services/claude_code/runtime";
-import { handleLocalAgentStream } from "@/pro/main/ipc/handlers/local_agent/local_agent_handler";
+import { handleLocalAgentStream } from "@/ipc/handlers/local_agent/local_agent_handler";
 import { v4 as uuidv4 } from "uuid";
 import { app, type IpcMainInvokeEvent, type WebContents } from "electron";
 import { createTypedHandler } from "./base";
@@ -33,7 +33,7 @@ import {
 
 import { db } from "../../db";
 import { apps, chats, messages } from "../../db/schema";
-import { scheduleChatSearchIndexing } from "../../pro/main/ipc/handlers/local_agent/chat_search_indexer";
+import { scheduleChatSearchIndexing } from "./local_agent/chat_search_indexer";
 import { and, eq, isNull } from "drizzle-orm";
 import {
   hasSupabaseCredentialsForOrganization,
@@ -118,7 +118,7 @@ import { sanitizeMcpToolResult } from "../utils/mcp_result_sanitizer";
 import {
   clearPendingLocalAgentInputsForChat,
   hasCompletedAppBlueprintQuestionnaire,
-} from "../../pro/main/ipc/handlers/local_agent/local_agent_handler";
+} from "./local_agent/local_agent_handler";
 import { isPreCommitHookAvailable } from "../services/pre_commit_service";
 import { userInputRegistry } from "../../user_input/main";
 import { getAppBlueprintForChat } from "./app_blueprint_handlers";

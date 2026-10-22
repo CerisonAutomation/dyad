@@ -720,19 +720,11 @@ export function migrateStoredSettings(
   delete activeSettings.enableNativeGit;
   delete activeSettings.enableAutoFixProblems;
   delete activeSettings.thinkingBudget;
-  // Pro-era settings become Agent2 settings. Agent2 is the local BYOK agent
-  // mode, so the legacy Pro opt-in carries over verbatim.
-  if (activeSettings.enableAgent2 === undefined) {
-    const legacy = activeSettings.enableDyadPro;
-    activeSettings.enableAgent2 =
-      legacy ?? (activeSettings as { enableLocalPro?: boolean }).enableLocalPro;
-  }
-  // Keep enableDyadPro populated as a derived alias rather than deleting it.
-  // 17 call sites still read it; leaving it undefined made them permanently
-  // falsy, which silently disabled smart-context, free-model access, and
-  // theme generation. It is no longer a writable setting — the only writer
-  // is enableAgent2.
-  activeSettings.enableDyadPro = activeSettings.enableAgent2;
+  // Agent2 runs entirely on the user's own provider API keys, so there is no
+  // paid tier left to gate. Force the surviving key and its legacy alias on
+  // so every Agent2 feature is available unconditionally.
+  activeSettings.enableAgent2 = true;
+  activeSettings.enableDyadPro = true;
   delete (activeSettings as { enableLocalPro?: boolean }).enableLocalPro;
   if (stored.agentToolConsents) {
     const agentToolConsents = { ...stored.agentToolConsents };

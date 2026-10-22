@@ -9,6 +9,13 @@ import {
   formatScopedSections,
   type NetworkEntry,
 } from "./preview_browser_content";
+import {
+  domRoleForTag,
+  formatDomOutline,
+  MAX_DOM_ELEMENTS,
+  MAX_DOM_DEPTH,
+  type DomNode,
+} from "./preview_dom_snapshot";
 
 const logger = log.scope("preview_browser_driver");
 
@@ -102,8 +109,41 @@ async function settle(page: any) {
   await page
     .waitForLoadState("networkidle", { timeout: 8_000 })
     .catch(() => undefined);
+  // Web fonts change the layout, so waiting for them avoids reading a page
+  // mid-swap.
+  await page
+    .evaluate(() => (document as any)?.fonts?.ready)
+    .catch(() => undefined);
+  await waitForStableDom(page);
   // React/TanStack commit after the network goes quiet; give the paint a beat.
   await page.waitForTimeout(400);
+}
+
+/**
+ * Wait until the DOM stops changing.
+ *
+ * The network going quiet does not mean the page finished rendering: a
+ * client-side router can paint several frames after the last response, and
+ * an agent that reads in that window sees a half-built UI. Comet solves this
+ * with a readiness stabilizer that polls the document until the node count
+ * and the text length hold still; this is the same idea.
+ */
+async function waitForStableDom(page: any, attempts = 8): Promise<void> {
+  let previous = "";
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const signature = await page
+      .evaluate(() => {
+        const body = document.body;
+        if (!body) return "";
+        return `${document.querySelectorAll("*").length}:${
+          (body.innerText ?? "").length
+        }`;
+      })
+      .catch(() => "");
+    if (signature && signature === previous) return;
+    previous = signature;
+    await page.waitForTimeout(250).catch(() => undefined);
+  }
 }
 
 async function getSession(appId: number): Promise<Session | null> {
@@ -321,6 +361,7 @@ export async function previewNavigate(appId: number, path: string) {
     timeout: NAV_TIMEOUT_MS,
   });
   session.consoleLog.length = 0;
+  await removeClickMarker(session.page);
   await settle(session.page);
   await recordVisit(session);
   return describePage(session.page, target);
@@ -461,21 +502,22 @@ export async function previewContent(appId: number, selectors?: string[]) {
   await settle(session.page);
 
   if (selectors && selectors.length > 0) {
-    const scoped = await session.page.evaluate((wanted: string[]) => {
-      return wanted.map((selector) => {
-        const nodes = Array.from(document.querySelectorAll(selector));
-        const text = nodes
-          .map((node) =>
-            ((node as HTMLElement).innerText ?? node.textContent ?? "")
-              .replace(/\s+/g, " ")
-              .trim(),
-          )
-          .filter(Boolean)
-          .join("\n\n")
-          .trim();
-        return { selector, count: nodes.length, text };
-      });
-    }, selectors);
+    const scoped: { selector: string; count: number; text: string }[] =
+      await session.page.evaluate((wanted: string[]) => {
+        return wanted.map((selector) => {
+          const nodes = Array.from(document.querySelectorAll(selector));
+          const text = nodes
+            .map((node) =>
+              ((node as HTMLElement).innerText ?? node.textContent ?? "")
+                .replace(/\s+/g, " ")
+                .trim(),
+            )
+            .filter(Boolean)
+            .join("\n\n")
+            .trim();
+          return { selector, count: nodes.length, text };
+        });
+      }, selectors);
     return formatScopedSections(
       scoped
         .filter((section) => section.count > 0)
@@ -578,6 +620,10 @@ export async function previewScreenshot(
   const png = (await target.screenshot({
     type: "png",
     fullPage,
+    // CSS pixels, not device pixels: a retina capture of the 1280x800
+    // viewport is 4.1M pixels, which is over the ~1.15M pixel budget a
+    // vision model can read usefully, and costs twice the tokens.
+    scale: "css",
   })) as unknown as Buffer;
   const pngDataUrl = `data:image/png;base64,${png.toString("base64")}`;
   if (pngDataUrl.length <= MAX_PREVIEW_SCREENSHOT_CHARS) {
@@ -591,6 +637,7 @@ export async function previewScreenshot(
       type: "jpeg",
       quality,
       fullPage,
+      scale: "css",
     })) as unknown as Buffer;
     const jpegDataUrl = `data:image/jpeg;base64,${jpeg.toString("base64")}`;
     if (jpegDataUrl.length <= MAX_PREVIEW_SCREENSHOT_CHARS) {
@@ -1151,4 +1198,512 @@ export async function previewTabs(
       return "Closed the preview tab.";
     }
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * DOM outline, batch actions and coordinate clicks
+ *
+ * Comet gives its browser agent three things Dyad's preview tool was
+ * missing: an accessibility outline with screen coordinates, a batch
+ * action call, and a way to click a point on the screen. All three
+ * are pure Playwright features, so they cost no new dependency.
+ * ------------------------------------------------------------------ */
+
+/** Tags that carry an action a user could take. */
+const DOM_INTERACTIVE_TAGS = new Set([
+  "a",
+  "button",
+  "input",
+  "textarea",
+  "select",
+  "option",
+  "summary",
+  "details",
+]);
+
+/** Tags worth listing even when they are not interactive. */
+const DOM_TEXT_TAGS = new Set([
+  "p",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "li",
+  "dt",
+  "dd",
+  "td",
+  "th",
+  "label",
+  "legend",
+  "code",
+  "pre",
+  "blockquote",
+  "article",
+  "header",
+  "footer",
+  "aside",
+  "main",
+  "nav",
+  "form",
+  "fieldset",
+  "img",
+  "svg",
+  "video",
+  "audio",
+  "small",
+  "strong",
+  "em",
+  "caption",
+  "figcaption",
+]);
+
+interface RawDomRow {
+  tag: string;
+  roleAttr: string;
+  typeAttr: string;
+  href: string;
+  name: string;
+  depth: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  disabled: boolean;
+  checked: boolean;
+  value: string;
+  interactive: boolean;
+  ref: string;
+}
+
+/**
+ * Collect the page's nodes as a flat, depth-annotated list.
+ *
+ * The role mapping happens in the main process (see `domRoleForTag`) so the
+ * browser-side script stays a plain data collector.
+ */
+async function collectDomOutline(
+  page: any,
+  filter: "interactive" | "all" | "viewport",
+  limit: number,
+): Promise<RawDomRow[]> {
+  return await page.evaluate(
+    (options: {
+      attribute: string;
+      interactiveTags: string[];
+      textTags: string[];
+      limit: number;
+      filter: string;
+    }) => {
+      const interactiveTags = new Set(options.interactiveTags);
+      const textTags = new Set(options.textTags);
+      const scope = window as unknown as { __dyadRefCounter?: number };
+      const allocateRef = (element: Element): string => {
+        const existing = element.getAttribute(options.attribute);
+        if (existing) return existing;
+        scope.__dyadRefCounter = (scope.__dyadRefCounter ?? 0) + 1;
+        const ref = `ref_${scope.__dyadRefCounter}`;
+        element.setAttribute(options.attribute, ref);
+        return ref;
+      };
+
+      const clean = (value: string | null | undefined) =>
+        (value ?? "").replace(/\s+/g, " ").trim();
+
+      const nameOf = (element: Element): string => {
+        const ariaLabel = element.getAttribute("aria-label");
+        if (ariaLabel) return clean(ariaLabel).slice(0, 120);
+        const labelledBy = element.getAttribute("aria-labelledby");
+        if (labelledBy) {
+          const text = labelledBy
+            .split(/\s+/)
+            .map((id) => document.getElementById(id)?.textContent ?? "")
+            .join(" ");
+          if (clean(text)) return clean(text).slice(0, 120);
+        }
+        const alt = element.getAttribute("alt");
+        if (alt) return clean(alt).slice(0, 120);
+        const title = element.getAttribute("title");
+        if (title) return clean(title).slice(0, 120);
+        const placeholder = element.getAttribute("placeholder");
+        if (placeholder) return clean(placeholder).slice(0, 120);
+        const value = (element as HTMLInputElement).value;
+        if (value) return String(value).slice(0, 120);
+        return clean(element.textContent).slice(0, 120);
+      };
+
+      const depthOf = (element: Element): number => {
+        let depth = 0;
+        let current = element.parentElement;
+        while (current && current !== document.body) {
+          depth += 1;
+          current = current.parentElement;
+        }
+        return Math.min(depth, 20);
+      };
+
+      const rows: RawDomRow[] = [];
+      const walk = (element: Element) => {
+        if (rows.length >= options.limit) return;
+        const tag = element.tagName.toLowerCase();
+        if (
+          tag === "script" ||
+          tag === "style" ||
+          tag === "noscript" ||
+          tag === "template" ||
+          tag === "head"
+        ) {
+          return;
+        }
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        const visible =
+          style.visibility !== "hidden" &&
+          style.display !== "none" &&
+          Number(style.opacity ?? "1") !== 0;
+        const hasBox = !!rect && rect.width > 0 && rect.height > 0;
+        const hasRole = element.hasAttribute("role");
+        const isInteractive =
+          (interactiveTags.has(tag) &&
+            !(tag === "a" && !element.getAttribute("href"))) ||
+          hasRole ||
+          element.hasAttribute("onclick") ||
+          element.getAttribute("contenteditable") === "true";
+
+        const wanted =
+          options.filter === "all"
+            ? isInteractive || textTags.has(tag)
+            : isInteractive;
+        const inViewport =
+          options.filter !== "viewport" ||
+          (!!rect &&
+            rect.bottom > 0 &&
+            rect.right > 0 &&
+            rect.top < window.innerHeight &&
+            rect.left < window.innerWidth);
+
+        if (wanted && visible && hasBox && inViewport) {
+          const input = element as HTMLInputElement;
+          rows.push({
+            tag,
+            roleAttr: element.getAttribute("role") ?? "",
+            typeAttr: element.getAttribute("type") ?? "",
+            href: element.getAttribute("href") ?? "",
+            name: nameOf(element),
+            depth: depthOf(element),
+            x: rect.left,
+            y: rect.top,
+            width: rect.width,
+            height: rect.height,
+            disabled:
+              element.hasAttribute("disabled") ||
+              element.getAttribute("aria-disabled") === "true",
+            checked: typeof input.checked === "boolean" ? input.checked : false,
+            value:
+              tag === "input" || tag === "textarea" || tag === "select"
+                ? String(input.value ?? "")
+                : "",
+            interactive: isInteractive,
+            ref: isInteractive ? allocateRef(element) : "",
+          });
+        }
+        for (const child of Array.from(element.children)) {
+          walk(child);
+        }
+      };
+
+      if (document.body) walk(document.body);
+      return rows;
+    },
+    {
+      attribute: REF_ATTRIBUTE,
+      interactiveTags: Array.from(DOM_INTERACTIVE_TAGS),
+      textTags: Array.from(DOM_TEXT_TAGS),
+      limit,
+      filter,
+    },
+  );
+}
+
+export interface PreviewDomOptions {
+  /** Which nodes to include. Defaults to "interactive". */
+  filter?: "interactive" | "all" | "viewport";
+  /** How deep to descend. Defaults to MAX_DOM_DEPTH. */
+  depth?: number;
+}
+
+/**
+ * The accessibility outline of the preview.
+ *
+ * Each line carries the role, the accessible name, a stable `ref` handle the
+ * agent can click, the citation id it can refer to, and the screen position
+ * it can click by coordinate.
+ */
+export async function previewDom(
+  appId: number,
+  options: PreviewDomOptions = {},
+) {
+  const resolved = await currentPage(appId);
+  if (!resolved) return NO_PREVIEW_MESSAGE;
+  const { session } = resolved;
+  await settle(session.page);
+  const filter = options.filter ?? "interactive";
+  const depth = Math.min(Math.max(options.depth ?? MAX_DOM_DEPTH, 1), 30);
+  const rows = await collectDomOutline(session.page, filter, MAX_DOM_ELEMENTS);
+  const nodes: DomNode[] = rows.map((row) => ({
+    ref: row.ref || undefined,
+    role: domRoleForTag(row.tag, {
+      role: row.roleAttr || undefined,
+      type: row.typeAttr || undefined,
+      href: row.href || undefined,
+    }),
+    name: row.name,
+    x: Math.round(row.x),
+    y: Math.round(row.y),
+    width: Math.round(row.width),
+    height: Math.round(row.height),
+    disabled: row.disabled || undefined,
+    checked: row.checked || undefined,
+    value: row.value || undefined,
+    depth: row.depth,
+  }));
+  const url = session.page.url();
+  const title = await session.page.title().catch(() => "");
+  return [
+    `URL: ${url}`,
+    `Title: ${title}`,
+    `DOM outline (${filter}, ${nodes.length} nodes):`,
+    formatDomOutline(nodes, { maxDepth: depth, maxElements: MAX_DOM_ELEMENTS }),
+  ].join("\n");
+}
+
+/** A single action inside a batch. */
+export interface PreviewBatchAction {
+  action: string;
+  selector?: string;
+  ref?: string;
+  text?: string;
+  key?: string;
+  value?: string;
+  url?: string;
+  path?: string;
+  submit?: boolean;
+  kind?: "text" | "select" | "checkbox" | "radio" | "file";
+  checked?: boolean;
+  file_path?: string;
+  delta_x?: number;
+  delta_y?: number;
+  index?: number;
+  expression?: string;
+  tab_action?: "list" | "new" | "switch" | "close";
+  state?: "visible" | "hidden" | "attached" | "detached";
+  timeout_ms?: number;
+  full_page?: boolean;
+  x?: number;
+  y?: number;
+}
+
+const BATCH_FAILURE_PREFIX = "FAILED - ";
+
+async function runBatchAction(
+  appId: number,
+  action: PreviewBatchAction,
+): Promise<string> {
+  switch (action.action) {
+    case "navigate":
+      return previewNavigate(appId, action.path ?? "/");
+    case "click":
+      if (action.ref) return previewClickRef(appId, action.ref);
+      if (action.selector) return previewClick(appId, action.selector);
+      return `${BATCH_FAILURE_PREFIX}'click' needs a selector or a ref.`;
+    case "click_at":
+      if (action.x === undefined || action.y === undefined) {
+        return `${BATCH_FAILURE_PREFIX}'click_at' needs x and y.`;
+      }
+      return previewClickAt(appId, action.x, action.y);
+    case "type":
+      if (action.text === undefined) {
+        return `${BATCH_FAILURE_PREFIX}'type' needs text.`;
+      }
+      if (action.ref) {
+        return previewTypeRef(
+          appId,
+          action.ref,
+          action.text,
+          action.submit ?? false,
+        );
+      }
+      if (action.selector) {
+        return previewType(
+          appId,
+          action.selector,
+          action.text,
+          action.submit ?? false,
+        );
+      }
+      return `${BATCH_FAILURE_PREFIX}'type' needs a selector or a ref.`;
+    case "read":
+      return previewRead(appId);
+    case "content":
+      return previewContent(appId);
+    case "console":
+      return previewConsole(appId);
+    case "network":
+      return previewNetwork(appId);
+    case "screenshot":
+      return previewScreenshot(appId, {
+        ref: action.ref,
+        fullPage: action.full_page,
+      });
+    case "snapshot":
+      return previewSnapshot(appId);
+    case "dom":
+      return previewDom(appId);
+    case "find":
+      if (!action.text && !action.selector) {
+        return `${BATCH_FAILURE_PREFIX}'find' needs text or a selector.`;
+      }
+      return previewFind(
+        appId,
+        action.text ?? "",
+        action.selector,
+        action.index,
+      );
+    case "hover":
+      if (!action.ref) {
+        return `${BATCH_FAILURE_PREFIX}'hover' needs a ref.`;
+      }
+      return previewHover(appId, action.ref);
+    case "scroll":
+      return previewScroll(appId, action.delta_x ?? 0, action.delta_y ?? 600);
+    case "scroll_to":
+      if (!action.ref) {
+        return `${BATCH_FAILURE_PREFIX}'scroll_to' needs a ref.`;
+      }
+      return previewScrollToRef(appId, action.ref);
+    case "press_key":
+      if (!action.key) {
+        return `${BATCH_FAILURE_PREFIX}'press_key' needs a key.`;
+      }
+      return previewPressKey(appId, action.key);
+    case "wait":
+      return previewWait(appId, {
+        selector: action.selector,
+        text: action.text,
+        url: action.url,
+        state: action.state,
+        timeoutMs: action.timeout_ms,
+      });
+    case "back":
+      return previewGoBack(appId);
+    case "reload":
+      return previewReload(appId);
+    case "form_input":
+      if (!action.ref) {
+        return `${BATCH_FAILURE_PREFIX}'form_input' needs a ref.`;
+      }
+      return previewFormInput(
+        appId,
+        action.ref,
+        action.kind ?? "text",
+        action.value,
+        action.checked,
+        action.file_path,
+      );
+    case "evaluate":
+      if (!action.expression) {
+        return `${BATCH_FAILURE_PREFIX}'evaluate' needs an expression.`;
+      }
+      return previewEval(appId, action.expression);
+    case "tabs":
+      return previewTabs(
+        appId,
+        action.tab_action ?? "list",
+        action.index,
+        action.url,
+      );
+    default:
+      return `${BATCH_FAILURE_PREFIX}unknown action "${action.action}".`;
+  }
+}
+
+/**
+ * Run several preview actions in one call.
+ *
+ * Comet calls this a computer batch: the agent describes a short sequence of
+ * steps and gets one result back, instead of paying a round trip per step.
+ * The batch stops at the first failure, because a step that did not happen
+ * makes every later step's result meaningless.
+ */
+export async function previewBatch(
+  appId: number,
+  actions: PreviewBatchAction[],
+) {
+  const resolved = await currentPage(appId);
+  if (!resolved) return NO_PREVIEW_MESSAGE;
+  const results: string[] = [];
+  for (const [index, action] of actions.entries()) {
+    const outcome = await runBatchAction(appId, action);
+    results.push(`${index + 1}. ${action.action}: ${outcome}`);
+    if (outcome.startsWith(BATCH_FAILURE_PREFIX)) break;
+  }
+  return results.join("\n");
+}
+
+/**
+ * Click a point on the screen.
+ *
+ * Sometimes a handle is not enough - an element rendered on a canvas, or a
+ * spot inside a custom control - so the agent can click by the coordinates
+ * the DOM outline reports.
+ */
+export async function previewClickAt(appId: number, x: number, y: number) {
+  const resolved = await currentPage(appId);
+  if (!resolved) return NO_PREVIEW_MESSAGE;
+  const { session } = resolved;
+  await showClickMarker(session.page, x, y);
+  await session.page.mouse.click(x, y);
+  await settle(session.page);
+  return `Clicked at (${x}, ${y}). ${await describePage(
+    session.page,
+    session.page.url(),
+  )}`;
+}
+
+/**
+ * Mark where the agent just clicked.
+ *
+ * A screenshot after a click shows the result but not the target; the marker
+ * makes the two line up. It is removed on the next navigation.
+ */
+async function showClickMarker(page: any, x: number, y: number) {
+  await page
+    .evaluate(
+      (point: { x: number; y: number }) => {
+        document.getElementById("__dyad_click_marker")?.remove();
+        const marker = document.createElement("div");
+        marker.id = "__dyad_click_marker";
+        marker.style.position = "fixed";
+        marker.style.left = `${point.x - 9}px`;
+        marker.style.top = `${point.y - 9}px`;
+        marker.style.width = "18px";
+        marker.style.height = "18px";
+        marker.style.borderRadius = "50%";
+        marker.style.border = "2px solid #ff3b30";
+        marker.style.pointerEvents = "none";
+        marker.style.zIndex = "2147483647";
+        document.body?.appendChild(marker);
+      },
+      { x, y },
+    )
+    .catch(() => undefined);
+}
+
+async function removeClickMarker(page: any) {
+  await page
+    .evaluate(() => {
+      document.getElementById("__dyad_click_marker")?.remove();
+    })
+    .catch(() => undefined);
 }

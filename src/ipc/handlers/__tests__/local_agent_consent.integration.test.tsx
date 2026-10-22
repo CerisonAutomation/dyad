@@ -18,7 +18,7 @@ import {
 } from "@/testing/hybrid_chat_harness";
 import { h } from "@/testing/hybrid.setup";
 import { readSettings, writeSettings } from "@/main/settings";
-import { requireAgentToolConsent } from "@/pro/main/ipc/handlers/local_agent/tool_definitions";
+import { requireAgentToolConsent } from "@/ipc/handlers/local_agent/tool_definitions";
 import { requireMcpToolConsent } from "@/ipc/utils/mcp_consent";
 import { userInputClient } from "@/ipc/types/user_input";
 import { getTraceLog } from "@/state_machines/trace";

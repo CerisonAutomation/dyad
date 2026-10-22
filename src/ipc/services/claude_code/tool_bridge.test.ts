@@ -9,8 +9,8 @@ import {
   TOOL_DEFINITIONS,
   buildAgentToolSet,
   shouldIncludeTool,
-} from "@/pro/main/ipc/handlers/local_agent/tool_definitions";
-import type { AgentContext } from "@/pro/main/ipc/handlers/local_agent/tools/types";
+} from "@/ipc/handlers/local_agent/tool_definitions";
+import type { AgentContext } from "@/ipc/handlers/local_agent/tools/types";
 
 it("adapts every registered schema plus dynamic third-party tools without a Claude catalog", async () => {
   const tools = Object.fromEntries(

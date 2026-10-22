@@ -16,7 +16,9 @@ const mocks = vi.hoisted(() => ({
   sendFirstPrompt: vi.fn(),
   settings: {
     providerSettings: {},
-    enableDyadPro: false,
+    // Agent2 is always on now: migrateStoredSettings forces this key to true
+    // on every read, so the settings the UI sees always carry it.
+    enableDyadPro: true,
     defaultChatMode: "build",
   } as any,
 }));
@@ -137,7 +139,7 @@ describe("ProviderSettingsPage", () => {
     mocks.sendFirstPrompt.mockReset();
     mocks.settings = {
       providerSettings: {},
-      enableDyadPro: false,
+      enableDyadPro: true,
       defaultChatMode: "build",
     };
   });
@@ -167,7 +169,7 @@ describe("ProviderSettingsPage", () => {
         providerSettings: {
           google: { apiKey: { value: "test-google-key" } },
         },
-        enableDyadPro: false,
+        enableDyadPro: true,
         defaultChatMode: "build",
       }),
     );

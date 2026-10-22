@@ -2,10 +2,10 @@ import { afterAll, describe, it } from "vitest";
 import { generateText, stepCountIs, type Tool } from "ai";
 import { readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import { searchReplaceTool } from "@/pro/main/ipc/handlers/local_agent/tools/search_replace";
-import { writeFileTool } from "@/pro/main/ipc/handlers/local_agent/tools/write_file";
-import { applySearchReplace } from "@/pro/main/ipc/processors/search_replace_processor";
-import { escapeSearchReplaceMarkers } from "@/pro/shared/search_replace_markers";
+import { searchReplaceTool } from "@/ipc/handlers/local_agent/tools/search_replace";
+import { writeFileTool } from "@/ipc/handlers/local_agent/tools/write_file";
+import { applySearchReplace } from "@/ipc/processors/search_replace_processor";
+import { escapeSearchReplaceMarkers } from "@/shared/search_replace_markers";
 import { constructLocalAgentPrompt } from "@/prompts/local_agent_prompt";
 import {
   SONNET_4_6,

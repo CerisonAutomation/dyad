@@ -24,10 +24,6 @@ import type { UserSettings } from "@/lib/schemas";
 export function ProModeSelector() {
   const { settings, updateSettings } = useSettings();
 
-  const toggleAgent2Enabled = () => {
-    void updateSettings({ enableAgent2: !settings?.enableAgent2 });
-  };
-
   const toggleWebSearch = () => {
     void updateSettings({ enableProWebSearch: !settings?.enableProWebSearch });
   };
@@ -77,14 +73,6 @@ export function ProModeSelector() {
             <div className="h-px bg-gradient-to-r from-primary/50 via-primary/20 to-transparent" />
           </div>
           <div className="flex flex-col gap-3">
-            <SelectorRow
-              id="agent2-enabled"
-              label="Enable Agent2"
-              tooltip="Runs the local agent on the model and provider you selected. Adds web access, turbo edits, and smart context."
-              isTogglable
-              settingEnabled={Boolean(settings?.enableAgent2)}
-              toggle={toggleAgent2Enabled}
-            />
             <Accordion>
               <AccordionItem
                 value="agent2-features"
@@ -99,7 +87,6 @@ export function ProModeSelector() {
                       id="web-search"
                       label="Web Access"
                       tooltip="Allows Agent2 to access the web (e.g. search for information)"
-                      isTogglable
                       settingEnabled={Boolean(settings?.enableProWebSearch)}
                       toggle={toggleWebSearch}
                     />
@@ -126,38 +113,28 @@ function SelectorRow({
   id,
   label,
   tooltip,
-  isTogglable,
   settingEnabled,
   toggle,
 }: {
   id: string;
   label: string;
   tooltip: string;
-  isTogglable: boolean;
   settingEnabled: boolean;
   toggle: () => void;
 }) {
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-1.5">
-        <Label
-          htmlFor={id}
-          className={!isTogglable ? "text-muted-foreground/50" : ""}
-        >
-          {label}
-        </Label>
+        <Label htmlFor={id}>{label}</Label>
         <span title={tooltip}>
-          <Info
-            className={`h-4 w-4 cursor-help ${!isTogglable ? "text-muted-foreground/50" : "text-muted-foreground"}`}
-          />
+          <Info className="h-4 w-4 cursor-help text-muted-foreground" />
         </span>
       </div>
       <Switch
         id={id}
         aria-label={label}
-        checked={isTogglable ? settingEnabled : false}
+        checked={settingEnabled}
         onCheckedChange={toggle}
-        disabled={!isTogglable}
       />
     </div>
   );

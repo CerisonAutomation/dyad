@@ -56,6 +56,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
   telemetryUserId: uuidv4(),
   hasRunBefore: false,
   experiments: {},
+  enableAgent2: true,
+  enableDyadPro: true,
   enableProLazyEditsMode: true,
   enableProSmartFilesContextMode: true,
   selectedChatMode: "build",

@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { apps, chats, messages, language_models } from "@/db/schema";
 import { isIpcInvokeEnvelope, unwrapIpcEnvelope } from "@/ipc/contracts/core";
 import { estimateTokens } from "@/ipc/utils/token_utils";
-import { buildChatMessageHistory } from "@/pro/main/ipc/handlers/local_agent/local_agent_handler";
+import { buildChatMessageHistory } from "@/ipc/handlers/local_agent/local_agent_handler";
 import {
   setupHybridChatHarness,
   type HybridChatHarness,

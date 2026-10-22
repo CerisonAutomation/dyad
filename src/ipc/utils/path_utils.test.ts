@@ -1,6 +1,9 @@
 import {
+  appPathCandidates,
   assertMutationPathAllowed,
+  describeMissingAppFile,
   prepareDeletePath,
+  resolveExistingAppFile,
   safeJoin,
 } from "@/ipc/utils/path_utils";
 import { describe, it, expect } from "vitest";
@@ -401,5 +404,58 @@ describe.runIf(process.platform !== "win32")("prepareDeletePath", () => {
       await fs.rm(appPath, { recursive: true, force: true });
       await fs.rm(outsidePath, { recursive: true, force: true });
     }
+  });
+});
+
+describe("app-relative path resolution", () => {
+  async function makeApp(): Promise<string> {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "dyad-app-path-"));
+    const appRoot = path.join(tmp, "fyk");
+    await fs.mkdir(path.join(appRoot, "src", "lib"), { recursive: true });
+    await fs.writeFile(
+      path.join(appRoot, "src", "lib", "x.ts"),
+      "export const x = 1;\n",
+    );
+    return appRoot;
+  }
+
+  it("resolves a path that repeats the app folder name", async () => {
+    const appRoot = await makeApp();
+    const resolved = await resolveExistingAppFile(appRoot, "fyk/src/lib/x.ts");
+    expect(resolved).toBe(path.join(appRoot, "src", "lib", "x.ts"));
+  });
+
+  it("prefers the literal path when it exists", async () => {
+    const appRoot = await makeApp();
+    await fs.mkdir(path.join(appRoot, "fyk", "src"), { recursive: true });
+    await fs.writeFile(path.join(appRoot, "fyk", "src", "y.ts"), "y\n");
+    const resolved = await resolveExistingAppFile(appRoot, "fyk/src/y.ts");
+    expect(resolved).toBe(path.join(appRoot, "fyk", "src", "y.ts"));
+  });
+
+  it("returns undefined for a path that does not exist anywhere", async () => {
+    const appRoot = await makeApp();
+    expect(
+      await resolveExistingAppFile(appRoot, "fyk/src/lib/missing.ts"),
+    ).toBeUndefined();
+  });
+
+  it("lists the tried paths and the nearest directory contents", async () => {
+    const appRoot = await makeApp();
+    const description = await describeMissingAppFile(
+      appRoot,
+      "fyk/src/lib/missing.ts",
+    );
+    expect(description).toContain("Tried:");
+    expect(description).toContain("fyk/src/lib/missing.ts");
+    expect(description).toContain("src/lib/missing.ts");
+    expect(description).toContain("x.ts");
+  });
+
+  it("offers the stripped candidate as a second option", () => {
+    const candidates = appPathCandidates("/apps/fyk", "fyk/src/lib/x.ts");
+    expect(candidates).toHaveLength(2);
+    expect(candidates[0]).toBe(path.join("/apps/fyk", "fyk/src/lib/x.ts"));
+    expect(candidates[1]).toBe(path.join("/apps/fyk", "src/lib/x.ts"));
   });
 });

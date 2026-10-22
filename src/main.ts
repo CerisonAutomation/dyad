@@ -96,13 +96,13 @@ import {
   stopAllAppsSync,
   stopAppGarbageCollection,
 } from "./ipc/utils/process_manager";
-import { cleanupOldAiMessagesJson } from "./pro/main/ipc/handlers/local_agent/ai_messages_cleanup";
-import { cleanupStaleBuildSnapshots } from "./pro/main/ipc/handlers/local_agent/tools/run_build";
+import { cleanupOldAiMessagesJson } from "./ipc/handlers/local_agent/ai_messages_cleanup";
+import { cleanupStaleBuildSnapshots } from "./ipc/handlers/local_agent/tools/run_build";
 import {
   startChatSearchIndexer,
   stopChatSearchIndexer,
-} from "./pro/main/ipc/handlers/local_agent/chat_search_indexer";
-import { recoverInterruptedSubagents } from "./pro/main/ipc/handlers/local_agent/subagents/subagent_manager";
+} from "./ipc/handlers/local_agent/chat_search_indexer";
+import { recoverInterruptedSubagents } from "./ipc/handlers/local_agent/subagents/subagent_manager";
 import { cleanupOldMediaFiles } from "./ipc/utils/media_cleanup";
 import { scrubTokensFromRemotes } from "./ipc/utils/git_remote_token_scrub";
 import { encryptStoredMcpSecrets } from "./ipc/utils/mcp_secret_encryption";

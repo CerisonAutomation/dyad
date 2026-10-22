@@ -23,8 +23,8 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { applySearchReplace } from "@/pro/main/ipc/processors/search_replace_processor";
-import { escapeSearchReplaceMarkers } from "@/pro/shared/search_replace_markers";
+import { applySearchReplace } from "@/ipc/processors/search_replace_processor";
+import { escapeSearchReplaceMarkers } from "@/shared/search_replace_markers";
 import { createUnifiedDiff } from "./unified_diff";
 
 const RESULTS_ROOT = resolve(__dirname, "../../../../eval-results");

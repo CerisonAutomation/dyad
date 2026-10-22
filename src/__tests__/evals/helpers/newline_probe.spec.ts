@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { applySearchReplace } from "@/pro/main/ipc/processors/search_replace_processor";
+import { applySearchReplace } from "@/ipc/processors/search_replace_processor";
 import {
   serializeCurrent,
   serializeFixed,

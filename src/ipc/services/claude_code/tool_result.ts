@@ -3,7 +3,7 @@ import {
   type CallToolResult,
   type ContentBlock,
 } from "@modelcontextprotocol/sdk/types.js";
-import type { UserMessageContentPart } from "@/pro/main/ipc/handlers/local_agent/tools/types";
+import type { UserMessageContentPart } from "@/ipc/handlers/local_agent/tools/types";
 import { sanitizeMcpToolResult } from "@/ipc/utils/mcp_result_sanitizer";
 
 /** Keep media as media. URLs remain links rather than being fetched with new

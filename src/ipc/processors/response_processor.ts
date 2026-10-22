@@ -50,7 +50,7 @@ import {
   getDyadSearchReplaceTags,
   getDyadCopyTags,
 } from "../utils/dyad_tag_parser";
-import { applySearchReplace } from "../../pro/main/ipc/processors/search_replace_processor";
+import { applySearchReplace } from "./search_replace_processor";
 import { storeDbTimestampAtCurrentVersion } from "../utils/neon_timestamp_utils";
 import { executeNeonSql } from "../../neon_admin/neon_context";
 import { executeCopyFile } from "../utils/copy_file_utils";

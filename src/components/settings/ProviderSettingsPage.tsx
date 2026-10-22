@@ -26,8 +26,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-import { Switch } from "@/components/ui/switch";
-import { showError } from "@/lib/toast";
 import {
   UserSettings,
   AzureProviderSetting,
@@ -258,7 +256,6 @@ export function ProviderSettingsPage({ provider }: ProviderSettingsPageProps) {
         },
       };
       if (isDyad) {
-        settingsUpdate.enableDyadPro = true;
         // Set default chat mode to local-agent when user upgrades to pro
         if (isNewDyadProSetup) {
           settingsUpdate.defaultChatMode = "local-agent";
@@ -338,22 +335,6 @@ export function ProviderSettingsPage({ provider }: ProviderSettingsPageProps) {
     } catch (error: any) {
       console.error("Error deleting API key:", error);
       setSaveError(error.message || "Failed to delete API key.");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  // --- Toggle Dyad Pro Handler ---
-  const handleToggleDyadPro = async (enabled: boolean) => {
-    setIsSaving(true);
-    try {
-      // enableDyadPro is deleted by migrateStoredSettings on every read, so
-      // writing it here was a no-op. enableAgent2 is the surviving key.
-      await updateSettings({
-        enableAgent2: enabled,
-      });
-    } catch (error: any) {
-      showError(`Error toggling Agent2: ${error}`);
     } finally {
       setIsSaving(false);
     }
@@ -565,23 +546,6 @@ export function ProviderSettingsPage({ provider }: ProviderSettingsPageProps) {
               highlightPasteButton={highlightPasteButton}
               onDismissPasteHighlight={() => setHighlightPasteButton(false)}
             />
-          )}
-
-          {isDyad && !settingsLoading && (
-            <div className="mt-6 flex items-center justify-between p-4 bg-(--background-lightest) rounded-lg border">
-              <div>
-                <h3 className="font-medium">Enable Dyad Pro</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Toggle to enable Dyad Pro
-                </p>
-              </div>
-              <Switch
-                aria-label="Enable Agent2"
-                checked={settings?.enableAgent2}
-                onCheckedChange={handleToggleDyadPro}
-                disabled={isSaving}
-              />
-            </div>
           )}
 
           {/* Conditionally render CustomModelsSection */}

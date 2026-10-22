@@ -16,7 +16,7 @@ import type {
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { db } from "@/db";
 import { chats, messages } from "@/db/schema";
-import type { AgentContext } from "@/pro/main/ipc/handlers/local_agent/tools/types";
+import type { AgentContext } from "@/ipc/handlers/local_agent/tools/types";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import { createDyadToolBridge } from "./tool_bridge";
 import { runClaudeTurn, safeClaudeDiagnostic } from "./runtime";
@@ -33,7 +33,7 @@ import {
 import { sanitizeMcpToolResult } from "@/ipc/utils/mcp_result_sanitizer";
 import { recoverQuestionnaires } from "@/user_input/questionnaire_journal";
 import { toMcpToolResult } from "./tool_result";
-import type { UserMessageContentPart } from "@/pro/main/ipc/handlers/local_agent/tools/types";
+import type { UserMessageContentPart } from "@/ipc/handlers/local_agent/tools/types";
 import { claudeConversation } from "./prompt";
 import { getUserDataPath } from "@/paths/paths";
 import { escapeXmlAttr, escapeXmlContent } from "../../../../shared/xmlEscape";
