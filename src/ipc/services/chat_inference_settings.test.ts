@@ -46,7 +46,7 @@ it.each(["build", "ask", "plan", "local-agent"] as const)(
   },
 );
 
-it.each(["api-key", "subscription"] as const)(
+it.each([undefined, "api-key", "subscription"] as const)(
   "uses the stored chat model for standalone %s helpers, not the global selection",
   async (proModelUsage) => {
     mocks.settings.mockReturnValue({ ...settings, proModelUsage });
