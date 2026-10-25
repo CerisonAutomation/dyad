@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Agent2 · Conversion workspace</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font:
+          14px/1.55 system-ui,
+          sans-serif;
+        background: #0b1018;
+        color: #dce4ef;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+      }
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+      header {
+        border-bottom: 1px solid #263041;
+        padding: 22px 32px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+      }
+      h1 {
+        font-size: 21px;
+        letter-spacing: -0.6px;
+        margin: 0;
+      }
+      header p {
+        color: #94a3b8;
+        margin: 5px 0 0;
+      }
+      .badge {
+        color: #a8f1c9;
+        background: #153628;
+        border: 1px solid #295a40;
+        border-radius: 30px;
+        padding: 5px 13px;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      main {
+        max-width: 1500px;
+        margin: auto;
+        padding: 26px 32px;
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 14px;
+      }
+      .stat {
+        padding: 18px 20px;
+        border: 1px solid #263041;
+        background: #111a26;
+        border-radius: 12px;
+      }
+      .stat strong {
+        font-size: 29px;
+        display: block;
+        color: #f3f7fc;
+      }
+      .muted {
+        color: #94a3b8;
+      }
+      .notice {
+        margin: 20px 0;
+        padding: 14px 18px;
+        border-left: 3px solid #e6b86b;
+        background: #221e17;
+        border-radius: 4px;
+        color: #e9d6b2;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: 210px 1fr;
+        gap: 25px;
+        margin-top: 23px;
+      }
+      nav {
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+      }
+      button {
+        border: 1px solid #283447;
+        background: #111a26;
+        color: inherit;
+        padding: 10px 13px;
+        border-radius: 8px;
+        cursor: pointer;
+        text-align: left;
+      }
+      button:hover,
+      button.active {
+        background: #203247;
+        border-color: #4d759f;
+      }
+      input,
+      select {
+        background: #111a26;
+        border: 1px solid #344055;
+        color: inherit;
+        border-radius: 8px;
+        padding: 10px 13px;
+      }
+      input {
+        width: 100%;
+      }
+      .toolbar {
+        display: flex;
+        gap: 12px;
+      }
+      #results {
+        margin-top: 18px;
+      }
+      .item {
+        border: 1px solid #263041;
+        border-radius: 10px;
+        padding: 15px 18px;
+        margin-bottom: 10px;
+        background: #101824;
+        overflow-wrap: anywhere;
+      }
+      .item h3 {
+        font-size: 14px;
+        margin: 0 0 6px;
+        color: #abd7ff;
+      }
+      .item pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font:
+          12px/1.6 ui-monospace,
+          monospace;
+        background: #0b1018;
+        padding: 12px;
+        border-radius: 6px;
+      }
+      .item small {
+        color: #9eacc0;
+      }
+      .count {
+        margin: 16px 0 7px;
+        color: #a8b5c7;
+      }
+      .more {
+        margin: 14px 0;
+      }
+      details summary {
+        cursor: pointer;
+        color: #b4c7df;
+      }
+      a {
+        color: #a4d4ff;
+      }
+      .footer {
+        margin-top: 30px;
+        border-top: 1px solid #263041;
+        padding-top: 16px;
+        font-size: 12px;
+        color: #95a6ba;
+      }
+      @media (max-width: 760px) {
+        header,
+        main {
+          padding: 18px;
+        }
+        .stats {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .layout {
+          grid-template-columns: 1fr;
+        }
+        nav {
+          flex-direction: row;
+          overflow: auto;
+        }
+        nav button {
+          white-space: nowrap;
+        }
+        .toolbar {
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Agent2 <span class="muted">/ Conversion workspace</span></h1>
+        <p>Source-level inventory · provider routing · tools · previews</p>
+      </div>
+      <span class="badge">Read-only local tooling</span>
+    </header>
+    <main>
+      <section class="stats" id="stats"></section>
+      <p class="notice">
+        This is the live audit workspace, not the Electron desktop app. Static
+        findings are a conversion worklist—not proof of complete runtime
+        coverage. Desktop launch is blocked by missing Electron/native
+        artifacts.
+      </p>
+      <section class="layout">
+        <nav id="nav" aria-label="Inventory sections"></nav>
+        <div>
+          <div class="toolbar">
+            <input
+              id="search"
+              type="search"
+              placeholder="Search file paths, identifiers, evidence…"
+              aria-label="Search inventory"
+            /><select id="scope" aria-label="Scope">
+              <option value="runtime">Runtime source</option>
+              <option value="all">All source + tests</option></select
+            ><button id="reload">Refresh map</button>
+          </div>
+          <div id="count" class="count" aria-live="polite">
+            Loading generated map…
+          </div>
+          <div id="results"></div>
+          <button id="more" class="more" hidden>Show 100 more</button>
+        </div>
+      </section>
+      <div class="footer">
+        Inventory generated by <code>npm run audit:app</code>. Refresh reloads
+        the generated snapshot. No provider calls, credentials, code mutations,
+        or shell execution are exposed by this server. Required upstream license
+        and attribution notices remain intact.
+      </div>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

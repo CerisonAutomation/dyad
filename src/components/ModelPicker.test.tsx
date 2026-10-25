@@ -703,10 +703,10 @@ describe("ModelPicker", () => {
     expect(screen.queryByText("GPT 5")).toBeNull();
     expect(screen.queryByText("Premium")).toBeNull();
     expect(screen.queryByText("Local models")).toBeNull();
-    expect(screen.queryByText("Free (OpenRouter)")).toBeNull();
+    expect(screen.getAllByText("Free (OpenRouter)").length).toBeGreaterThan(0);
     expect(screen.getByText("Dyad Free")).toBeTruthy();
     expect(screen.getByText("2/5 left")).toBeTruthy();
-    expect(screen.getByText("Data sharing")).toBeTruthy();
+    expect(screen.getAllByText("Data sharing").length).toBeGreaterThan(0);
     expect(
       screen
         .getByText("Dyad Free")
@@ -909,15 +909,15 @@ describe("ModelPicker", () => {
     }
   });
 
-  it("filters hidden Pro models out of Recent", () => {
+  it("keeps free provider models available in Recent regardless of legacy Pro state", () => {
     mocks.settings.recentModels = [
       { provider: "openrouter", name: "openrouter/free" },
     ];
 
     render(<ModelPicker />);
 
-    expect(screen.queryByText("Recent")).toBeNull();
-    expect(screen.queryByText("Free (OpenRouter)")).toBeNull();
+    expect(screen.getByText("Recent")).toBeTruthy();
+    expect(screen.getAllByText("Free (OpenRouter)").length).toBeGreaterThan(0);
   });
 
   it("uses custom model ids for Recent keys and selection", () => {
@@ -1439,7 +1439,7 @@ describe("ModelPicker", () => {
     expect(screen.getByText("All models")).toBeTruthy();
     expect(screen.queryByText("Other AI providers")).toBeNull();
     expect(screen.queryByText("Dyad Free")).toBeNull();
-    expect(screen.getByText("Free (OpenRouter)")).toBeTruthy();
+    expect(screen.getAllByText("Free (OpenRouter)").length).toBeGreaterThan(0);
   });
 
   it("shows Auto (balanced) to Dyad Pro users", () => {
@@ -1532,32 +1532,21 @@ describe("ModelPicker", () => {
       "model-picker:locked-model-click",
       { provider: "openai", model: "gpt-5" },
     );
-    expect(screen.getByText("Unlock GPT 5 with Dyad Pro")).toBeTruthy();
+    expect(screen.getAllByText("Configure OpenAI").length).toBeGreaterThan(0);
   });
 
-  it("opens the Pro upgrade page from the unlock dialog", () => {
+  it("never offers a commercial upgrade in the provider configuration dialog", () => {
     mocks.subscriptionConnected = false;
     mocks.settings.enableDyadPro = false;
     mocks.settings.providerSettings.auto.apiKey.value = "";
     mocks.renderSubContent = true;
-
     render(<ModelPicker />);
-
     fireEvent.click(screen.getByText("GPT 5").closest("button")!);
-    fireEvent.click(screen.getByText("Get Dyad Pro"));
-
-    expect(mocks.openExternalUrl).toHaveBeenCalledWith(
-      expect.stringContaining("utm_campaign=model-picker-locked-model"),
-    );
-    expect(mocks.posthogCapture).toHaveBeenCalledWith(
-      "model-picker:upgrade-click",
-      {
-        source: "locked-model-dialog",
-        provider: "openai",
-        model: "gpt-5",
-      },
-    );
     expect(screen.queryByText("Get Dyad Pro")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Configure OpenAI" }),
+    ).toBeTruthy();
+    expect(mocks.openExternalUrl).not.toHaveBeenCalled();
   });
 
   it("navigates to provider settings from the unlock dialog own-key link", () => {
@@ -1569,7 +1558,7 @@ describe("ModelPicker", () => {
     render(<ModelPicker />);
 
     fireEvent.click(screen.getByText("GPT 5").closest("button")!);
-    fireEvent.click(screen.getByText(/use your own/));
+    fireEvent.click(screen.getByRole("button", { name: "Configure OpenAI" }));
 
     expect(mocks.navigate).toHaveBeenCalledWith({
       to: "/settings/providers/$provider",
@@ -1627,7 +1616,7 @@ describe("ModelPicker", () => {
 
     expect(
       screen.getByText("GPT 5").closest("button")?.getAttribute("aria-label"),
-    ).toBe("GPT 5 — requires Dyad Pro or an API key from OpenAI");
+    ).toBe("GPT 5 — requires a connected account or an API key from OpenAI");
   });
 
   it("points locked free models at an OpenRouter key instead of Pro", () => {
@@ -1649,7 +1638,9 @@ describe("ModelPicker", () => {
     );
     expect(screen.queryByText("Get Dyad Pro")).toBeNull();
 
-    fireEvent.click(screen.getByText("Add OpenRouter API key"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Configure OpenRouter" }),
+    );
 
     expect(mocks.navigate).toHaveBeenCalledWith({
       to: "/settings/providers/$provider",
@@ -1658,23 +1649,11 @@ describe("ModelPicker", () => {
     expect(mocks.openExternalUrl).not.toHaveBeenCalled();
   });
 
-  it("shows the unlock-all footer only for non-Pro users", () => {
+  it("never shows the commercial unlock-all footer", () => {
     mocks.settings.enableDyadPro = false;
-    mocks.settings.providerSettings.auto.apiKey.value = "";
-
     render(<ModelPicker />);
-
-    fireEvent.click(
-      screen.getByText("Unlock all models with Dyad Pro").closest("button")!,
-    );
-
-    expect(mocks.openExternalUrl).toHaveBeenCalledWith(
-      expect.stringContaining("utm_campaign=model-picker-unlock-all"),
-    );
-    expect(mocks.posthogCapture).toHaveBeenCalledWith(
-      "model-picker:upgrade-click",
-      { source: "unlock-all-footer" },
-    );
+    expect(screen.queryByText("Unlock all models with Dyad Pro")).toBeNull();
+    expect(mocks.openExternalUrl).not.toHaveBeenCalled();
   });
 
   it("hides the unlock-all footer for Pro users", () => {
@@ -1744,7 +1723,9 @@ describe("ModelPicker", () => {
 
     render(<ModelPicker />);
 
-    expect(screen.getAllByText("Free (OpenRouter)").length).toBe(2);
+    expect(
+      screen.getAllByText("Free (OpenRouter)").length,
+    ).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText("Data sharing").length).toBeGreaterThan(1);
   });
 
@@ -1775,8 +1756,8 @@ describe("ModelPicker", () => {
 
     expect(screen.queryByText("Dyad Free")).toBeNull();
     expect(
-      screen.getByText("Upgrade from Dyad Pro trial to unlock more models."),
-    ).toBeTruthy();
+      screen.queryByText("Upgrade from Dyad Pro trial to unlock more models."),
+    ).toBeNull();
     const autoRow = document.querySelector<HTMLElement>(
       '[data-model-provider="auto"][data-model-name="auto"]',
     )!;

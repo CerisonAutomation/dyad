@@ -67,6 +67,8 @@ export async function preflightSubscriptionTurn(
   let externalModelAdmission: ExternalModelAdmission | undefined;
   if (
     isDyadProEnabled(settings) &&
+    settings.proModelUsage !== "api-key" &&
+    settings.proModelUsage !== "subscription" &&
     selections.some(
       (selection) =>
         (selection.connection === "subscription" &&

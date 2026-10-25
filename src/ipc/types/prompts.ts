@@ -52,6 +52,20 @@ export type UpdatePromptParamsDto = z.infer<typeof UpdatePromptParamsDtoSchema>;
 // =============================================================================
 
 export const promptContracts = {
+  improve: defineContract({
+    channel: "prompts:improve",
+    input: z.object({
+      requestId: z.string().uuid(),
+      prompt: z.string().trim().min(1).max(12000),
+      chatId: z.number().int().positive().optional(),
+    }),
+    output: z.object({ prompt: z.string().trim().min(1).max(16000) }),
+  }),
+  cancelImprovement: defineContract({
+    channel: "prompts:improve:cancel",
+    input: z.object({ requestId: z.string().uuid() }),
+    output: z.void(),
+  }),
   list: defineContract({
     channel: "prompts:list",
     input: z.void(),

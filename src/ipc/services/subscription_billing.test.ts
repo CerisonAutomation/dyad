@@ -18,3 +18,17 @@ it.each(["build", "ask", "plan", "local-agent"] as const)(
     }
   },
 );
+
+it.each(["api-key", "subscription"] as const)(
+  "never bills Dyad for explicit %s mode",
+  (proModelUsage) => {
+    expect(
+      subscriptionBillingKey({
+        proModelUsage,
+        selectedChatMode: "local-agent",
+        enableDyadPro: true,
+        providerSettings: { auto: { apiKey: { value: "saved-pro-key" } } },
+      } as unknown as UserSettings),
+    ).toBeNull();
+  },
+);

@@ -7,6 +7,10 @@ const ReactCompilerConfig = {};
 
 // https://vite.dev/config/
 export default defineConfig({
+  server: {
+    host: "0.0.0.0",
+    allowedHosts: ["localhost", ".e2b.app"],
+  },
   plugins: [
     react({
       babel: {

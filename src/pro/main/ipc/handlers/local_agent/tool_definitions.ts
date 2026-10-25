@@ -1,3 +1,4 @@
+import { hasProviderAgentSelection } from "@/lib/auxiliaryModel";
 import { withReferencedAppRead } from "./tools/referenced_app_read";
 import { recordShellReviewOutcome } from "./shell_review_history";
 import { runShellTool } from "./tools/run_shell";
@@ -63,6 +64,7 @@ import {
 import { planningQuestionnaireTool } from "./tools/planning_questionnaire";
 import { writePlanTool } from "./tools/write_plan";
 import { exitPlanTool } from "./tools/exit_plan";
+import { improvePromptTool } from "./tools/improve_prompt";
 import { readGuideTool } from "./tools/read_guide";
 import {
   buildExecuteSandboxScriptDescription,
@@ -194,6 +196,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   restartAppTool,
   reinstallAndRestartAppTool,
   readGuideTool,
+  improvePromptTool,
   executeSandboxScriptTool,
   searchMcpToolsTool,
   getMcpToolSchemaTool,
@@ -767,7 +770,11 @@ export function shouldIncludeTool(
   if (options.freeModelMode && tool.usesEngineEndpoint) {
     return false;
   }
-  if (tool.subagentOnly && !ctx.isDyadPro) {
+  if (
+    tool.subagentOnly &&
+    !ctx.isDyadPro &&
+    !hasProviderAgentSelection(ctx.inferenceSettings)
+  ) {
     return false;
   }
   // search_chats is superseded by the explore_chat_history sub-agent wherever

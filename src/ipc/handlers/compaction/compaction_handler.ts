@@ -3,7 +3,7 @@
  * Orchestrates the compaction of long conversations to stay within context limits.
  */
 
-import { getAuxiliarySettings } from "@/lib/auxiliaryModel";
+import { getAuxiliarySettings, getAuxiliaryModel } from "@/lib/auxiliaryModel";
 import { IpcMainInvokeEvent } from "electron";
 import { streamText, ModelMessage } from "ai";
 import log from "electron-log";
@@ -13,7 +13,6 @@ import { db } from "@/db";
 import { chats, messages } from "@/db/schema";
 import { readSettings } from "@/main/settings";
 import { getChatInferenceSettings } from "@/ipc/services/chat_inference_settings";
-import { SMALL_MODEL_NAME } from "@/ipc/shared/language_model_constants";
 import type { UserSettings } from "@/lib/schemas";
 import { getModelClient } from "@/ipc/utils/get_model_client";
 import {
@@ -41,26 +40,12 @@ import {
   getAiHeaders,
   DYAD_INTERNAL_REQUEST_ID_HEADER,
 } from "@/ipc/utils/provider_options";
-import { isDyadProEnabled } from "@/lib/schemas";
 import {
   normalizeModelSelection,
   resolveDefaultModelSelection,
-  resolveModelSelection,
 } from "@/ipc/utils/model_effort";
-import { getModelPreferenceKey } from "@/lib/modelEffort";
 
 const logger = log.scope("compaction_handler");
-
-// Pinned compaction model for Pro users. Benchmarked against gpt-5.6-sol on
-// ~200k-token transcripts (plans/benchmark-compaction.md): equal summary
-// quality at ~2x lower latency, which matters because compaction blocks the
-// turn mid-stream. Matches the durable Explorer persona model.
-// Non-Pro users keep their selected chat model — the pinned model is only
-// reachable through the Dyad Engine gateway.
-const PRO_COMPACTION_MODEL = {
-  provider: "openai",
-  name: SMALL_MODEL_NAME,
-} as const;
 
 export interface CompactionResult {
   success: boolean;
@@ -208,17 +193,10 @@ export async function performCompaction(
         : chat?.modelSelection
           ? await normalizeModelSelection(chat.modelSelection)
           : await resolveDefaultModelSelection(storedSettings);
-    // Stored connections describe an earlier turn, not this auxiliary request.
-    const { connection: _connection, ...modelIdentity } = selectedModel;
-    const compactionModel = isDyadProEnabled(storedSettings)
-      ? await resolveModelSelection({
-          model: PRO_COMPACTION_MODEL,
-          preferredEffortLevel:
-            storedSettings.modelEffortPreferences?.[
-              getModelPreferenceKey(PRO_COMPACTION_MODEL)
-            ],
-        })
-      : modelIdentity;
+    const compactionModel = {
+      ...getAuxiliaryModel({ ...storedSettings, selectedModel }),
+      effortLevel: selectedModel.effortLevel,
+    };
     const settings = {
       ...getAuxiliarySettings(storedSettings),
       selectedModel: compactionModel,

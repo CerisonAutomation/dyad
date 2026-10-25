@@ -26,8 +26,6 @@ export async function getChatInferenceSettings(
   return {
     ...settings,
     selectedChatMode: mode,
-    ...(settings.proModelUsage === "api-key" && chat?.modelSelection
-      ? { selectedModel: chat.modelSelection }
-      : {}),
+    ...(chat?.modelSelection ? { selectedModel: chat.modelSelection } : {}),
   };
 }

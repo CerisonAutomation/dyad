@@ -72,11 +72,16 @@ function jsonResponse(body: unknown): Response {
 }
 
 beforeEach(() => {
+  vi.stubEnv(
+    "DYAD_LANGUAGE_MODEL_CATALOG_URL",
+    "https://catalog.example.test/models",
+  );
   vi.resetModules();
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.useRealTimers();
 });
 
@@ -543,4 +548,16 @@ describe("remote language model catalog", () => {
       (await mod.resolveBuiltinModelAlias("dyad/auto/openai"))?.apiName,
     ).toBe(GPT_5_5_MODEL_NAME);
   });
+});
+
+it("never contacts the application vendor for the default model catalog", async () => {
+  vi.stubEnv("DYAD_LANGUAGE_MODEL_CATALOG_URL", "");
+  vi.stubEnv("E2E_TEST_BUILD", "false");
+  const fetch = vi.fn();
+  vi.stubGlobal("fetch", fetch);
+  const { getBuiltinLanguageModelCatalog } =
+    await import("./remote_language_model_catalog");
+  const catalog = await getBuiltinLanguageModelCatalog();
+  expect(catalog.source).toBe("fallback");
+  expect(fetch).not.toHaveBeenCalled();
 });

@@ -1,3 +1,4 @@
+import { hasProviderAgentSelection } from "@/lib/auxiliaryModel";
 import { readSettings } from "@/main/settings";
 import {
   formatCodeExplorerDisabledReason,
@@ -21,7 +22,7 @@ export function getExploreCodeAvailabilityForAppPath(
   reason: string | null;
   tsconfigPath: string | null;
 } {
-  if (!ctx.isDyadPro) {
+  if (!ctx.isDyadPro && !hasProviderAgentSelection(ctx.inferenceSettings)) {
     return {
       enabled: false,
       reason: "dyad_pro_required",

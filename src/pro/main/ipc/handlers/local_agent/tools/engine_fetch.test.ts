@@ -282,3 +282,20 @@ describe("engineFetch", () => {
     expect(removeListener).toHaveBeenCalledWith("abort", expect.any(Function));
   });
 });
+
+it.each(["api-key", "subscription"] as const)(
+  "blocks engine fallback in explicit %s mode before fetching",
+  async (proModelUsage) => {
+    vi.useRealTimers();
+    const fetch = vi.spyOn(globalThis, "fetch");
+    mocks.readSettings.mockReturnValue({
+      proModelUsage,
+      providerSettings: { auto: { apiKey: { value: "saved-pro-key" } } },
+    });
+    await expect(
+      engineFetch({ dyadRequestId: "test" }, "/tools/test"),
+    ).rejects.toThrow("fallback is disabled");
+    expect(fetch).not.toHaveBeenCalled();
+    fetch.mockRestore();
+  },
+);

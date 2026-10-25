@@ -3,6 +3,12 @@ import log from "electron-log";
 // @ts-ignore electron-squirrel-startup does not provide TypeScript declarations
 import started from "electron-squirrel-startup";
 
+import {
+  installProviderOnlyFetch,
+  isDyadCloudAllowed,
+  isDyadCloudUrl,
+} from "./main/dyad_cloud_policy";
+
 const logger = log.scope("main_bootstrap");
 
 function getErrorSummary(error: unknown): string {
@@ -32,6 +38,16 @@ function reportRuntimeLoadFailure(error: unknown): void {
 if (started) {
   app.quit();
 } else {
+  // Install before importing the runtime: catalogs and services can fetch at import time.
+  installProviderOnlyFetch();
+  app.on("session-created", (session) => {
+    session.webRequest.onBeforeRequest((details, callback) => {
+      callback({
+        cancel: !isDyadCloudAllowed() && isDyadCloudUrl(details.url),
+      });
+    });
+  });
+
   // Forge emits the main target as CommonJS, so Vite lowers this import to a
   // microtask-scheduled require. That still evaluates main's pre-ready
   // registrations before Electron can deliver the ready event on a later turn.

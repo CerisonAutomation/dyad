@@ -5,6 +5,12 @@ import os from "node:os";
 import { codeSearchTool } from "./code_search";
 import type { AgentContext } from "./types";
 
+vi.mock("@/ipc/utils/git_utils", () => ({
+  gitListFilesNative: vi.fn(async () => {
+    throw new Error("Use real filesystem traversal for this test");
+  }),
+}));
+
 vi.mock("electron-log", () => ({
   default: {
     scope: () => ({
@@ -148,13 +154,13 @@ describe("codeSearchTool", () => {
       expect(codeSearchTool.isDiscoverable?.(mockContext)).toBe(true);
     });
 
-    it("is disabled for non-Pro regardless of explorer readiness", () => {
+    it("is enabled without a paid entitlement regardless of explorer readiness", () => {
       mocks.readSettings.mockReturnValue({ enableCodeExplorer: false });
       mocks.isCodeExplorerReady.mockReturnValue(false);
 
       expect(
         codeSearchTool.isEnabled?.({ ...mockContext, isDyadPro: false }),
-      ).toBe(false);
+      ).toBe(true);
     });
 
     it("is disabled for a root turn when the Explorer sub-agent is available", () => {
@@ -219,15 +225,10 @@ describe("codeSearchTool", () => {
         mockContext,
       );
 
-      expect(engineFetchMock).toHaveBeenCalledTimes(1);
-      const [, , opts] = engineFetchMock.mock.calls[0];
-      const body = JSON.parse(opts.body);
-      // The referenced app's file should be the one searched — not the current app's file.
-      const searchedPaths = body.filesContext.map(
-        (f: { path: string }) => f.path,
-      );
-      expect(searchedPaths).toContain("other.ts");
-      expect(searchedPaths).not.toContain("current.ts");
+      expect(engineFetchMock).not.toHaveBeenCalled();
+      const xml = (mockContext.onXmlComplete as any).mock.calls[0][0];
+      expect(xml).toContain("other.ts");
+      expect(xml).not.toContain("current.ts");
     });
 
     it("throws a clear error when app_name is not in the allow-list", async () => {

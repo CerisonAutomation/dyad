@@ -9,6 +9,9 @@ import {
 import { engineFetch } from "./engine_fetch";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 
+import { readSettings } from "@/main/settings";
+import { directWebSearch, getDirectSearchConfig } from "./direct_web_search";
+
 const logger = log.scope("web_search");
 
 const webSearchSchema = z.object({
@@ -176,17 +179,39 @@ export const webSearchTool: ToolDefinition<z.infer<typeof webSearchSchema>> = {
   description: DESCRIPTION,
   inputSchema: webSearchSchema,
   defaultConsent: "ask",
-  usesEngineEndpoint: true,
+  usesEngineEndpoint: false,
 
-  // Requires Dyad Pro engine API
-  isEnabled: (ctx) => ctx.isDyadPro,
+  // Direct search is available only for an explicitly selected API billing source.
+  isEnabled: (ctx) => {
+    const settings = ctx.inferenceSettings ?? readSettings();
+    return (
+      Boolean(getDirectSearchConfig(settings)) ||
+      (settings.proModelUsage !== "api-key" &&
+        settings.proModelUsage !== "subscription" &&
+        ctx.isDyadPro &&
+        !ctx.freeModelMode)
+    );
+  },
 
   getConsentPreview: (args) => `Search the web: "${args.query}"`,
 
   execute: async (args, ctx: AgentContext) => {
     logger.log(`Executing web search: ${args.query}`);
 
-    const result = await callWebSearchSSE(args.query, ctx);
+    const settings = ctx.inferenceSettings ?? readSettings();
+    const direct = getDirectSearchConfig(settings);
+    if (
+      !direct &&
+      ["api-key", "subscription"].includes(settings.proModelUsage ?? "")
+    ) {
+      throw new DyadError(
+        "Web search requires an OpenAI or Anthropic API model in API-key mode. Subscription search is not supported by this tool; no Dyad Pro fallback was attempted.",
+        DyadErrorKind.Precondition,
+      );
+    }
+    const result = direct
+      ? await directWebSearch(args.query, direct, ctx.abortSignal)
+      : await callWebSearchSSE(args.query, ctx);
 
     if (!result) {
       throw new DyadError(

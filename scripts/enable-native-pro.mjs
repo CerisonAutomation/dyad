@@ -15,10 +15,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-const root = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-);
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const patches = [
   // 1) Master gate: every isDyadProEnabled call site (38 files) goes native.
@@ -32,7 +29,7 @@ const patches = [
     to: [
       "export function isDyadProEnabled(settings: UserSettings): boolean {",
       "  // NATIVE-PRO: all Pro-gated local features are enabled without a Dyad",
-      "  // subscription. Cloud-engine routing is separately gated on an \"auto\"",
+      '  // subscription. Cloud-engine routing is separately gated on an "auto"',
       "  // provider API key (get_model_client.ts), so with no key configured",
       "  // no request is ever routed to the Dyad engine.",
       "  return settings.enableDyadPro !== false;",
@@ -71,7 +68,7 @@ const patches = [
       "function assertDyadValueAvailable(settings: UserSettings): void {",
       "  if (!settings.enableDyadPro || !settings.providerSettings?.auto?.apiKey) {",
       "    throw new DyadError(",
-      "      \"explore_code sub-agent requires Dyad Pro with an auto provider API key\",",
+      '      "explore_code sub-agent requires Dyad Pro with an auto provider API key",',
       "      DyadErrorKind.Precondition,",
       "    );",
       "  }",
@@ -87,7 +84,7 @@ const patches = [
       "  ).some((provider) => !!provider?.apiKey?.value);",
       "  if (!hasAnyProviderKey) {",
       "    throw new DyadError(",
-      "      \"explore_code sub-agent requires a configured provider API key\",",
+      '      "explore_code sub-agent requires a configured provider API key",',
       "      DyadErrorKind.Precondition,",
       "    );",
       "  }",

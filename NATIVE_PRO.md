@@ -28,17 +28,17 @@ Note: the `explore_code` subagent hardcodes a small OpenAI model
 
 ## Agent v2 tools that now run on normal agents (BYO keys)
 
-| Tool / feature | Previously gated by | Now |
-|---|---|---|
-| Local Agent chat mode (default) | `isDyadProEnabled` | always available |
-| Subagent teams + implementer subagent | `assertPro` → `isDyadProEnabled` | passes |
-| `explore_code` subagent | `assertDyadValueAvailable` (engine key) | any provider key |
-| `grep` / `list_files` / `read_file` agent tools | tool catalog filter | all exposed |
-| Pro lazy edits (v1/v2), smart file context | settings flags | honored |
-| Auto-review, review button, fix-pre-commit-with-AI | Pro preconditions | pass |
-| Basic Agent quota | `isBasicAgentMode` | bypassed |
-| Model picker locks / free Pro model states | UI gate | unlocked |
-| Chat titles + summaries (auxiliary) | engine remap | BYO providers |
+| Tool / feature                                     | Previously gated by                     | Now              |
+| -------------------------------------------------- | --------------------------------------- | ---------------- |
+| Local Agent chat mode (default)                    | `isDyadProEnabled`                      | always available |
+| Subagent teams + implementer subagent              | `assertPro` → `isDyadProEnabled`        | passes           |
+| `explore_code` subagent                            | `assertDyadValueAvailable` (engine key) | any provider key |
+| `grep` / `list_files` / `read_file` agent tools    | tool catalog filter                     | all exposed      |
+| Pro lazy edits (v1/v2), smart file context         | settings flags                          | honored          |
+| Auto-review, review button, fix-pre-commit-with-AI | Pro preconditions                       | pass             |
+| Basic Agent quota                                  | `isBasicAgentMode`                      | bypassed         |
+| Model picker locks / free Pro model states         | UI gate                                 | unlocked         |
+| Chat titles + summaries (auxiliary)                | engine remap                            | BYO providers    |
 
 Every subagent model call goes through `getModelClient`, which routes to
 your own providers whenever no `auto` engine key is configured.
@@ -68,14 +68,14 @@ your own providers whenever no `auto` engine key is configured.
 
 ## Capability extraction roadmap (bolt.diy + Creable)
 
-| Source | Capability | Port target |
-|---|---|---|
-| bolt.diy | WebContainer in-browser runtime (zero local Node) | preview system (`src/preview_iframe`) |
-| bolt.diy | 22+ LLM provider adapters incl. LM Studio/Ollama | `src/chat_stream` provider layer |
-| bolt.diy | Docker/Electron one-command self-host | packaging (`forge.config.ts`) |
-| Creable (totalumlabs/ai-app-builder-open) | Multi-tenant hosting + custom domains | publish panel (Coolify hook) |
-| Creable | Bidirectional GitHub sync per project | `src/github_ops` |
-| Creable | Visual/no-code editor overlay | renderer UI layer |
+| Source                                    | Capability                                        | Port target                           |
+| ----------------------------------------- | ------------------------------------------------- | ------------------------------------- |
+| bolt.diy                                  | WebContainer in-browser runtime (zero local Node) | preview system (`src/preview_iframe`) |
+| bolt.diy                                  | 22+ LLM provider adapters incl. LM Studio/Ollama  | `src/chat_stream` provider layer      |
+| bolt.diy                                  | Docker/Electron one-command self-host             | packaging (`forge.config.ts`)         |
+| Creable (totalumlabs/ai-app-builder-open) | Multi-tenant hosting + custom domains             | publish panel (Coolify hook)          |
+| Creable                                   | Bidirectional GitHub sync per project             | `src/github_ops`                      |
+| Creable                                   | Visual/no-code editor overlay                     | renderer UI layer                     |
 
 ## Upstream sync
 

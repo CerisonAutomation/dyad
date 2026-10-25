@@ -1,3 +1,5 @@
+import { remainingGoalSteps } from "./goal_runtime_budget";
+import { hasProviderAgentSelection } from "@/lib/auxiliaryModel";
 import { recordShellReviewOutcome } from "./shell_review_history";
 import { shellExecutionGuidance } from "@/shared/shell_capability";
 import { SubscriptionBillingError } from "@/shared/subscription_billing_error";
@@ -36,7 +38,6 @@ import { parseMcpToolKey, sanitizeMcpName } from "@/ipc/utils/mcp_tool_utils";
 import { sanitizeMcpToolResult } from "@/ipc/utils/mcp_result_sanitizer";
 
 import {
-  isDyadProEnabled,
   isBasicAgentMode,
   type ModelSelection,
   type UserSettings,
@@ -798,29 +799,8 @@ export async function handleLocalAgentStream(
       : await resolveDefaultModelSelection(storedSettings);
   settings = { ...storedSettings, selectedModel };
 
-  // Check Pro status or Basic Agent mode
-  // Basic Agent mode allows non-Pro users with quota (quota check is done in chat_stream_handlers)
-  // Read-only mode (ask mode) is allowed for all users without Pro
-  if (
-    !buildMode &&
-    !readOnly &&
-    !planModeOnly &&
-    !isDyadProEnabled(settings) &&
-    selectedModel.provider !== "claude-code" &&
-    !isBasicAgentMode(settings)
-  ) {
-    const errorMessage =
-      referencedApps.length > 0
-        ? "Referencing other apps (@app:Name) in local-agent mode requires Dyad Pro. Please enable Dyad Pro in Settings → Pro."
-        : "Agent v2 requires Dyad Pro. Please enable Dyad Pro in Settings → Pro.";
-    safeSend(event.sender, "chat:response:error", {
-      chatId: req.chatId,
-      invocationRef: req.invocationRef,
-      streamId: req.streamId,
-      error: errorMessage,
-    });
-    return false;
-  }
+  // Agent2 is provider-backed. Model/source validation happens before execution;
+  // workspace access and mutation approvals are enforced by tool guards.
 
   let appPath = getDyadAppPath(chat.app.path);
 
@@ -1047,21 +1027,21 @@ export async function handleLocalAgentStream(
       appBlueprintQuestionnaireCompleted: hasCompletedAppBlueprintQuestionnaire(
         chat.messages,
       ),
-      isDyadPro: isDyadProEnabled(settings),
+      isDyadPro: false,
       canUseExplorerSubagent:
         !buildMode &&
-        isDyadProEnabled(settings) &&
+        hasProviderAgentSelection(settings) &&
         settings.enableExplorerSubagent !== false &&
         settings.agentToolConsents?.spawn_agent !== "never",
       canUseImplementerSubagent:
         !buildMode &&
-        isDyadProEnabled(settings) &&
+        hasProviderAgentSelection(settings) &&
         isImplementerSubagentEnabled(settings) &&
         !readOnly &&
         !planModeOnly,
       canUseAdvancedSubagentTools:
         !buildMode &&
-        isDyadProEnabled(settings) &&
+        hasProviderAgentSelection(settings) &&
         settings.enableAdvancedSubagents === true,
       runTypeScriptForWholeProject:
         settings.runTypeScriptForWholeProject === true,
@@ -1369,7 +1349,10 @@ export async function handleLocalAgentStream(
       ];
     }
 
-    while (!abortController.signal.aborted) {
+    while (
+      !abortController.signal.aborted &&
+      remainingGoalSteps(maxToolCallSteps, totalStepsExecuted) > 0
+    ) {
       // Reset mid-turn compaction state at the start of each pass.
       // These flags track compaction within a single pass and must not persist
       // across passes (e.g., todo follow-up passes).
@@ -1384,12 +1367,16 @@ export async function handleLocalAgentStream(
         toolCalls: Array<unknown>;
         response?: { messages?: ModelMessage[] };
       }> = [];
+      let observedStepsForPass = 0;
       let terminatedRetryCount = 0;
       let needsContinuationInstruction = false;
       let injectionBaseMessageCount = 0;
 
       // Retry loop: if the stream terminates with a transient error, captured text/tool events are replayed into message history, a continuation instruction is appended, and the stream is re-opened.
-      while (!abortController.signal.aborted) {
+      while (
+        !abortController.signal.aborted &&
+        remainingGoalSteps(maxToolCallSteps, totalStepsExecuted) > 0
+      ) {
         let streamErrorFromCallback: unknown;
         const retryReplayEvents: RetryReplayEvent[] = [];
         activeRetryReplayEvents = retryReplayEvents;
@@ -1458,7 +1445,11 @@ export async function handleLocalAgentStream(
             messages: sanitizedAttemptMessages,
             tools: allTools,
             stopWhen: [
-              stepCountIs(maxToolCallSteps),
+              stepCountIs(
+                remainingGoalSteps(maxToolCallSteps, totalStepsExecuted),
+              ),
+              () =>
+                remainingGoalSteps(maxToolCallSteps, totalStepsExecuted) === 0,
               // Stop after the integration tool so the next stream is started
               // with a freshly built system prompt that includes the new
               // Supabase/Neon context. The frontend auto-triggers a hidden
@@ -1647,6 +1638,10 @@ export async function handleLocalAgentStream(
               return result;
             },
             onStepFinish: async (step) => {
+              // Count immediately, including failed-stream retries. Waiting for
+              // streamResult.steps loses prior attempts when an attempt fails.
+              observedStepsForPass += 1;
+              totalStepsExecuted += 1;
               const actualModel =
                 modelClient.getRuntimeModel?.() ?? runtimeModel;
               await db
@@ -2113,10 +2108,12 @@ export async function handleLocalAgentStream(
       }
 
       // Track total steps for step limit detection
-      totalStepsExecuted +=
-        modelClient.model instanceof ClaudeCodeModel
+      totalStepsExecuted += Math.max(
+        0,
+        (modelClient.model instanceof ClaudeCodeModel
           ? modelClient.model.stepsExecuted
-          : steps.length;
+          : steps.length) - observedStepsForPass,
+      );
 
       if (responseMessages.length > 0 || allInjectedMessages.length > 0) {
         // For mid-turn compaction, slice off pre-compaction messages
@@ -2454,7 +2451,7 @@ export async function handleLocalAgentStream(
       !buildMode &&
       workspaceChanged &&
       !hitStepLimit &&
-      isDyadProEnabled(settings) &&
+      hasProviderAgentSelection(settings) &&
       settings.enableAutoReview === true;
 
     // Send completion

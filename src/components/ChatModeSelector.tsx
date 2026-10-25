@@ -11,9 +11,7 @@ import {
   TooltipContent,
 } from "@/components/ui/tooltip";
 import { useChatMode } from "@/hooks/useChatMode";
-import { useFreeAgentQuota } from "@/hooks/useFreeAgentQuota";
 import type { ChatMode } from "@/lib/schemas";
-import { isDyadProEnabled } from "@/lib/schemas";
 import { getChatModeDisplayName } from "@/lib/chatModeToast";
 import { cn } from "@/lib/utils";
 import { detectIsMac } from "@/hooks/useChatModeToggle";
@@ -38,10 +36,7 @@ export function ChatModeSelector() {
   const setHasManuallySelectedChatMode = useSetAtom(
     hasManuallySelectedChatModeAtom,
   );
-  const isProEnabled = settings ? isDyadProEnabled(settings) : false;
   const isSubscription = selectedModel?.provider === "claude-code";
-  const { messagesRemaining, messagesLimit, isQuotaExceeded } =
-    useFreeAgentQuota();
   const isDyadFreeSelected = isFreeProModel(selectedModel);
   const buildUnavailableForDyadFree = isDyadFreeSelected;
 
@@ -75,8 +70,8 @@ export function ChatModeSelector() {
   };
 
   const getModeDisplayName = (mode: ChatMode) => {
-    if (isSubscription && mode === "local-agent") return "Agent";
-    return getChatModeDisplayName(mode, isProEnabled);
+    if (isSubscription && mode === "local-agent") return "Claude Code agent";
+    return getChatModeDisplayName(mode, false);
   };
 
   const getModeIcon = (mode: ChatMode) => {
@@ -133,21 +128,19 @@ export function ChatModeSelector() {
           </TooltipContent>
         </Tooltip>
         <SelectContent align="start">
-          {(isProEnabled || isSubscription) && (
-            <SelectItem value="local-agent">
-              <div className="flex flex-col items-start">
-                <div className="flex items-center gap-1.5">
-                  <Bot size={14} className="text-muted-foreground" />
-                  <span className="font-medium">
-                    {isSubscription ? "Claude Code agent" : "Agent v2"}
-                  </span>
-                </div>
-                <span className="text-xs text-muted-foreground ml-[22px]">
-                  Better at bigger tasks and debugging
+          <SelectItem value="local-agent">
+            <div className="flex flex-col items-start">
+              <div className="flex items-center gap-1.5">
+                <Bot size={14} className="text-muted-foreground" />
+                <span className="font-medium">
+                  {isSubscription ? "Claude Code agent" : "Agent2"}
                 </span>
               </div>
-            </SelectItem>
-          )}
+              <span className="text-xs text-muted-foreground ml-[22px]">
+                Better at bigger tasks and debugging
+              </span>
+            </div>
+          </SelectItem>
           <SelectItem value="plan">
             <div className="flex flex-col items-start">
               <div className="flex items-center gap-1.5">
@@ -159,24 +152,6 @@ export function ChatModeSelector() {
               </span>
             </div>
           </SelectItem>
-          {!isProEnabled && !isSubscription && (
-            <SelectItem value="local-agent" disabled={isQuotaExceeded}>
-              <div className="flex flex-col items-start">
-                <div className="flex items-center gap-1.5">
-                  <Bot size={14} className="text-muted-foreground" />
-                  <span className="font-medium">Basic Agent</span>
-                  <span className="text-xs text-muted-foreground">
-                    {`(${isQuotaExceeded ? "0" : messagesRemaining}/${messagesLimit} remaining for today)`}
-                  </span>
-                </div>
-                <span className="text-xs text-muted-foreground ml-[22px]">
-                  {isQuotaExceeded
-                    ? "Daily limit reached"
-                    : "Try our AI agent for free"}
-                </span>
-              </div>
-            </SelectItem>
-          )}
           <SelectItem value="build" disabled={buildUnavailableForDyadFree}>
             <div className="flex flex-col items-start">
               <div className="flex items-center gap-1.5">

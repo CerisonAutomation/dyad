@@ -156,9 +156,9 @@ vi.mock("drizzle-orm", () => ({
 }));
 
 let catalogEntries: unknown[] = [];
-vi.mock("@/ipc/shared/remote_mcp_catalog", async (importOriginal) => ({
+vi.mock("@/ipc/shared/builtin_mcp_catalog", async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  getRemoteMcpCatalog: vi.fn(async () => catalogEntries),
+  getMcpCatalog: vi.fn(async () => catalogEntries),
 }));
 
 const getClientMock = vi.fn();

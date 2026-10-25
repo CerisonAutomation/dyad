@@ -1,5 +1,5 @@
 import { Readable } from "node:stream";
-import fetch from "node-fetch";
+import fetch from "@/main/provider_only_legacy_fetch";
 import { z } from "zod";
 
 export const UserInfoResponseSchema = z.object({

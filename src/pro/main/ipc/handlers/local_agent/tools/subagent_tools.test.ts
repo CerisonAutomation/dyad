@@ -513,14 +513,14 @@ describe("spawn_agent schema", () => {
     ).toBe(true);
     expect(spawnAgentTool.mutationTracking).toBe("none");
     expect(spawnAgentTool.requiresBlueprintApproval).toBe(false);
-    expect(spawnAgentTool.usesEngineEndpoint).toBe(true);
+    expect(spawnAgentTool.usesEngineEndpoint).toBe(false);
     expect(cancelAgentTool.mutationTracking).toBe("none");
     expect(cancelAgentTool.requiresBlueprintApproval).toBe(false);
     expect(sendMessageTool.mutationTracking).toBe("none");
     expect(sendMessageTool.requiresBlueprintApproval).toBe(false);
     expect(followupTaskTool.mutationTracking).toBe("none");
     expect(followupTaskTool.requiresBlueprintApproval).toBe(false);
-    expect(followupTaskTool.usesEngineEndpoint).toBe(true);
+    expect(followupTaskTool.usesEngineEndpoint).toBe(false);
   });
 
   it("exposes bounded compiler exploration arguments", () => {

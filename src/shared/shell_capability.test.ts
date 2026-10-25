@@ -39,3 +39,27 @@ describe("shell experiment eligibility", () => {
     expect(bash).toContain("maximum five minutes");
   });
 });
+
+it.each(["api-key", "subscription"] as const)(
+  "allows reviewed host shell with explicit %s inference, without Pro",
+  (proModelUsage) => {
+    const settings = {
+      enableShellTool: true,
+      proModelUsage,
+      selectedModel: { provider: "openai", name: "selected" },
+    };
+    expect(isShellExperimentAvailable({ settings, isDyadPro: false })).toBe(
+      true,
+    );
+    expect(
+      isShellExperimentAvailable({
+        settings,
+        isDyadPro: false,
+        readOnly: true,
+      }),
+    ).toBe(false);
+    expect(
+      isShellExperimentAvailable({ settings, isDyadPro: false, isChild: true }),
+    ).toBe(false);
+  },
+);

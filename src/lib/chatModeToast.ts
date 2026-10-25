@@ -1,13 +1,16 @@
 import type { ChatMode } from "./schemas";
 
-export function getChatModeDisplayName(mode: ChatMode, isPro: boolean): string {
+export function getChatModeDisplayName(
+  mode: ChatMode,
+  _legacyEntitlement: boolean,
+): string {
   switch (mode) {
     case "build":
       return "Build";
     case "ask":
       return "Ask";
     case "local-agent":
-      return isPro ? "Agent" : "Basic Agent";
+      return "Agent2";
     case "plan":
       return "Plan";
   }

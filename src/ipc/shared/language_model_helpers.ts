@@ -1,3 +1,5 @@
+import { discoverOpenRouterModels } from "./openrouter_model_discovery";
+import { compareCatalogModels } from "@/lib/modelCatalogPolicy";
 import { db } from "@/db";
 import {
   language_model_providers as languageModelProvidersSchema,
@@ -176,7 +178,20 @@ export async function getLanguageModels({
     }
   }
 
-  return [...hardcodedModels, ...customModels];
+  if (providerId === "openrouter" && provider.type === "cloud") {
+    const discovered = await discoverOpenRouterModels();
+    if (discovered?.length) hardcodedModels = discovered;
+  }
+  // User-defined entries remain authoritative for identical API names.
+  const merged = new Map(
+    [...hardcodedModels, ...customModels].map((model) => [
+      model.apiName,
+      model,
+    ]),
+  );
+  return [...merged.values()].sort((a, b) =>
+    compareCatalogModels(providerId, a, b),
+  );
 }
 
 /**

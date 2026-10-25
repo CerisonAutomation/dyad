@@ -1,5 +1,5 @@
 import log from "electron-log";
-import fetch from "node-fetch";
+import fetch from "@/main/provider_only_legacy_fetch";
 import { IS_TEST_BUILD } from "../utils/test_utils";
 import { createTypedHandler } from "./base";
 import { systemContracts } from "../types/system";

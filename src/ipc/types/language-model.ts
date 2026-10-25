@@ -49,6 +49,8 @@ export const LanguageModelSchema = z.object({
   contextWindow: z.number().optional(),
   temperature: z.number().optional(),
   dollarSigns: z.number().optional(),
+  isFree: z.boolean().optional(),
+  supportsTools: z.boolean().optional(),
   effortSettings: EffortSettingsSchema.optional(),
   type: z.enum(["custom", "local", "cloud"]).optional(),
 });

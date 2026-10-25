@@ -1,3 +1,7 @@
+import {
+  isBrowserPreview,
+  invokeBrowserPreview,
+} from "../../browser_preview/adapter";
 import { z } from "zod";
 import {
   isInvocationRef,
@@ -330,6 +334,7 @@ export function createClient<
   const client = {} as ClientFromContracts<T>;
   for (const [methodName, contract] of Object.entries(contracts)) {
     (client as any)[methodName] = async (input: unknown) => {
+      if (isBrowserPreview()) return invokeBrowserPreview(contract.channel);
       const ipcRenderer = getIpcRenderer();
       if (!ipcRenderer) {
         throw new Error(
@@ -424,6 +429,7 @@ export function createEventClient<
     (client as any)[methodName] = (handler: (payload: unknown) => void) => {
       const ipcRenderer = getIpcRenderer();
       if (!ipcRenderer) {
+        if (isBrowserPreview()) return () => {};
         console.error(
           `[${event.channel}] IPC renderer not available. Make sure this is called from the renderer process.`,
         );

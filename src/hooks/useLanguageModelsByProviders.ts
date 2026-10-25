@@ -1,3 +1,4 @@
+import { rankModelCatalog } from "@/lib/modelCatalogPolicy";
 import { useQuery } from "@tanstack/react-query";
 import { ipc, type LanguageModel } from "@/ipc/types";
 import { queryKeys } from "@/lib/queryKeys";
@@ -10,8 +11,13 @@ import { queryKeys } from "@/lib/queryKeys";
 export function useLanguageModelsByProviders() {
   return useQuery<Record<string, LanguageModel[]>, Error>({
     queryKey: queryKeys.languageModels.byProviders,
+    staleTime: 60_000,
+    refetchInterval: 5 * 60_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    retry: 2,
     queryFn: async () => {
-      return ipc.languageModel.getModelsByProviders();
+      return rankModelCatalog(await ipc.languageModel.getModelsByProviders());
     },
   });
 }

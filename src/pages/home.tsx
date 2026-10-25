@@ -16,7 +16,6 @@ import { INSPIRATION_PROMPTS } from "@/prompts/inspiration_prompts";
 
 import { ImportAppButton } from "@/components/ImportAppButton";
 import { FeaturedAppShowcase } from "@/components/FeaturedAppShowcase";
-import { Button } from "@/components/ui/button";
 
 import type { FileAttachment } from "@/ipc/types";
 import type { ListedApp } from "@/ipc/types/app";
@@ -26,8 +25,7 @@ import {
   isFreeProBuildModeCombination,
 } from "@/lib/freeProModel";
 import { useLanguageModelProviders } from "@/hooks/useLanguageModelProviders";
-import { RefreshCw, Sparkles, Zap } from "lucide-react";
-import { ipc } from "@/ipc/types";
+import { RefreshCw, Zap } from "lucide-react";
 import {
   useFirstPromptSaga,
   useFirstPromptSend,
@@ -185,7 +183,8 @@ export default function HomePage() {
               What do you want to build?
             </h1>
             <p className="mx-auto mt-3 max-w-2xl text-base leading-7 text-muted-foreground">
-              Describe your idea. Dyad will turn it into a working app.
+              Describe your idea. Agent2 will build it with your selected
+              provider.
             </p>
             <div className="mt-4 flex justify-center gap-3">
               <ImportAppButton
@@ -193,19 +192,6 @@ export default function HomePage() {
                 variant="outline"
                 size="sm"
               />
-              {!hasDyadProApiKey && (
-                <Button
-                  size="sm"
-                  onClick={() =>
-                    ipc.system.openExternalUrl(
-                      "https://www.dyad.sh/pro?utm_source=dyad-app&utm_medium=app&utm_campaign=home-upgrade-to-pro",
-                    )
-                  }
-                >
-                  <Sparkles aria-hidden="true" />
-                  Upgrade to Pro
-                </Button>
-              )}
             </div>
           </div>
           <HomeChatInput

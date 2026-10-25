@@ -1,3 +1,4 @@
+import { hasProviderAgentSelection } from "./auxiliaryModel";
 import { z } from "zod";
 import {
   isGoogleProviderSetup,
@@ -744,6 +745,7 @@ export function getEffectiveDefaultChatMode(
 export function isBasicAgentMode(settings: UserSettings): boolean {
   return (
     settings.selectedModel.provider !== "claude-code" &&
+    !hasProviderAgentSelection(settings) &&
     !isDyadProEnabled(settings) &&
     settings.selectedChatMode === "local-agent"
   );
