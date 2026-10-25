@@ -48,7 +48,7 @@ export const runShellTool: ToolDefinition<z.infer<typeof schema>> = {
   inputSchema: schema,
   modifiesState: true,
   mutationTracking: "internal",
-  usesEngineEndpoint: true,
+  usesEngineEndpoint: false,
   defaultConsent: "always",
   isEnabled: (ctx) =>
     isShellExperimentAvailable({

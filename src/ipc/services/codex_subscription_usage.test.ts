@@ -12,6 +12,11 @@ const mocks = vi.hoisted(() => ({
 vi.mock("./codex_subscription_credit_check", () => ({
   checkSubscriptionCredits: vi.fn(async () => {}),
 }));
+// Isolate compatibility payload accounting from the production cloud-policy gate.
+// Every transport call below is mocked; this does not enable vendor endpoints.
+vi.mock("@/ipc/utils/dyad_engine_url", () => ({
+  getDyadEngineBaseUrl: () => "https://usage.test.invalid/v1",
+}));
 vi.mock("@/paths/paths", () => ({ getUserDataPath: () => mocks.directory }));
 vi.mock("@/main/settings", () => ({
   readSettings: () => ({

@@ -56,7 +56,10 @@ function createCallerCancellationError(cause: unknown): DyadError {
  * @throws Error if Dyad Pro API key is not configured
  */
 export async function engineFetch(
-  ctx: Pick<AgentContext, "dyadRequestId" | "abortSignal">,
+  ctx: Pick<
+    AgentContext,
+    "dyadRequestId" | "abortSignal" | "inferenceSettings"
+  >,
   endpoint: string,
   options: EngineFetchOptions = {},
 ): Promise<EngineFetchResponse> {
@@ -68,7 +71,16 @@ export async function engineFetch(
     throw createCallerCancellationError(alreadyAbortedSignal.reason);
   }
 
-  const settings = readSettings();
+  const settings = ctx.inferenceSettings ?? readSettings();
+  if (
+    settings.proModelUsage === "api-key" ||
+    settings.proModelUsage === "subscription"
+  ) {
+    throw new DyadError(
+      "This tool requires a direct provider adapter in API/subscription mode. Dyad Engine fallback is disabled.",
+      DyadErrorKind.Precondition,
+    );
+  }
   const apiKey = settings.providerSettings?.auto?.apiKey?.value;
 
   if (!apiKey) {

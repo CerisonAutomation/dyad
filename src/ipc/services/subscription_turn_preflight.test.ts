@@ -184,7 +184,9 @@ describe("global subscription turn routing", () => {
       ).rejects.toMatchObject({
         kind: DyadErrorKind.Auth,
         message: expect.stringContaining(
-          "Reconnect your ChatGPT subscription or select Pro credits",
+          proModelUsage === "subscription"
+            ? "Reconnect ChatGPT"
+            : "Reconnect your ChatGPT subscription or select Pro credits",
         ),
       });
       expect(mocks.credentials).not.toHaveBeenCalled();
@@ -536,8 +538,8 @@ it.each([
       signal,
     );
     expect(result.model).toMatchObject({ provider, connection: "api-key" });
-    expect(result.externalModelAdmission).toBeDefined();
-    expect(mocks.credits).toHaveBeenCalledWith("test-key", signal);
+    expect(result.externalModelAdmission).toBeUndefined();
+    expect(mocks.credits).not.toHaveBeenCalled();
     expect(mocks.account).not.toHaveBeenCalled();
     expect(mocks.credentials).not.toHaveBeenCalled();
   },
@@ -552,7 +554,7 @@ it("does not check Dyad credits for BYO with Pro off", async () => {
   expect(result.externalModelAdmission).toBeUndefined();
   expect(mocks.credits).not.toHaveBeenCalled();
 });
-it("rejects exhausted BYO credits without falling back to a subscription", async () => {
+it("ignores exhausted Dyad credits in explicit BYO mode", async () => {
   const { SubscriptionBillingError } =
     await import("@/shared/subscription_billing_error");
   const error = new SubscriptionBillingError("OUT_OF_CREDITS");
@@ -563,7 +565,11 @@ it("rejects exhausted BYO credits without falling back to a subscription", async
       { ...settings, proModelUsage: "api-key" },
       signal,
     ),
-  ).rejects.toBe(error);
+  ).resolves.toMatchObject({
+    model: { connection: "api-key" },
+    externalModelAdmission: undefined,
+  });
+  expect(mocks.credits).not.toHaveBeenCalled();
   expect(mocks.credentials).not.toHaveBeenCalled();
 });
 it("asks existing Claude Code chats to change model or source instead of ignoring BYO", async () => {
@@ -593,3 +599,28 @@ it.each(["value", "free-pro"])(
     expect(mocks.credits).not.toHaveBeenCalled();
   },
 );
+
+it.each(["anthropic", "google"])(
+  "rejects %s in explicit subscription mode rather than billing Pro",
+  async (provider) => {
+    await expect(
+      preflightWithAdmission(
+        { ...model, provider },
+        { ...settings, proModelUsage: "subscription" },
+        signal,
+      ),
+    ).rejects.toThrow("Subscription mode requires");
+    expect(mocks.credits).not.toHaveBeenCalled();
+  },
+);
+it("rejects disconnected explicit subscriptions without Pro fallback", async () => {
+  mocks.account.mockResolvedValue({ connected: false, models: [] });
+  await expect(
+    preflightWithAdmission(
+      model,
+      { ...settings, proModelUsage: "subscription" },
+      signal,
+    ),
+  ).rejects.toThrow("Connect ChatGPT");
+  expect(mocks.credits).not.toHaveBeenCalled();
+});

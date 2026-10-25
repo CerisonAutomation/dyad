@@ -1,3 +1,4 @@
+import { hasProviderAgentSelection } from "@/lib/auxiliaryModel";
 import type { UserSettings } from "@/lib/schemas";
 import { buildMcpConsentSystemPrompt } from "@/prompts/mcp_consent_policy";
 import type { McpAutoApproveResult } from "@/ipc/utils/mcp_consent";
@@ -75,7 +76,7 @@ export function buildMcpAutoApprove(params: {
 }): (() => Promise<McpAutoApproveResult>) | undefined {
   if (
     !params.settings.autoApproveSafeMcpTools ||
-    !params.isDyadPro ||
+    (!params.isDyadPro && !hasProviderAgentSelection(params.settings)) ||
     params.freeModelMode
   ) {
     return undefined;

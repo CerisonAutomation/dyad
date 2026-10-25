@@ -1,3 +1,4 @@
+import { isBrowserPreview } from "./browser_preview/adapter";
 import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { router } from "./router";
@@ -117,7 +118,14 @@ const posthogClient = posthog.init(
     // @ts-ignore
     debug: import.meta.env.MODE === "development",
     autocapture: false,
-    capture_exceptions: true,
+    ...(isBrowserPreview()
+      ? {
+          opt_out_capturing_by_default: true,
+          disable_external_dependency_loading: true,
+          advanced_disable_flags: true,
+        }
+      : {}),
+    capture_exceptions: !isBrowserPreview(),
     capture_pageview: false,
     before_send: (event) => {
       if (!isTelemetryOptedIn()) {
@@ -185,7 +193,7 @@ function RendererServices() {
   const store = useStore();
   const chatStreamManager = useChatStreamManager();
   const entityDisposal = useEntityDisposal();
-  const [windowReady, setWindowReady] = useState(false);
+  const [windowReady, setWindowReady] = useState(isBrowserPreview);
   const clearAppRuntime = useCallback(
     (appId: number) => {
       store.set(clearTestRuntimeForAppAtom, appId);
@@ -251,6 +259,7 @@ function RendererServices() {
   );
 
   useEffect(() => {
+    if (isBrowserPreview()) return;
     let disposed = false;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let retryDelayMs = 100;
@@ -313,7 +322,7 @@ function RendererServices() {
   }, []);
 
   useEffect(() => {
-    if (!windowReady) return;
+    if (!windowReady || isBrowserPreview()) return;
     return registerRendererIpcListeners({
       ipcClient: ipc,
       store,
@@ -326,7 +335,32 @@ function RendererServices() {
     });
   }, [chatStreamManager, entityDisposal, queryClient, store, windowReady]);
 
-  return windowReady ? <RouterProvider router={router} /> : null;
+  return windowReady ? (
+    <>
+      {isBrowserPreview() && (
+        <div
+          role="status"
+          style={{
+            position: "fixed",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 9999,
+            padding: "6px 12px",
+            background: "#312e81",
+            color: "white",
+            fontSize: 12,
+            textAlign: "center",
+            pointerEvents: "none",
+          }}
+        >
+          Browser development preview — read-only, empty sample state. Desktop,
+          filesystem and AI actions require Electron.
+        </div>
+      )}
+      <RouterProvider router={router} />
+    </>
+  ) : null;
 }
 
 createRoot(document.getElementById("root")!).render(

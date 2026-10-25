@@ -1,4 +1,3 @@
-import { isDyadProEnabled } from "@/lib/schemas";
 import { SETTING_IDS } from "@/lib/settingsSearchIndex";
 import { useSettings } from "@/hooks/useSettings";
 import { Label } from "@/components/ui/label";
@@ -48,7 +47,7 @@ export function AutoFixReviewIssuesSwitch({
   compact?: boolean;
 }) {
   const { settings, updateSettings } = useSettings();
-  if (!settings || !isDyadProEnabled(settings)) return null;
+  if (!settings) return null;
 
   return (
     <div className={compact ? "flex items-center gap-2" : "space-y-1"}>
@@ -74,15 +73,15 @@ export function AutoFixReviewIssuesSwitch({
 
 export function SubagentSettings() {
   const { settings, updateSettings } = useSettings();
-  if (!settings || !isDyadProEnabled(settings)) return null;
+  if (!settings) return null;
 
   return (
     <div className="mt-6 space-y-4 border-t pt-5">
       <div>
         <h3 className="font-medium">Sub-agents</h3>
         <p className="text-sm text-muted-foreground">
-          Delegate research, review, and scoped implementation to visible Pro
-          agents.
+          Delegate research, review, and scoped implementation to visible Agent2
+          agents using your selected model.
         </p>
       </div>
       <SettingRow

@@ -40,7 +40,9 @@ function getRemoteLanguageModelCatalogUrl() {
     return `http://localhost:${process.env.FAKE_LLM_PORT}/api/language-model-catalog`;
   }
 
-  return "https://api.dyad.sh/v1/language-model-catalog";
+  // Provider discovery/user configuration is authoritative. Never implicitly
+  // contact the former application vendor for model routing metadata.
+  return undefined;
 }
 
 export type { ThemeGenerationModelOption };
@@ -376,8 +378,9 @@ function convertRemoteCatalog(
 }
 
 async function fetchRemoteCatalog(): Promise<BuiltinLanguageModelCatalog | null> {
-  const controller = new AbortController();
   const catalogUrl = getRemoteLanguageModelCatalogUrl();
+  if (!catalogUrl) return null;
+  const controller = new AbortController();
   const timeoutId = setTimeout(
     () => controller.abort(),
     REMOTE_LANGUAGE_MODEL_CATALOG_TIMEOUT_MS,

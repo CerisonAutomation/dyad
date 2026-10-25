@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.app.json",
+  "compilerOptions": {
+    "types": ["node", "vite/client"],
+    "incremental": false
+  },
+  "include": [
+    "../../src/components/chat/ImprovePromptButton.tsx",
+    "../../src/components/chat/ImprovePromptButton.test.tsx",
+    "../../src/ipc/types/prompts.ts",
+    "../../src/ipc/handlers/prompt_improvement_handlers.ts",
+    "../../src/ipc/handlers/prompt_improvement_handlers.test.ts"
+  ],
+  "exclude": []
+}

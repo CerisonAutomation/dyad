@@ -7,8 +7,7 @@ import {
   escapeXmlContent,
 } from "./types";
 import { extractCodebase } from "../../../../../../utils/codebase";
-import { engineFetch } from "./engine_fetch";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import { searchLocalCode } from "@/ipc/utils/local_code_search";
 import { isCodeExplorerReady } from "@/ipc/processors/code_explorer";
 import { readSettings } from "@/main/settings";
 import {
@@ -19,7 +18,12 @@ import {
 const logger = log.scope("code_search");
 
 const codeSearchSchema = z.object({
-  query: z.string().describe("Search query to find relevant files"),
+  query: z
+    .string()
+    .trim()
+    .min(1)
+    .max(2000)
+    .describe("Search query to find relevant files"),
   app_name: z
     .string()
     .optional()
@@ -31,10 +35,6 @@ const codeSearchSchema = z.object({
 const FileContextSchema = z.object({
   path: z.string(),
   content: z.string(),
-});
-
-const codeSearchResponseSchema = z.object({
-  relevantFiles: z.array(z.string()).describe("Paths of relevant files"),
 });
 
 type CodeSearchArgs = z.infer<typeof codeSearchSchema>;
@@ -63,33 +63,20 @@ async function callCodeSearch(
     })}>`,
   );
 
-  const response = await engineFetch(ctx, "/tools/code-search", {
-    method: "POST",
-    body: JSON.stringify({
-      query: params.query,
-      filesContext: params.filesContext,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new DyadError(
-      `Code search failed: ${response.status} ${response.statusText} - ${errorText}`,
-      DyadErrorKind.External,
-    );
-  }
-
-  const data = codeSearchResponseSchema.parse(await response.json());
-  return data.relevantFiles;
+  ctx.abortSignal?.throwIfAborted();
+  const result = searchLocalCode(params.query, params.filesContext);
+  if (result.truncated)
+    logger.warn("Local code search reached its bounded indexing budget");
+  return result.results.map((file) => file.path);
 }
 
-const DESCRIPTION = `Search the codebase semantically to find files relevant to a query. Use this tool when you need to discover which files contain code related to a specific concept, feature, or functionality. Returns a list of file paths that are most relevant to the search query.
+const DESCRIPTION = `Search the codebase locally using exact terms, path matches, symbols and fuzzy matching. This is lexical retrieval, not embedding-based semantic search. No source code leaves this machine. Use this tool when you need to discover which files contain code related to a specific concept, feature, or functionality. Returns a list of file paths that are most relevant to the search query.
 
 ### When to Use This Tool
 
 - Explore unfamiliar codebases
 - Ask "how / where / what" questions to understand behavior
-- Find code by meaning rather than exact text
+- Rank candidate files using words, paths and symbol names
 
 ### When NOT to Use
 
@@ -104,12 +91,12 @@ export const codeSearchTool: ToolDefinition<CodeSearchArgs> = {
   description: DESCRIPTION,
   inputSchema: codeSearchSchema,
   defaultConsent: "always",
-  usesEngineEndpoint: true,
+  usesEngineEndpoint: false,
 
   // Route root discovery through the Explorer sub-agent whenever it is
   // available. Inside Explorer, retain code_search as a fallback unless the
   // compiler-backed exploration surface is ready.
-  isEnabled: (ctx) => ctx.isDyadPro,
+  isEnabled: () => true,
   isDiscoverable: (ctx) => {
     if (!ctx.subagentThreadId && ctx.canUseExplorerSubagent) return false;
 
@@ -157,7 +144,7 @@ export const codeSearchTool: ToolDefinition<CodeSearchArgs> = {
       `Searching ${filesContext.length} files for query: "${args.query}"`,
     );
 
-    // Call the code-search endpoint
+    // Rank extracted files on this machine (no network request)
     const relevantFiles = await callCodeSearch(
       {
         query: args.query,

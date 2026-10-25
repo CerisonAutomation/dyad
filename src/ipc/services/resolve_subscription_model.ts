@@ -34,7 +34,18 @@ export async function resolveSubscriptionModel(
   }
   if (model.provider === "claude-code")
     return { ...identity, connection: "subscription" };
-  const proEnabled = isDyadProEnabled(settings);
+  const subscriptionOnly = settings.proModelUsage === "subscription";
+  if (
+    subscriptionOnly &&
+    model.provider !== "openai" &&
+    !isChatGPTAutoSelection(model)
+  ) {
+    throw new DyadError(
+      "Subscription mode requires a ChatGPT or Claude Code model. Choose API keys to use this provider. No Pro-credit fallback was attempted.",
+      DyadErrorKind.Validation,
+    );
+  }
+  const proEnabled = !subscriptionOnly && isDyadProEnabled(settings);
   const fallback = proEnabled
     ? { ...identity, connection: "pro" as const }
     : identity;
@@ -65,7 +76,14 @@ export async function resolveSubscriptionModel(
     );
   // An abandoned sign-in can leave a status error without a connection. It
   // belongs in the account UI and must not block ordinary Pro-credit turns.
-  if (!account.connected) return fallback;
+  if (!account.connected) {
+    if (subscriptionOnly)
+      throw new DyadError(
+        "Connect ChatGPT before using subscription mode.",
+        DyadErrorKind.Auth,
+      );
+    return fallback;
+  }
   if (account.error && !account.models.length)
     throw new DyadError(account.error, DyadErrorKind.Auth);
   // With no catalog, eligibility is unknown. Do not silently change the
@@ -97,7 +115,14 @@ export async function resolveSubscriptionModel(
       connection: "subscription",
     };
   }
-  if (!usesChatGPTSubscription(model, settings, account)) return fallback;
+  if (!usesChatGPTSubscription(model, settings, account)) {
+    if (subscriptionOnly)
+      throw new DyadError(
+        "The selected model is not available through your ChatGPT subscription. Choose an available subscription model or explicitly select API keys.",
+        DyadErrorKind.Validation,
+      );
+    return fallback;
+  }
   if (account.error) throw new DyadError(account.error, DyadErrorKind.Auth);
   return { ...identity, connection: "subscription" };
 }

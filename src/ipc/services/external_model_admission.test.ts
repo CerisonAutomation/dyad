@@ -5,8 +5,10 @@ import type { LanguageModelV3 } from "@ai-sdk/provider";
 import type { UserSettings } from "@/lib/schemas";
 import { DyadErrorKind } from "@/errors/dyad_error";
 const mocks = vi.hoisted(() => ({ credits: vi.fn(), key: "checked-dyad-key" }));
-vi.mock("node-fetch", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("node-fetch")>()),
+vi.mock("@/main/provider_only_legacy_fetch", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("@/main/provider_only_legacy_fetch")
+  >()),
   default: mocks.credits,
 }));
 vi.mock("@/main/settings", () => ({

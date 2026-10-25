@@ -1,4 +1,4 @@
-import fetch from "node-fetch"; // Electron main process might need node-fetch
+import fetch from "@/main/provider_only_legacy_fetch"; // Electron main process might need node-fetch
 import { shell } from "electron";
 import log from "electron-log";
 import { createLoggedHandler } from "./safe_handle";

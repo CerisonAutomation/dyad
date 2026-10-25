@@ -1,3 +1,4 @@
+import { isBrowserPreview } from "@/browser_preview/adapter";
 import {
   useCallback,
   useEffect,
@@ -560,6 +561,7 @@ export function ChatTabs({ selectedChatId }: ChatTabsProps) {
     [chats],
   );
   const publishChatTabOwnership = useCallback(async () => {
+    if (isBrowserPreview()) return;
     await ipc.windowInfrastructure.setChatTabOwnership(
       getActiveStoredChatTabs(),
     );

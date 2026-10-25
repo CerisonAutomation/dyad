@@ -76,6 +76,7 @@ function apiCallError(params: {
 
 type ModelOutcome =
   | { type: "succeed" }
+  | { type: "empty" }
   | { type: "throw"; error: unknown }
   | { type: "stream-error"; error: unknown }
   | { type: "metadata-stream-error"; error: unknown }
@@ -100,6 +101,18 @@ function sequencedModel(params: {
       params.calls.push(params.modelId);
       const outcome = params.outcomes[callIndex++] ?? { type: "succeed" };
       if (outcome.type === "throw") throw outcome.error;
+      if (outcome.type === "empty")
+        return {
+          stream: new ReadableStream({
+            start(controller) {
+              controller.enqueue({
+                type: "stream-start",
+                warnings: [],
+              } as LanguageModelV3StreamPart);
+              controller.close();
+            },
+          }),
+        };
       if (outcome.type === "stream-error") {
         return { stream: errorStream(outcome.error) };
       }
@@ -1131,4 +1144,58 @@ it("preserves classified errors containing the budget marker", async () => {
   }) as unknown as LanguageModelV3;
   await expect(model.doStream({ prompt: [] })).rejects.toBe(error);
   expect(calls).toEqual(["primary"]);
+});
+
+describe("provider turn integrity", () => {
+  it("retries a metadata-only EOF instead of reporting an empty success", async () => {
+    const calls: string[] = [];
+    const model = createFallback({
+      models: [
+        sequencedModel({
+          modelId: "selected-model",
+          outcomes: [{ type: "empty" }, { type: "succeed" }],
+          calls,
+        }),
+      ],
+    }) as LanguageModelV3;
+    const result = await model.doStream({ prompt: [] });
+    await drain(result.stream);
+    expect(calls).toEqual(["selected-model", "selected-model"]);
+  });
+  it("does not replay tool execution after tool-input events have committed", async () => {
+    const calls: string[] = [];
+    const error = apiCallError({
+      message: "connection reset",
+      isRetryable: true,
+    });
+    const primary = sequencedModel({ modelId: "primary", outcomes: [], calls });
+    primary.doStream = async () => {
+      calls.push("primary");
+      let emitted = false;
+      return {
+        stream: new ReadableStream({
+          pull(controller) {
+            if (emitted) controller.error(error);
+            else {
+              emitted = true;
+              controller.enqueue({
+                type: "tool-input-start",
+                id: "call-1",
+                toolName: "write_file",
+              });
+            }
+          },
+        }),
+      };
+    };
+    const model = createFallback({
+      models: [
+        primary,
+        sequencedModel({ modelId: "fallback", outcomes: [], calls }),
+      ],
+    }) as LanguageModelV3;
+    const result = await model.doStream({ prompt: [] });
+    await expect(drain(result.stream)).rejects.toBe(error);
+    expect(calls).toEqual(["primary"]);
+  });
 });

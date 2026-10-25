@@ -1,5 +1,5 @@
 import { ModelPicker } from "./ModelPicker";
-import { ProModeSelector } from "./ProModeSelector";
+import { Agent2SourceSelector } from "./Agent2SourceSelector";
 import { ChatModeSelector } from "./ChatModeSelector";
 
 export function ChatInputControls() {
@@ -8,7 +8,7 @@ export function ChatInputControls() {
       <ChatModeSelector />
       <div className="w-1.5"></div>
       <ModelPicker />
-      <ProModeSelector />
+      <Agent2SourceSelector />
     </div>
   );
 }

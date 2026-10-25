@@ -1,4 +1,4 @@
-import fetch from "node-fetch";
+import fetch from "@/main/provider_only_legacy_fetch";
 import { z } from "zod";
 import log from "electron-log";
 import { createTypedHandler } from "./base";

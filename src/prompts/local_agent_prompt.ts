@@ -1,3 +1,4 @@
+import { codingQualityContract } from "./coding_quality_contract";
 /**
  * System prompt for Local Agent v2 mode
  * Tool-based agent with parallel execution support
@@ -936,7 +937,9 @@ The \`<ai_rules>\` block is a snapshot from the start of the root turn. Before e
 
 <ai_rules>
 ${aiRules ?? DEFAULT_AI_RULES}
-</ai_rules>`;
+</ai_rules>
+
+${codingQualityContract({ delegated: true })}`;
 }
 
 // ============================================================================
@@ -1048,7 +1051,9 @@ export function constructLocalAgentPrompt(
     prompt += "\n\n" + themePrompt;
   }
 
-  return prompt;
+  return (
+    prompt + "\n\n" + codingQualityContract({ readOnly: options?.readOnly })
+  );
 }
 
 /** Build-mode prompt for the shared agentic loop's curated tool surface. */
@@ -1094,5 +1099,5 @@ export function constructBuildAgentPrompt(
     prompt += "\n\n" + themePrompt;
   }
 
-  return prompt;
+  return prompt + "\n\n" + codingQualityContract();
 }

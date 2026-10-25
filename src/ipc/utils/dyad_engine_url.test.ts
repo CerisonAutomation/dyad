@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { getDyadEngineBaseUrl } from "./dyad_engine_url";
 import { getLmStudioBaseUrl } from "./lm_studio_utils";
@@ -8,6 +8,7 @@ const originalLmStudioUrl = process.env.LM_STUDIO_BASE_URL_FOR_TESTING;
 
 describe("call-time model service URLs", () => {
   afterEach(() => {
+    vi.unstubAllEnvs();
     if (originalDyadEngineUrl === undefined) {
       delete process.env.DYAD_ENGINE_URL;
     } else {
@@ -20,7 +21,8 @@ describe("call-time model service URLs", () => {
     }
   });
 
-  it("reads DYAD_ENGINE_URL when called", () => {
+  it("reads DYAD_ENGINE_URL when called after explicit legacy opt-in", () => {
+    vi.stubEnv("DYAD_ALLOW_CLOUD", "true");
     delete process.env.DYAD_ENGINE_URL;
     expect(getDyadEngineBaseUrl()).toBe("https://engine.dyad.sh/v1");
 
@@ -35,4 +37,16 @@ describe("call-time model service URLs", () => {
     process.env.LM_STUDIO_BASE_URL_FOR_TESTING = "http://127.0.0.1:9876";
     expect(getLmStudioBaseUrl()).toBe("http://127.0.0.1:9876");
   });
+});
+
+it("blocks the default cloud engine but permits an explicitly configured local engine", () => {
+  vi.stubEnv("DYAD_ALLOW_CLOUD", undefined);
+  vi.stubEnv("DYAD_ENGINE_URL", undefined);
+  try {
+    expect(() => getDyadEngineBaseUrl()).toThrow("Dyad Cloud is disabled");
+    vi.stubEnv("DYAD_ENGINE_URL", "http://localhost:8080/v1");
+    expect(getDyadEngineBaseUrl()).toBe("http://localhost:8080/v1");
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });

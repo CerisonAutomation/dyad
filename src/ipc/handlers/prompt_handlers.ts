@@ -1,3 +1,4 @@
+import { registerPromptImprovementHandlers } from "./prompt_improvement_handlers";
 import log from "electron-log";
 import { db } from "@/db";
 import { prompts } from "@/db/schema";
@@ -9,6 +10,7 @@ import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 const _logger = log.scope("prompt_handlers");
 
 export function registerPromptHandlers() {
+  registerPromptImprovementHandlers();
   createTypedHandler(promptContracts.list, async () => {
     const rows = db.select().from(prompts).all();
     return rows.map((r) => ({

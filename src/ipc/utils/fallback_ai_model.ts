@@ -64,6 +64,13 @@ interface RecoveryDecision {
   nextModelId: string;
 }
 
+class EmptyModelStreamError extends Error {
+  constructor() {
+    super("Provider stream ended before emitting content or a finish event");
+    this.name = "EmptyModelStreamError";
+  }
+}
+
 export type FallbackFailureAction = "retry-same" | "fallback-next" | "fail";
 
 const RETRY_SAME_STATUS_CODES = new Set([
@@ -206,6 +213,7 @@ export function getFallbackFailureAction(
   error: unknown,
 ): FallbackFailureAction {
   if (!error) return "fail";
+  if (error instanceof EmptyModelStreamError) return "retry-same";
   if (
     error instanceof DyadError &&
     [
@@ -764,6 +772,10 @@ class FallbackModel implements LanguageModelV3 {
               const { done, value } = await reader.read();
 
               if (done) {
+                // A metadata-only EOF is not a successful model turn. Retry
+                // only before content/tool events have committed the stream.
+                if (!attemptHasStreamedContent)
+                  throw new EmptyModelStreamError();
                 controller.close();
                 return;
               }
