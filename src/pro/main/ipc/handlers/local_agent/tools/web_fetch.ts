@@ -77,9 +77,7 @@ export const webFetchTool: ToolDefinition<z.infer<typeof webFetchSchema>> = {
         );
       }
 
-      logger.log(
-        `Local web fetch completed for URL: ${result.url}`,
-      );
+      logger.log(`Local web fetch completed for URL: ${result.url}`);
 
       ctx.onXmlComplete(
         `<dyad-web-fetch>${escapeXmlContent(args.url)}</dyad-web-fetch>`,

@@ -12,13 +12,13 @@ Implemented: local browser MCP catalog, working MCP handshake automation, pinned
 
 These recommendations are based on the official repositories, README/configuration documentation and actual pinned CLI help, not a comparative performance benchmark.
 
-| Tool | Role and decision | Trade-off |
-| --- | --- | --- |
-| [Microsoft Playwright MCP](https://github.com/microsoft/playwright-mcp) | Primary agent browser: interaction, accessibility snapshots and screenshots. Added local stdio preset pinned to `@playwright/mcp@0.0.83`. | Requires a supported installed browser. MCP interaction is not a deterministic regression test. Origin filters explicitly are not a security boundary, including redirects. |
-| [Chrome DevTools MCP](https://github.com/ChromeDevTools/chrome-devtools-mcp) | Complementary console/network/performance diagnostics. Added `chrome-devtools-mcp@1.12.0`. | Requires Chrome. Usage statistics and external CrUX lookups are on by default upstream, so both are explicitly disabled in our preset. |
-| [Vercel agent-browser](https://github.com/vercel-labs/agent-browser) | Useful CLI alternative for shell-driven agents. Reviewed, not installed as a third competing browser runtime. | Requires a native CLI/browser install; overlaps the selected MCPs and adds packaging/maintenance surface. |
-| [Browserbase Stagehand](https://github.com/browserbase/stagehand) | Useful SDK for programmatic browser agents and structured extraction. Reviewed, not made a dependency. | Adds a separate agent/inference layer. We retain Dyad's selected provider and existing orchestration instead of introducing another default cloud or billing source. |
-| [Playwright Test](https://github.com/microsoft/playwright) | Keep the existing Electron E2E suite as the release authority. | Desktop packaging/native dependencies are required; a standalone browser MCP cannot prove Electron integration works. |
+| Tool                                                                         | Role and decision                                                                                                                         | Trade-off                                                                                                                                                                   |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Microsoft Playwright MCP](https://github.com/microsoft/playwright-mcp)      | Primary agent browser: interaction, accessibility snapshots and screenshots. Added local stdio preset pinned to `@playwright/mcp@0.0.83`. | Requires a supported installed browser. MCP interaction is not a deterministic regression test. Origin filters explicitly are not a security boundary, including redirects. |
+| [Chrome DevTools MCP](https://github.com/ChromeDevTools/chrome-devtools-mcp) | Complementary console/network/performance diagnostics. Added `chrome-devtools-mcp@1.12.0`.                                                | Requires Chrome. Usage statistics and external CrUX lookups are on by default upstream, so both are explicitly disabled in our preset.                                      |
+| [Vercel agent-browser](https://github.com/vercel-labs/agent-browser)         | Useful CLI alternative for shell-driven agents. Reviewed, not installed as a third competing browser runtime.                             | Requires a native CLI/browser install; overlaps the selected MCPs and adds packaging/maintenance surface.                                                                   |
+| [Browserbase Stagehand](https://github.com/browserbase/stagehand)            | Useful SDK for programmatic browser agents and structured extraction. Reviewed, not made a dependency.                                    | Adds a separate agent/inference layer. We retain Dyad's selected provider and existing orchestration instead of introducing another default cloud or billing source.        |
+| [Playwright Test](https://github.com/microsoft/playwright)                   | Keep the existing Electron E2E suite as the release authority.                                                                            | Desktop packaging/native dependencies are required; a standalone browser MCP cannot prove Electron integration works.                                                       |
 
 `shared/browser_mcp_presets.ts` is shared by the desktop catalog and the smoke runner. Both servers use headless, isolated profiles; neither attaches to a logged-in browser nor disables the Chromium sandbox. Playwright blocks service workers. Catalog entries are available offline and cannot be overridden by a remote catalog entry with the same slug.
 
@@ -47,19 +47,19 @@ All 27 vendored files have SHA-256 entries in `replica-provenance.json`; the MIT
 
 ### Workflow disposition
 
-| Stage | Applied here / boundary |
-| --- | --- |
-| Recon | Inspected official browser/router projects and our provider/agent paths. No private application was scraped. |
-| Architect | Local MCPs + accepted-source inference + default-deny app network boundary. Preserve Electron, React, existing IPC and SQLite. |
-| Design | Offline catalog entries describe capabilities/prerequisites. No untested cosmetic redesign. |
-| Build | Browser presets, network guards, routing fixes, tests and QA commands implemented. |
-| Backend | Reused existing APIs/subscription adapters; did not add an obligatory gateway. |
-| Test | Focused regression suite, isolated MCP handshakes and pinned skill tests executed. Native/visual validation is still a release gate. |
-| Diff | Source diffs, format/lint checks and a standalone type-check; no fabricated screenshot-parity score. |
-| Entrepreneur | Reduces unwanted vendor coupling and makes billing boundaries explicit. No invented revenue or user-research metrics. |
-| Brand | Existing project/license notices retained. No confusing replica of third-party brands/assets. |
-| Launch | Not executed: product positioning, legal review and native release validation are incomplete. |
-| Deploy | Not executed: no release, domain, account, production database or payment changes. The skill itself requires explicit launch approval. |
+| Stage        | Applied here / boundary                                                                                                                |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Recon        | Inspected official browser/router projects and our provider/agent paths. No private application was scraped.                           |
+| Architect    | Local MCPs + accepted-source inference + default-deny app network boundary. Preserve Electron, React, existing IPC and SQLite.         |
+| Design       | Offline catalog entries describe capabilities/prerequisites. No untested cosmetic redesign.                                            |
+| Build        | Browser presets, network guards, routing fixes, tests and QA commands implemented.                                                     |
+| Backend      | Reused existing APIs/subscription adapters; did not add an obligatory gateway.                                                         |
+| Test         | Focused regression suite, isolated MCP handshakes and pinned skill tests executed. Native/visual validation is still a release gate.   |
+| Diff         | Source diffs, format/lint checks and a standalone type-check; no fabricated screenshot-parity score.                                   |
+| Entrepreneur | Reduces unwanted vendor coupling and makes billing boundaries explicit. No invented revenue or user-research metrics.                  |
+| Brand        | Existing project/license notices retained. No confusing replica of third-party brands/assets.                                          |
+| Launch       | Not executed: product positioning, legal review and native release validation are incomplete.                                          |
+| Deploy       | Not executed: no release, domain, account, production database or payment changes. The skill itself requires explicit launch approval. |
 
 ## 3. FreeLLMAPI patterns and similar agent projects
 
@@ -75,16 +75,16 @@ Additional GitHub comparators: [OpenHands](https://github.com/All-Hands-AI/OpenH
 
 ## 4. Reproduced issues and changes
 
-| Finding | Evidence and fix |
-| --- | --- |
-| API helpers silently switched to Pro | `getAuxiliarySettings()` explicitly changed `api-key` to `pro`. Removed that override. |
-| Fixed auxiliary models ignored current selection | Exploration helpers, persona settings, compaction and tool safety review selected fixed engine/helper models. Explicit API/subscription modes now inherit the accepted model/provider/effort; standalone auxiliary requests also use the stored chat model in subscription mode. Legacy non-explicit settings retain compatibility behavior. |
-| Native agent capability conflated with paid entitlement | Added explicit-provider eligibility for Agent v2, subagent tools/manager, code/history exploration, auto review, reviewed host shell and user-enabled MCP safety review. Read-only/Plan, child-tool, mutation tracking, opt-in and consent restrictions remain. |
-| Direct agent turns consumed Dyad free quota | `isBasicAgentMode()` now excludes explicit API/subscription selections with concrete providers. Auto aliases are not blindly treated as configured direct providers. |
-| Known Dyad HTTP endpoints reachable through multiple transports | Added startup global-fetch policy with redirect-hop checks, legacy node-fetch boundary, Chromium session request rules, and an engine URL check. Explicit API/subscription contexts also reject engineFetch before networking. |
-| Offline MCP catalog empty | Bundled local browser entries and reused the existing catalog/setup contracts. |
-| Metadata-only stream reported success | Fixed in `fallback_ai_model.ts`, with tests for empty EOF and committed tool-input non-replay. |
-| Build-blocking duplicate function | Base commit contains two identical `boundOutputForEstimate` declarations in `token_utils.ts`. Esbuild reproduced the duplicate-symbol failure. Removed the duplicate; 17 token utility tests pass. |
+| Finding                                                         | Evidence and fix                                                                                                                                                                                                                                                                                                                             |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API helpers silently switched to Pro                            | `getAuxiliarySettings()` explicitly changed `api-key` to `pro`. Removed that override.                                                                                                                                                                                                                                                       |
+| Fixed auxiliary models ignored current selection                | Exploration helpers, persona settings, compaction and tool safety review selected fixed engine/helper models. Explicit API/subscription modes now inherit the accepted model/provider/effort; standalone auxiliary requests also use the stored chat model in subscription mode. Legacy non-explicit settings retain compatibility behavior. |
+| Native agent capability conflated with paid entitlement         | Added explicit-provider eligibility for Agent v2, subagent tools/manager, code/history exploration, auto review, reviewed host shell and user-enabled MCP safety review. Read-only/Plan, child-tool, mutation tracking, opt-in and consent restrictions remain.                                                                              |
+| Direct agent turns consumed Dyad free quota                     | `isBasicAgentMode()` now excludes explicit API/subscription selections with concrete providers. Auto aliases are not blindly treated as configured direct providers.                                                                                                                                                                         |
+| Known Dyad HTTP endpoints reachable through multiple transports | Added startup global-fetch policy with redirect-hop checks, legacy node-fetch boundary, Chromium session request rules, and an engine URL check. Explicit API/subscription contexts also reject engineFetch before networking.                                                                                                               |
+| Offline MCP catalog empty                                       | Bundled local browser entries and reused the existing catalog/setup contracts.                                                                                                                                                                                                                                                               |
+| Metadata-only stream reported success                           | Fixed in `fallback_ai_model.ts`, with tests for empty EOF and committed tool-input non-replay.                                                                                                                                                                                                                                               |
+| Build-blocking duplicate function                               | Base commit contains two identical `boundOutputForEstimate` declarations in `token_utils.ts`. Esbuild reproduced the duplicate-symbol failure. Removed the duplicate; 17 token utility tests pass.                                                                                                                                           |
 
 ### Cloud policy: what it does and does not promise
 

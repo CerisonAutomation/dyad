@@ -64,5 +64,10 @@ it("Auto Free uses tool-capable free models only, deduplicates and stays bounded
   expect(names).not.toContain("custom:free");
 });
 it("never revives a builtin free fallback contradicted by current provider pricing", () => {
-  expect(freeAutoCandidates([model("x:free", { isFree: false, supportsTools: true })], ["x:free", "paid"])).toEqual([]);
+  expect(
+    freeAutoCandidates(
+      [model("x:free", { isFree: false, supportsTools: true })],
+      ["x:free", "paid"],
+    ),
+  ).toEqual([]);
 });

@@ -8,23 +8,23 @@ Latest result: **644 tests passed / 40 files**. Targeted local-speech and public
 
 ## Fixed findings
 
-| Finding | Change | Evidence |
-| --- | --- | --- |
-| Speech audio setup could throw outside the playback error handler | Catch malformed payloads, blob URL and player-constructor failures; clean up on failure | Local-speech client regression tests |
-| Duplicate worker replies could create extra audio players/blob URLs | Accept one audio result per generation | Duplicate-result regression |
-| A stale play promise could change state after another request started | Generation fence for callbacks and async playback completion | Pending-play replacement regression |
-| Model/WASM memory remained retained during playback | Terminate inference worker as soon as the generated audio arrives | Worker termination assertion before playback completion; no heap-size claim |
-| `play()` could remain pending after its watchdog was cleared | Keep startup watchdog until playback resolves; bound playback lifetime | Stalled-play test |
-| Cleanup could dispatch media callbacks while still attached | Detach callbacks before pause/source cleanup; revoke blob URLs; stop on pagehide | Completion/cleanup tests |
-| Warm model discovery stalled on remote refresh | Return a detached cached snapshot while a single refresh runs | Slow-refresh test with unresolved network promise |
-| Caller mutation could poison cached pricing | Clone returned snapshots | Cache-isolation regression |
-| Outages could preserve a free-pricing claim indefinitely | After 30 minutes retain model IDs but invalidate free-price eligibility | Prolonged-outage regression |
-| Non-decimal price strings could coerce to zero | Accept decimal/scientific numeric syntax only; unknown pricing is not free | Malformed-price cases |
-| Conflicting duplicate IDs could promote a paid/non-tool model | Conservatively combine conflicting pricing and capabilities | Both duplicate-order regressions |
-| Unsuccessful discovery responses could leave unread bodies alive | Abort failed requests; retain bounded backoff | Error-response and deadline tests |
-| Default builtin catalog implicitly contacted the former vendor | Require explicit catalog configuration; default returns bundled fallback metadata without network | Default-catalog no-fetch regression |
-| Microphone buttons still linked to a paid upgrade | Replace upsell with an explicitly unavailable speech-to-text control | Home input regression and Chromium preview |
-| Trial-only model-picker branch retained a purchase prompt | Remove purchase banner while retaining existing selection controls | Model-picker suite |
+| Finding                                                               | Change                                                                                            | Evidence                                                                    |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Speech audio setup could throw outside the playback error handler     | Catch malformed payloads, blob URL and player-constructor failures; clean up on failure           | Local-speech client regression tests                                        |
+| Duplicate worker replies could create extra audio players/blob URLs   | Accept one audio result per generation                                                            | Duplicate-result regression                                                 |
+| A stale play promise could change state after another request started | Generation fence for callbacks and async playback completion                                      | Pending-play replacement regression                                         |
+| Model/WASM memory remained retained during playback                   | Terminate inference worker as soon as the generated audio arrives                                 | Worker termination assertion before playback completion; no heap-size claim |
+| `play()` could remain pending after its watchdog was cleared          | Keep startup watchdog until playback resolves; bound playback lifetime                            | Stalled-play test                                                           |
+| Cleanup could dispatch media callbacks while still attached           | Detach callbacks before pause/source cleanup; revoke blob URLs; stop on pagehide                  | Completion/cleanup tests                                                    |
+| Warm model discovery stalled on remote refresh                        | Return a detached cached snapshot while a single refresh runs                                     | Slow-refresh test with unresolved network promise                           |
+| Caller mutation could poison cached pricing                           | Clone returned snapshots                                                                          | Cache-isolation regression                                                  |
+| Outages could preserve a free-pricing claim indefinitely              | After 30 minutes retain model IDs but invalidate free-price eligibility                           | Prolonged-outage regression                                                 |
+| Non-decimal price strings could coerce to zero                        | Accept decimal/scientific numeric syntax only; unknown pricing is not free                        | Malformed-price cases                                                       |
+| Conflicting duplicate IDs could promote a paid/non-tool model         | Conservatively combine conflicting pricing and capabilities                                       | Both duplicate-order regressions                                            |
+| Unsuccessful discovery responses could leave unread bodies alive      | Abort failed requests; retain bounded backoff                                                     | Error-response and deadline tests                                           |
+| Default builtin catalog implicitly contacted the former vendor        | Require explicit catalog configuration; default returns bundled fallback metadata without network | Default-catalog no-fetch regression                                         |
+| Microphone buttons still linked to a paid upgrade                     | Replace upsell with an explicitly unavailable speech-to-text control                              | Home input regression and Chromium preview                                  |
+| Trial-only model-picker branch retained a purchase prompt             | Remove purchase banner while retaining existing selection controls                                | Model-picker suite                                                          |
 
 ## Browser evidence
 

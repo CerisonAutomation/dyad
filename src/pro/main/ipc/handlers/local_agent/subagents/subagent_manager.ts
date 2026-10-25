@@ -350,16 +350,18 @@ export async function getSubagentMessages(chatId: number, threadId: string) {
     where: eq(agentMessages.threadId, threadId),
     orderBy: [asc(agentMessages.sequence)],
   });
-  return rows.map((row): SubagentMessage => ({
-    id: row.id,
-    threadId: row.threadId,
-    sequence: row.sequence,
-    messageId: row.messageId,
-    role: row.role,
-    content: row.content,
-    consumed: row.consumed,
-    createdAt: row.createdAt,
-  }));
+  return rows.map(
+    (row): SubagentMessage => ({
+      id: row.id,
+      threadId: row.threadId,
+      sequence: row.sequence,
+      messageId: row.messageId,
+      role: row.role,
+      content: row.content,
+      consumed: row.consumed,
+      createdAt: row.createdAt,
+    }),
+  );
 }
 
 export async function getSubagentActivities(
@@ -889,7 +891,11 @@ export async function runAutoReviewBarrier(params: {
   deadlineAt?: number;
 }): Promise<{
   outcome:
-    "released" | "skipped" | "waiting" | "fix_required" | "verification_failed";
+    | "released"
+    | "skipped"
+    | "waiting"
+    | "fix_required"
+    | "verification_failed";
   threadId?: string;
   prompt?: string;
 }> {
@@ -1870,10 +1876,12 @@ export function prepareSubagentStepMessages(
 ): ModelMessage[] {
   const sanitized = sanitizeStepMessages([
     ...stepMessages,
-    ...rootMessages.map((message): ModelMessage => ({
-      role: "user",
-      content: `Root message: ${message}`,
-    })),
+    ...rootMessages.map(
+      (message): ModelMessage => ({
+        role: "user",
+        content: `Root message: ${message}`,
+      }),
+    ),
   ]).messages;
   // Sub-agent step loops re-send the whole transcript on every step. Bound the
   // tool results so a single large read/grep/diff cannot dominate the request
@@ -1983,13 +1991,15 @@ export function buildBoundedModelHistory(params: {
     history.push({ role: "user", content: params.originalAssignment });
   }
   history.push(
-    ...bounded.map((message): ModelMessage => ({
-      role: message.role === "assistant" ? "assistant" : "user",
-      content:
-        message.role === "system"
-          ? `System note: ${message.content}`
-          : message.content,
-    })),
+    ...bounded.map(
+      (message): ModelMessage => ({
+        role: message.role === "assistant" ? "assistant" : "user",
+        content:
+          message.role === "system"
+            ? `System note: ${message.content}`
+            : message.content,
+      }),
+    ),
   );
   history.push({ role: "user", content: params.currentAssignment });
   return history;

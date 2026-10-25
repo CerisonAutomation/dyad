@@ -1,6 +1,10 @@
 {
   "extends": "../../tsconfig.app.json",
   "compilerOptions": { "types": ["node", "vite/client"], "incremental": false },
-  "include": ["../../src/local_tts/client.ts", "../../src/local_tts/speech.worker.ts", "../../src/local_tts/text.ts"],
+  "include": [
+    "../../src/local_tts/client.ts",
+    "../../src/local_tts/speech.worker.ts",
+    "../../src/local_tts/text.ts"
+  ],
   "exclude": []
 }
