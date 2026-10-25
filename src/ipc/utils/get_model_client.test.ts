@@ -153,7 +153,7 @@ describe("getModelClient", () => {
           proModelUsage: "pro",
           enableDyadPro: true,
           providerSettings: { auto: { apiKey: { value: "old-key" } } },
-        } as UserSettings),
+        } as unknown as UserSettings),
       ).rejects.toThrow("Select API keys");
     },
   );
@@ -164,8 +164,13 @@ describe("getModelClient", () => {
         {
           proModelUsage: "api-key",
           providerSettings: { openai: { apiKey: { value: "configured" } } },
-        } as UserSettings,
-        { provider: "openai", name: "chosen", connection: "pro" },
+        } as unknown as UserSettings,
+        {
+          provider: "openai",
+          name: "chosen",
+          connection: "pro",
+          effortLevel: "high",
+        },
       ),
     ).rejects.toThrow("Select API keys");
   });
@@ -175,7 +180,7 @@ describe("getModelClient", () => {
       await expect(
         getModelClient({ provider: "auto", name }, {
           proModelUsage: "api-key",
-        } as UserSettings),
+        } as unknown as UserSettings),
       ).rejects.toThrow(/hosted model option|Pro credits/);
     },
   );
@@ -428,7 +433,7 @@ describe("getModelClient", () => {
       chatgptFastMode: true,
       providerSettings: {},
       selectedModel: { provider: "auto", name: "auto" },
-    } as UserSettings);
+    } as unknown as UserSettings);
     expect(result.runtimeModel).toMatchObject({
       provider: "openai",
       name: "gpt-5.6-luna",

@@ -22,7 +22,7 @@ const ctx = {
     proModelUsage: "api-key",
     enableDyadPro: true,
   },
-} as AgentContext;
+} as unknown as AgentContext;
 beforeEach(() => {
   mocks.stream
     .mockReset()
@@ -100,6 +100,6 @@ it("rejects empty proposals and unavailable root settings", async () => {
     proposePromptRefinement({ prompt: "Build" }, ctx),
   ).rejects.toThrow("empty");
   await expect(
-    proposePromptRefinement({ prompt: "Build" }, {} as AgentContext),
+    proposePromptRefinement({ prompt: "Build" }, {} as unknown as AgentContext),
   ).rejects.toThrow("accepted root");
 });

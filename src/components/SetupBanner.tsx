@@ -1,6 +1,12 @@
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "@tanstack/react-router";
-import { CircleCheck, ChevronRight, Play, Settings } from "lucide-react";
+import {
+  CircleCheck,
+  ChevronRight,
+  Play,
+  Settings,
+  GiftIcon,
+} from "lucide-react";
 import { useFirstPromptSaga } from "@/first_prompt/FirstPromptProvider";
 import { providerSettingsRoute } from "@/routes/settings/providers/$provider";
 import { SECTION_IDS } from "@/lib/settingsSearchIndex";

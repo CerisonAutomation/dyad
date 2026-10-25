@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { themesData } from "../shared/themes";
 import { localTemplatesData } from "../shared/templates";
 

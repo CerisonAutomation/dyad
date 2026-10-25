@@ -18,7 +18,7 @@ import {
 const input = {
   settings: {
     selectedModel: { provider: "custom::review", name: "configured-reviewer" },
-  } as UserSettings,
+  } as unknown as UserSettings,
   system: "policy",
   fallback: "block" as const,
   prepare: async () => ({ payload: "exact command" }),
@@ -254,7 +254,10 @@ it.each(["api-key", "subscription"] as const)(
       name: "selected-model",
       effortLevel: "high",
     };
-    const settings = { proModelUsage, selectedModel } as UserSettings;
+    const settings = {
+      proModelUsage,
+      selectedModel,
+    } as unknown as UserSettings;
     mocks.streamText.mockReturnValue({
       text: Promise.resolve('{"reason":"Bounded task","decision":"allow"}'),
     });
@@ -273,7 +276,7 @@ it.each(["api-key", "subscription"] as const)(
 it("fails closed when no selected model is configured instead of using a fixed helper", async () => {
   const result = await reviewToolAction({
     ...input,
-    settings: {} as UserSettings,
+    settings: {} as unknown as UserSettings,
   });
   expect(result).toMatchObject({ decision: "block", unavailable: true });
   expect(mocks.getModelClient).not.toHaveBeenCalled();
