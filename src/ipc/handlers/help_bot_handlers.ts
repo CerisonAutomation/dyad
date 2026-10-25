@@ -1,5 +1,5 @@
 import { app } from "electron";
-import { streamText, Tool } from "ai";
+import { streamText } from "ai";
 import { readSettings } from "../../main/settings";
 
 import log from "electron-log";
@@ -8,15 +8,12 @@ import {
   cancelOrphanedBaseStream,
   fastTextOutput,
 } from "../utils/stream_text_utils";
-import {
-  createOpenAI,
-  openai,
-  OpenAIResponsesProviderOptions,
-} from "@ai-sdk/openai";
+import { getNativeProviderOptions } from "@/ipc/utils/provider_options";
+import { getModelClient } from "@/ipc/utils/get_model_client";
+import { resolveDefaultModelSelection } from "@/ipc/utils/model_effort";
+import { providerOnlyInferenceSettings } from "@/lib/providerOnlyInference";
 import { createTypedHandler } from "./base";
 import { helpContracts } from "../types/help";
-import { getTestFetchOption } from "../utils/test_fetch_override";
-import { resolveBuiltinModelAlias } from "../shared/remote_language_model_catalog";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 
 const logger = log.scope("help-bot");
@@ -39,6 +36,7 @@ export function registerHelpBotHandlers() {
 
   createTypedHandler(helpContracts.start, async (event, params) => {
     const { sessionId, message } = params;
+    let initiatingController: AbortController | undefined;
     try {
       if (!sessionId || !message?.trim()) {
         throw new DyadError(
@@ -57,50 +55,39 @@ export function registerHelpBotHandlers() {
       // Append user message to session history
       const history = helpSessions.get(sessionId) ?? [];
       const updatedHistory: HelpMessage[] = [
-        ...history,
-        { role: "user", content: message },
+        ...history.slice(-19),
+        { role: "user", content: message.slice(0, 20000) },
       ];
 
       const abortController = new AbortController();
+      initiatingController = abortController;
       activeHelpStreams.set(sessionId, abortController);
-      const settings = await readSettings();
-      const apiKey = settings.providerSettings?.["auto"]?.apiKey?.value;
-      const provider = createOpenAI({
-        baseURL: "https://helpchat.dyad.sh/v1",
-        apiKey,
-        ...getTestFetchOption(),
+      const settings = providerOnlyInferenceSettings(readSettings());
+      const selectedModel = await resolveDefaultModelSelection(settings);
+      const { modelClient } = await getModelClient(selectedModel, {
+        ...settings,
+        selectedModel,
       });
-      const helpBotModel = await resolveBuiltinModelAlias(
-        "dyad/help-bot/default",
-      );
-
-      if (!helpBotModel || helpBotModel.providerId !== "openai") {
-        // Help bot requires OpenAI provider because it uses the OpenAI
-        // responses API via a custom baseURL (helpchat.dyad.sh).
-        throw new Error(
-          `Help bot requires an OpenAI model (got provider: ${helpBotModel?.providerId ?? "none"}). ` +
-            `The 'dyad/help-bot/default' alias must resolve to an OpenAI model.`,
-        );
-      }
+      abortController.signal.throwIfAborted();
 
       let assistantContent = "";
 
       const stream = streamText({
         output: fastTextOutput(),
-        model: provider.responses(helpBotModel.apiName),
-        providerOptions: {
-          openai: {
-            reasoningSummary: "auto",
-          } satisfies OpenAIResponsesProviderOptions,
-        },
-        tools: {
-          web_search_preview: openai.tools.webSearchPreview({
-            searchContextSize: "high",
-          }) as Tool,
-        },
-        messages: updatedHistory as any,
+        model: modelClient.model,
+        providerOptions: getNativeProviderOptions({
+          modelSelection: selectedModel,
+          builtinProviderId: modelClient.builtinProviderId,
+          reasoningEffortProviderId: modelClient.reasoningEffortProviderId,
+        }),
+        abortSignal: abortController.signal,
+        system:
+          "Help the user work with this local AI app builder. State uncertainty and do not claim to inspect files, browse, or execute tools that are not supplied. Use the configured provider; do not recommend a Dyad subscription as a prerequisite.",
+        messages: updatedHistory.slice(-20),
         maxRetries: 1,
+        maxOutputTokens: 4096,
         onError: (error) => {
+          if (abortController.signal.aborted) return;
           let errorMessage = (error as any)?.error?.message;
           logger.error("help bot stream error", errorMessage);
           safeSend(event.sender, "help:chat:response:error", {
@@ -132,16 +119,26 @@ export function registerHelpBotHandlers() {
             }
           }
 
+          if (
+            abortController.signal.aborted ||
+            activeHelpStreams.get(sessionId) !== abortController
+          )
+            return;
           // Finalize session history
           const finalHistory: HelpMessage[] = [
             ...updatedHistory,
             { role: "assistant", content: assistantContent },
           ];
-          helpSessions.set(sessionId, finalHistory);
+          helpSessions.set(sessionId, finalHistory.slice(-20));
+          if (helpSessions.size > 32)
+            helpSessions.delete(helpSessions.keys().next().value!);
 
           safeSend(event.sender, "help:chat:response:end", { sessionId });
         } catch (err) {
-          if ((err as any)?.name === "AbortError") {
+          if (
+            abortController.signal.aborted ||
+            (err as any)?.name === "AbortError"
+          ) {
             logger.log("help bot stream aborted", sessionId);
             return;
           }
@@ -151,13 +148,16 @@ export function registerHelpBotHandlers() {
             error: String(err instanceof Error ? err.message : err),
           });
         } finally {
-          activeHelpStreams.delete(sessionId);
+          if (activeHelpStreams.get(sessionId) === abortController)
+            activeHelpStreams.delete(sessionId);
         }
       })();
 
       return { ok: true } as const;
     } catch (err) {
       logger.error("help:chat:start error", err);
+      if (activeHelpStreams.get(sessionId) === initiatingController)
+        activeHelpStreams.delete(sessionId);
       throw err instanceof Error ? err : new Error(String(err));
     }
   });

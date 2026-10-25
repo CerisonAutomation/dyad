@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   exit: vi.fn(),
+  on: vi.fn(),
+  installNetworkPolicy: vi.fn(),
   logError: vi.fn(),
   logFilePath: "/logs/main.log",
   quit: vi.fn(),
@@ -25,10 +27,16 @@ const mocks = vi.hoisted(() => ({
 vi.mock("electron", () => ({
   app: {
     exit: mocks.exit,
+    on: mocks.on,
     quit: mocks.quit,
     whenReady: mocks.whenReady,
   },
   dialog: { showErrorBox: mocks.showErrorBox },
+}));
+
+vi.mock("./main/dyad_cloud_policy", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  installProviderOnlyFetch: mocks.installNetworkPolicy,
 }));
 
 vi.mock("electron-log", () => ({
@@ -52,6 +60,8 @@ describe("main process bootstrap", () => {
   beforeEach(() => {
     vi.resetModules();
     mocks.exit.mockClear();
+    mocks.on.mockClear();
+    mocks.installNetworkPolicy.mockClear();
     mocks.logError.mockClear();
     mocks.quit.mockClear();
     mocks.showErrorBox.mockClear();
@@ -76,6 +86,7 @@ describe("main process bootstrap", () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
 
     expect(mocks.quit).toHaveBeenCalledOnce();
+    expect(mocks.installNetworkPolicy).not.toHaveBeenCalled();
     expect(mocks.runtimeLoaded).not.toHaveBeenCalled();
     expect(mocks.whenReady).not.toHaveBeenCalled();
   });
@@ -87,6 +98,7 @@ describe("main process bootstrap", () => {
 
     await vi.waitFor(() => expect(mocks.runtimeLoaded).toHaveBeenCalledOnce());
     expect(mocks.quit).not.toHaveBeenCalled();
+    expect(mocks.installNetworkPolicy).toHaveBeenCalledOnce();
   });
 
   it("fails startup if Electron becomes ready before the runtime loads", async () => {
@@ -158,6 +170,37 @@ describe("main process bootstrap", () => {
       "electron",
       "electron-log",
       "electron-squirrel-startup",
+      "./main/dyad_cloud_policy",
     ]);
   });
+});
+
+it("installs a renderer-session deny rule for Dyad cloud requests", async () => {
+  vi.stubEnv("DYAD_ALLOW_CLOUD", "false");
+  vi.resetModules();
+  mocks.on.mockClear();
+  mocks.squirrelStarted.value = false;
+  vi.doMock("./main", () => ({}));
+  try {
+    await import("./main_bootstrap");
+    const sessionHandler = mocks.on.mock.calls.find(
+      ([name]) => name === "session-created",
+    )?.[1];
+    expect(sessionHandler).toBeDefined();
+    const onBeforeRequest = vi.fn();
+    sessionHandler({ webRequest: { onBeforeRequest } });
+    const callback = vi.fn();
+    onBeforeRequest.mock.calls[0][0](
+      { url: "https://engine.dyad.sh/v1" },
+      callback,
+    );
+    expect(callback).toHaveBeenLastCalledWith({ cancel: true });
+    onBeforeRequest.mock.calls[0][0](
+      { url: "https://api.openai.com/v1" },
+      callback,
+    );
+    expect(callback).toHaveBeenLastCalledWith({ cancel: false });
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });

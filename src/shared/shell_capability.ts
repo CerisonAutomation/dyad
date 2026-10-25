@@ -1,3 +1,4 @@
+import { hasProviderAgentSelection } from "@/lib/auxiliaryModel";
 import type { UserSettings } from "@/lib/schemas";
 
 export function isShellExperimentAvailable({
@@ -12,7 +13,8 @@ export function isShellExperimentAvailable({
   settings: Pick<
     UserSettings,
     "enableShellTool" | "runtimeMode2" | "agentToolConsents"
-  >;
+  > &
+    Partial<Pick<UserSettings, "proModelUsage" | "selectedModel">>;
   isDyadPro: boolean;
   freeModelMode?: boolean;
   readOnly?: boolean;
@@ -22,7 +24,7 @@ export function isShellExperimentAvailable({
 }): boolean {
   return (
     !!settings.enableShellTool &&
-    isDyadPro &&
+    (isDyadPro || hasProviderAgentSelection(settings)) &&
     !freeModelMode &&
     !readOnly &&
     !planModeOnly &&

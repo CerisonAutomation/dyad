@@ -81,9 +81,7 @@ import {
   formatPreviewNetworkStatus,
 } from "@/lib/preview_console_buffer";
 import { queryKeys } from "@/lib/queryKeys";
-import { AnnotatorOnlyForPro } from "./AnnotatorOnlyForPro";
 import { useAttachments } from "@/hooks/useAttachments";
-import { useUserBudgetInfo } from "@/hooks/useUserBudgetInfo";
 import { Annotator } from "@/pro/ui/components/Annotator/Annotator";
 import { VisualEditingToolbar } from "./VisualEditingToolbar";
 import { recordingStatusMessage } from "./RecordingBanner";
@@ -140,8 +138,8 @@ export const PreviewIframe = ({
   } = useParseRouter(selectedAppId);
   const { restartApp, refreshAppIframe } = useRunApp();
   const { settings, updateSettings } = useSettings();
-  const { userBudget } = useUserBudgetInfo();
-  const isProMode = !!userBudget;
+  // Local visual tools are available regardless of provider billing.
+  const visualEditingEnabled = true;
   const queryClient = useQueryClient();
   const setSelectedComponentsPreview = useSetAtom(
     selectedComponentsPreviewAtom,
@@ -545,11 +543,11 @@ export const PreviewIframe = ({
   useEffect(() => {
     if (iframeRef.current?.contentWindow && isComponentSelectorInitialized) {
       iframeRef.current.contentWindow.postMessage(
-        { type: "dyad-pro-mode", enabled: isProMode },
+        { type: "dyad-pro-mode", enabled: visualEditingEnabled },
         "*",
       );
     }
-  }, [isProMode, isComponentSelectorInitialized]);
+  }, [visualEditingEnabled, isComponentSelectorInitialized]);
 
   // Component-side postMessage routes. The preview-iframe hook owns the one
   // window listener and claims navigation/selector lifecycle messages before
@@ -682,7 +680,7 @@ export const PreviewIframe = ({
 
       if (event.data?.type === "dyad-component-selector-initialized") {
         iframeRef.current?.contentWindow?.postMessage(
-          { type: "dyad-pro-mode", enabled: isProMode },
+          { type: "dyad-pro-mode", enabled: visualEditingEnabled },
           "*",
         );
         return;
@@ -711,7 +709,7 @@ export const PreviewIframe = ({
         if (!component) return;
 
         // Store the coordinates
-        if (event.data.coordinates && isProMode) {
+        if (event.data.coordinates && visualEditingEnabled) {
           setCurrentComponentCoordinates(event.data.coordinates);
         }
 
@@ -731,7 +729,7 @@ export const PreviewIframe = ({
           return [...prev, component];
         });
 
-        if (isProMode) {
+        if (visualEditingEnabled) {
           // Set as the highlighted component for visual editing
           setVisualEditingSelectedComponent(component);
           // Trigger AST analysis
@@ -1685,15 +1683,11 @@ export const PreviewIframe = ({
                     : { width: `${deviceWidthConfig[deviceMode]}px` }
                 }
               >
-                {userBudget ? (
-                  <Annotator
-                    screenshotUrl={screenshotDataUrl}
-                    onSubmit={addAttachments}
-                    handleAnnotatorClick={handleAnnotatorClick}
-                  />
-                ) : (
-                  <AnnotatorOnlyForPro onGoBack={handleAnnotatorClick} />
-                )}
+                <Annotator
+                  screenshotUrl={screenshotDataUrl}
+                  onSubmit={addAttachments}
+                  handleAnnotatorClick={handleAnnotatorClick}
+                />
               </div>
             ) : (
               <>
@@ -1716,7 +1710,7 @@ export const PreviewIframe = ({
                   allow="clipboard-read; clipboard-write; fullscreen; microphone; camera; display-capture; geolocation; autoplay; picture-in-picture"
                 />
                 {/* Visual Editing Toolbar */}
-                {isProMode &&
+                {visualEditingEnabled &&
                   visualEditingSelectedComponent &&
                   selectedAppId && (
                     <VisualEditingToolbar

@@ -46,19 +46,22 @@ it.each(["build", "ask", "plan", "local-agent"] as const)(
   },
 );
 
-it("uses the stored chat model for standalone BYO helpers, not the global selection", async () => {
-  mocks.settings.mockReturnValue({ ...settings, proModelUsage: "api-key" });
-  mocks.chat.mockResolvedValue({
-    chatMode: "local-agent",
-    modelSelection: {
+it.each(["api-key", "subscription"] as const)(
+  "uses the stored chat model for standalone %s helpers, not the global selection",
+  async (proModelUsage) => {
+    mocks.settings.mockReturnValue({ ...settings, proModelUsage });
+    mocks.chat.mockResolvedValue({
+      chatMode: "local-agent",
+      modelSelection: {
+        provider: "anthropic",
+        name: "claude-sonnet",
+        effortLevel: "medium",
+      },
+    });
+    const resolved = await getChatInferenceSettings(1);
+    expect(resolved.selectedModel).toMatchObject({
       provider: "anthropic",
       name: "claude-sonnet",
-      effortLevel: "medium",
-    },
-  });
-  const resolved = await getChatInferenceSettings(1);
-  expect(resolved.selectedModel).toMatchObject({
-    provider: "anthropic",
-    name: "claude-sonnet",
-  });
-});
+    });
+  },
+);

@@ -1,3 +1,4 @@
+import { hasProviderAgentSelection } from "@/lib/auxiliaryModel";
 import { z } from "zod";
 
 import {
@@ -54,12 +55,14 @@ export const exploreChatHistoryTool: ToolDefinition<ExploreChatHistoryArgs> = {
 - An outcome of "no_match" means no relevant prior discussion was found — treat absence as inconclusive and consider asking the user rather than assuming.`,
   inputSchema: exploreChatHistorySchema,
   defaultConsent: "always",
-  usesEngineEndpoint: true,
+  usesEngineEndpoint: false,
 
-  isEnabled: (ctx) => ctx.isDyadPro && !ctx.subagentThreadId,
+  isEnabled: (ctx) =>
+    (ctx.isDyadPro || hasProviderAgentSelection(ctx.inferenceSettings)) &&
+    !ctx.subagentThreadId,
 
   getConsentPreview: (args) =>
-    `Research this app's chat history for "${args.query}" using the Dyad Engine and provide a summarized, cited report to the active AI model.`,
+    `Research this app's chat history for "${args.query}" using the selected inference provider and provide a summarized, cited report to the active AI model.`,
 
   buildXml: (args, isComplete) => {
     if (isComplete) return undefined;

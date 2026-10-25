@@ -6,7 +6,6 @@ import {
   Mic,
   MicOff,
   Loader2,
-  Lock,
 } from "lucide-react";
 import {
   Tooltip,
@@ -35,7 +34,6 @@ import { AppSearchDialog } from "../AppSearchDialog";
 import { useVoiceToText } from "@/hooks/useVoiceToText";
 import { useUserBudgetInfo } from "@/hooks/useUserBudgetInfo";
 import { showError } from "@/lib/toast";
-import { ipc } from "@/ipc/types";
 
 export function HomeChatInput({
   onSubmit,
@@ -228,19 +226,18 @@ export function HomeChatInput({
                 <TooltipTrigger
                   render={
                     <button
-                      onClick={() =>
-                        ipc.system.openExternalUrl("https://dyad.sh/pro")
-                      }
-                      disabled={disabled}
-                      aria-label="Voice to text (Pro)"
+                      disabled
+                      aria-label="Speech-to-text backend unavailable"
                       className="px-2 py-2 mb-0.5 text-muted-foreground hover:text-primary rounded-lg transition-colors duration-150 cursor-pointer relative"
                     />
                   }
                 >
                   <Mic size={20} />
-                  <Lock size={10} className="absolute -top-0.5 -right-0.5" />
                 </TooltipTrigger>
-                <TooltipContent>Voice to text (requires Pro)</TooltipContent>
+                <TooltipContent>
+                  Speech-to-text backend is not configured. Local read-aloud is
+                  available on assistant messages.
+                </TooltipContent>
               </Tooltip>
             )}
 

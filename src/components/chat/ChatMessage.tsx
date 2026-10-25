@@ -1,3 +1,4 @@
+import { LocalSpeechButton } from "./LocalSpeechButton";
 import { assistantAttribution } from "@/shared/execution_backend";
 import { type Message } from "@/ipc/types";
 import {
@@ -415,6 +416,9 @@ const ChatMessage = ({
                       {copied ? "Copied!" : "Copy"}
                     </TooltipContent>
                   </Tooltip>
+                )}
+                {hasAssistantText && !isStreaming && (
+                  <LocalSpeechButton text={assistantTextContent} />
                 )}
                 <div className="flex flex-wrap gap-2">
                   {visibleApprovalState && (

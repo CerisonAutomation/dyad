@@ -14,12 +14,14 @@ import {
 } from "@/db/schema";
 import { DyadError, DyadErrorKind, isDyadError } from "@/errors/dyad_error";
 import { getModelClient } from "@/ipc/utils/get_model_client";
-import { getAuxiliarySettings } from "@/lib/auxiliaryModel";
+import {
+  getAuxiliarySettings,
+  getAuxiliaryModel,
+  hasProviderAgentSelection,
+} from "@/lib/auxiliaryModel";
 import { getAiHeaders, getProviderOptions } from "@/ipc/utils/provider_options";
 import { withLock } from "@/ipc/utils/lock_utils";
 import { fastTextOutput } from "@/ipc/utils/stream_text_utils";
-import { getBuiltinLanguageModelCatalog } from "@/ipc/shared/remote_language_model_catalog";
-import { SMALL_MODEL_NAME } from "@/ipc/shared/language_model_constants";
 import {
   appOperationCoordinator,
   readAppResource,
@@ -39,11 +41,7 @@ import { sanitizeStepMessages } from "../prepare_step_utils";
 import type { AgentContext } from "../tools/types";
 import { runExploreCodeSubagent } from "../tools/explore_code_subagent";
 import { buildReviewTarget, type ReviewTarget } from "./review_target";
-import {
-  boundSubagentAssignmentsForModel,
-  MIN_SUBAGENT_HISTORY_CHARS,
-  pruneSubagentMessages,
-} from "./subagent_context_budget";
+import { pruneSubagentMessages } from "./subagent_context_budget";
 import { boundReviewDiff } from "./review_diff_budget";
 import {
   closeAndDisposeTurnsForChat,
@@ -73,11 +71,6 @@ import type { ImplementerJoinSummary } from "./subagent_failure_reporting";
 
 export { SUBAGENT_NONTERMINAL_STATUSES } from "./state";
 
-const MODELS = {
-  explorer: { provider: "openai", name: SMALL_MODEL_NAME, effort: "high" },
-  reviewer: { provider: "openai", name: "gpt-5.6-sol", effort: "medium" },
-  implementer: { provider: "openai", name: SMALL_MODEL_NAME, effort: "high" },
-} as const;
 const MAX_DURABLE_REPORT_CHARS = 100_000;
 const MAX_ACTIVITY_XML_CHARS = 200_000;
 const MAX_ACTIVITY_OUTPUT_CHARS = 200_000;
@@ -342,7 +335,7 @@ export async function settleAllSubagentsForReset(): Promise<() => void> {
 export async function listSubagents(
   chatId: number,
 ): Promise<SubagentThreadSummary[]> {
-  assertPro();
+  assertAgentInference();
   const rows = await db.query.agentThreads.findMany({
     where: eq(agentThreads.chatId, chatId),
     orderBy: [desc(agentThreads.createdAt)],
@@ -351,31 +344,29 @@ export async function listSubagents(
 }
 
 export async function getSubagentMessages(chatId: number, threadId: string) {
-  assertPro();
+  assertAgentInference();
   await getOwnedThread(chatId, threadId);
   const rows = await db.query.agentMessages.findMany({
     where: eq(agentMessages.threadId, threadId),
     orderBy: [asc(agentMessages.sequence)],
   });
-  return rows.map(
-    (row): SubagentMessage => ({
-      id: row.id,
-      threadId: row.threadId,
-      sequence: row.sequence,
-      messageId: row.messageId,
-      role: row.role,
-      content: row.content,
-      consumed: row.consumed,
-      createdAt: row.createdAt,
-    }),
-  );
+  return rows.map((row): SubagentMessage => ({
+    id: row.id,
+    threadId: row.threadId,
+    sequence: row.sequence,
+    messageId: row.messageId,
+    role: row.role,
+    content: row.content,
+    consumed: row.consumed,
+    createdAt: row.createdAt,
+  }));
 }
 
 export async function getSubagentActivities(
   chatId: number,
   threadId: string,
 ): Promise<SubagentActivity[]> {
-  assertPro();
+  assertAgentInference();
   await getOwnedThread(chatId, threadId);
   const rows = await db.query.agentActivities.findMany({
     where: eq(agentActivities.threadId, threadId),
@@ -466,7 +457,7 @@ export async function spawnModelSubagent(params: {
     mutationActivityOwner?: MutationActivityOwner;
   }) => ToolSet;
 }): Promise<string> {
-  assertPro(params.persona);
+  assertAgentInference(params.persona);
   assertPersonaEnabled(
     params.persona,
     params.ctx.canUseImplementerSubagent === true,
@@ -507,6 +498,7 @@ export async function spawnModelSubagent(params: {
       }
       const thread = await createThread({
         id: threadId,
+        acceptedSettings: params.ctx.inferenceSettings,
         chatId: params.ctx.chatId,
         persona: params.persona,
         taskName: params.taskName,
@@ -577,7 +569,7 @@ export async function startReview(params: {
   invocationSource: "review_button" | "auto_review";
   allowWhenAutoReviewDisabled?: boolean;
 }): Promise<SubagentThreadSummary> {
-  assertPro("reviewer");
+  assertAgentInference("reviewer");
   await preflightPersonaModel("reviewer", params.chatId);
   if (
     params.invocationSource === "auto_review" &&
@@ -683,7 +675,7 @@ export async function cancelSubagent(
   chatId: number,
   threadId: string,
 ): Promise<void> {
-  assertPro();
+  assertAgentInference();
   const thread = await getOwnedThread(chatId, threadId);
   if (
     !SUBAGENT_NONTERMINAL_STATUSES.includes(
@@ -738,7 +730,7 @@ export async function skipReviewAutoFix(
   threadId: string,
   remediationFailed = false,
 ): Promise<void> {
-  assertPro("reviewer");
+  assertAgentInference("reviewer");
   const thread = await getOwnedThread(chatId, threadId);
   if (remediationFailed && thread.status === "fixing_findings") {
     const result = await applyThreadLifecycle(thread, {
@@ -779,7 +771,7 @@ export async function buildFixFindingsPrompt(
   threadId: string,
   remediationSource: "fix_button" | "auto_fix" | "queued_message_override",
 ): Promise<string> {
-  assertPro("reviewer");
+  assertAgentInference("reviewer");
   const thread = await getOwnedThread(chatId, threadId);
   if (
     thread.persona !== "reviewer" ||
@@ -897,17 +889,14 @@ export async function runAutoReviewBarrier(params: {
   deadlineAt?: number;
 }): Promise<{
   outcome:
-    | "released"
-    | "skipped"
-    | "waiting"
-    | "fix_required"
-    | "verification_failed";
+    "released" | "skipped" | "waiting" | "fix_required" | "verification_failed";
   threadId?: string;
   prompt?: string;
 }> {
   params.deadlineAt ??= Date.now() + AUTO_REVIEW_BARRIER_MAX_WAIT_MS;
   const settings = readSettings();
-  const isPro = isDyadProEnabled(settings);
+  const isPro =
+    isDyadProEnabled(settings) || hasProviderAgentSelection(settings);
   if ((!settings.enableAutoReview && !params.verification) || !isPro) {
     return { outcome: "skipped" };
   }
@@ -1113,7 +1102,7 @@ export async function sendSubagentMessage(
   content: string,
   abortSignal?: AbortSignal,
 ): Promise<void> {
-  assertPro();
+  assertAgentInference();
   return subagentDisposalRegistry.withAdmission(chatId, () =>
     sendSubagentMessageAdmitted(chatId, threadId, content, abortSignal),
   );
@@ -1163,7 +1152,7 @@ export async function followupSubagent(
     }) => ToolSet;
   },
 ): Promise<SubagentPersona> {
-  assertPro();
+  assertAgentInference();
   return subagentDisposalRegistry.withAdmission(chatId, () =>
     followupSubagentAdmitted(chatId, threadId, assignment, currentTurn),
   );
@@ -1306,7 +1295,7 @@ export async function waitForSubagents(
   abortSignal?: AbortSignal,
   timeoutMs = ROOT_FINALIZATION_MAX_WAIT_MS,
 ): Promise<SubagentThreadSummary[]> {
-  assertPro();
+  assertAgentInference();
   const deadlineAt = Date.now() + timeoutMs;
   const uniqueIds = [...new Set(threadIds)];
   await Promise.all(uniqueIds.map((id) => getOwnedThread(chatId, id)));
@@ -1786,7 +1775,7 @@ type RunModelParams = {
 async function runModel(
   params: RunModelParams,
 ): Promise<{ text: string; hitStepLimit: boolean }> {
-  assertPro(params.persona);
+  assertAgentInference(params.persona);
   const claimedRootMessageIds = new Set<number>();
   const settings = await personaModelSettings(
     params.persona,
@@ -1819,7 +1808,7 @@ async function runModel(
     messages: history,
     tools: params.tools,
     prepareStep: async ({ messages: stepMessages }) => {
-      assertPro(params.persona);
+      assertAgentInference(params.persona);
       const pending = await db.query.agentMessages.findMany({
         where: and(
           eq(agentMessages.threadId, params.threadId),
@@ -1881,12 +1870,10 @@ export function prepareSubagentStepMessages(
 ): ModelMessage[] {
   const sanitized = sanitizeStepMessages([
     ...stepMessages,
-    ...rootMessages.map(
-      (message): ModelMessage => ({
-        role: "user",
-        content: `Root message: ${message}`,
-      }),
-    ),
+    ...rootMessages.map((message): ModelMessage => ({
+      role: "user",
+      content: `Root message: ${message}`,
+    })),
   ]).messages;
   // Sub-agent step loops re-send the whole transcript on every step. Bound the
   // tool results so a single large read/grep/diff cannot dominate the request
@@ -1917,20 +1904,15 @@ async function recordModelUsage(
 }
 
 async function personaModelSettings(
-  persona: SubagentPersona,
+  _persona: SubagentPersona,
   chatId: number,
   acceptedSettings?: UserSettings,
 ) {
-  const defaults = MODELS[persona];
   const settings = await getChatInferenceSettings(chatId, acceptedSettings);
   return {
     ...getAuxiliarySettings(settings),
-    selectedModel: {
-      provider: defaults.provider,
-      name: defaults.name,
-      effortLevel: defaults.effort,
-    },
-    thinkingBudget: defaults.effort,
+    selectedModel: getAuxiliaryModel(settings),
+    thinkingBudget: settings.thinkingBudget,
   };
 }
 
@@ -1939,22 +1921,11 @@ async function preflightPersonaModel(
   chatId: number,
   acceptedSettings?: UserSettings,
 ): Promise<void> {
-  const defaults = MODELS[persona];
   const settings = await personaModelSettings(
     persona,
     chatId,
     acceptedSettings,
   );
-  const catalog = await getBuiltinLanguageModelCatalog();
-  const available = catalog.modelsByProvider[defaults.provider]?.some(
-    (model) => model.apiName === defaults.name,
-  );
-  if (!available) {
-    throw new DyadError(
-      `${persona} requires ${defaults.name}, which is not currently available. Check your Dyad Pro model access and try again.`,
-      DyadErrorKind.Precondition,
-    );
-  }
 
   try {
     await getModelClient(settings.selectedModel, settings);
@@ -2012,15 +1983,13 @@ export function buildBoundedModelHistory(params: {
     history.push({ role: "user", content: params.originalAssignment });
   }
   history.push(
-    ...bounded.map(
-      (message): ModelMessage => ({
-        role: message.role === "assistant" ? "assistant" : "user",
-        content:
-          message.role === "system"
-            ? `System note: ${message.content}`
-            : message.content,
-      }),
-    ),
+    ...bounded.map((message): ModelMessage => ({
+      role: message.role === "assistant" ? "assistant" : "user",
+      content:
+        message.role === "system"
+          ? `System note: ${message.content}`
+          : message.content,
+    })),
   );
   history.push({ role: "user", content: params.currentAssignment });
   return history;
@@ -2060,6 +2029,7 @@ export function resolveSubagentSystemPrompt(
 
 async function createThread(params: {
   id?: string;
+  acceptedSettings?: UserSettings;
   chatId: number;
   persona: SubagentPersona;
   taskName: string;
@@ -2068,7 +2038,11 @@ async function createThread(params: {
   contextJson: Record<string, unknown>;
   review?: ReviewTarget;
 }) {
-  const defaults = MODELS[params.persona];
+  const settings = await personaModelSettings(
+    params.persona,
+    params.chatId,
+    params.acceptedSettings,
+  );
   const [row] = await db
     .insert(agentThreads)
     .values({
@@ -2078,9 +2052,12 @@ async function createThread(params: {
       taskName: params.taskName,
       assignment: params.assignment,
       status: "queued",
-      provider: defaults.provider,
-      model: defaults.name,
-      reasoningEffort: defaults.effort,
+      provider: settings.selectedModel.provider,
+      model: settings.selectedModel.name,
+      reasoningEffort:
+        settings.selectedModel.effortLevel ??
+        settings.thinkingBudget ??
+        "default",
       invocationSource: params.invocationSource,
       contextJson: params.contextJson,
       reviewBaseCommit: params.review?.baseCommit,
@@ -2317,7 +2294,7 @@ function assertPersonaEnabled(
   implementerEnabledForTurn = false,
 ): void {
   const settings = readSettings();
-  if (persona === "explorer" && !settings.enableExplorerSubagent) {
+  if (persona === "explorer" && settings.enableExplorerSubagent === false) {
     throw new DyadError(
       "Explorer is disabled in Settings.",
       DyadErrorKind.Precondition,
@@ -2335,12 +2312,15 @@ function assertPersonaEnabled(
   }
 }
 
-function assertPro(persona?: SubagentPersona): void {
-  if (!isDyadProEnabled(readSettings())) {
+function assertAgentInference(persona?: SubagentPersona): void {
+  if (
+    !isDyadProEnabled(readSettings()) &&
+    !hasProviderAgentSelection(readSettings())
+  ) {
     throw new DyadError(
       persona
-        ? `${persona} sub-agents require Dyad Pro.`
-        : "Sub-agents require Dyad Pro.",
+        ? `${persona} sub-agents require a configured API/subscription model. Select one in the model picker.`
+        : "Sub-agents require a configured API/subscription model. Select one in the model picker.",
       DyadErrorKind.Auth,
     );
   }
@@ -2710,14 +2690,18 @@ function watchEntitlement(
   controller: AbortController,
 ): ReturnType<typeof setInterval> {
   const timer = setInterval(() => {
-    if (isDyadProEnabled(readSettings())) return;
+    if (
+      isDyadProEnabled(readSettings()) ||
+      hasProviderAgentSelection(readSettings())
+    )
+      return;
     clearInterval(timer);
     controller.abort();
     void finishThread(
       threadId,
       "entitlement_revoked",
       null,
-      "Dyad Pro entitlement was revoked while this sub-agent was running.",
+      "Agent inference became unavailable while this sub-agent was running. Select a configured API/subscription model.",
     ).catch((error) =>
       logger.error(
         `Failed to persist entitlement revocation for ${threadId}`,

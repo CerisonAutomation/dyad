@@ -1,3 +1,4 @@
+import { isBrowserPreview } from "@/browser_preview/adapter";
 import type { editor } from "monaco-editor";
 import { loader } from "@monaco-editor/react";
 
@@ -152,7 +153,8 @@ export const customDark: editor.IStandaloneThemeData = {
 const IS_VITEST =
   typeof process !== "undefined" && process.env.VITEST === "true";
 
-if (!IS_VITEST) {
+// The read-only browser preview has no files to edit; do not prewarm a CDN loader.
+if (!IS_VITEST && !isBrowserPreview()) {
   loader.init().then((monaco) => {
     monaco.editor.defineTheme("dyad-light", customLight);
     monaco.editor.defineTheme("dyad-dark", customDark);

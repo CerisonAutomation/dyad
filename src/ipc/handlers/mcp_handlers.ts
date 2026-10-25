@@ -1,5 +1,5 @@
 import log from "electron-log";
-import { getRemoteMcpCatalog } from "@/ipc/shared/remote_mcp_catalog";
+import { getMcpCatalog } from "@/ipc/shared/builtin_mcp_catalog";
 import { isRequiredInput, userSuppliedInputs } from "@/ipc/types/mcp_catalog";
 import { db } from "../../db";
 import { mcpServers, mcpToolConsents } from "../../db/schema";
@@ -180,7 +180,7 @@ export function registerMcpHandlers() {
   createTypedHandler(mcpContracts.listCatalog, async () => {
     // The catalog fetch and the added-slugs read are independent.
     const [entries, rows] = await Promise.all([
-      getRemoteMcpCatalog(),
+      getMcpCatalog(),
       db
         .select({ catalogSlug: mcpServers.catalogSlug })
         .from(mcpServers)
@@ -195,7 +195,7 @@ export function registerMcpHandlers() {
   createTypedHandler(
     mcpContracts.addFromCatalog,
     async (_, { slug, expectedStdioConfig }) => {
-      const entries = await getRemoteMcpCatalog();
+      const entries = await getMcpCatalog();
       // The user reached this from a populated catalog, so an empty list
       // here means the fetch failed rather than the slug being unknown.
       // Surface that as a connectivity problem instead of a not-found.

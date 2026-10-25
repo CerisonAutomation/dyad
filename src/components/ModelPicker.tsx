@@ -1,3 +1,4 @@
+import { isFreeCatalogModel } from "@/lib/modelCatalogPolicy";
 import { showError } from "@/lib/toast";
 import { modelForChatBackend } from "@/shared/execution_backend";
 import { ClaudeCodeSubscriptionMenu } from "./ClaudeCodeSubscriptionMenu";
@@ -45,12 +46,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  CheckIcon,
-  ChevronRightIcon,
-  LockIcon,
-  SparklesIcon,
-} from "lucide-react";
+import { CheckIcon, ChevronRightIcon, LockIcon } from "lucide-react";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { SubscriptionModelMenu } from "@/components/SubscriptionModelMenu";
 import { useSubscriptionAccount } from "@/hooks/useSubscriptionAccount";
@@ -105,9 +101,6 @@ const PRO_PILL_CLASS = cn(
   "bg-gradient-to-r from-indigo-600 via-indigo-500 to-indigo-600 bg-[length:200%_100%] animate-[shimmer_5s_ease-in-out_infinite] text-white",
 );
 
-const DYAD_PRO_UPGRADE_BASE_URL =
-  "https://www.dyad.sh/pro?utm_source=dyad-app&utm_medium=app";
-
 const NAVIGATION_SUBMENU_HOVER_PROPS = {
   openOnHover: true,
   delay: 120,
@@ -153,9 +146,6 @@ const PRICE_TIERS: Tier[] = [
     max: 2,
   },
 ];
-
-const isFreeOpenRouterModelName = (apiName: string) =>
-  apiName.endsWith(":free") || apiName.endsWith("/free");
 
 const formatModelCount = (count: number) =>
   `${count} model${count === 1 ? "" : "s"}`;
@@ -208,10 +198,9 @@ export function ModelPicker() {
   const [open, setOpen] = useState(false);
   const claudeStatus = useQuery({
     enabled:
-      !!settings?.enableClaudeCodeSubscription &&
-      (open ||
-        chat?.executionBackend === "claude-code" ||
-        settings?.selectedModel.provider === "claude-code"),
+      open ||
+      chat?.executionBackend === "claude-code" ||
+      settings?.selectedModel.provider === "claude-code",
     queryKey: queryKeys.system.claudeCodeStatus,
     queryFn: () => ipc.chat.claudeCodeStatus({}),
     staleTime: 10_000,
@@ -220,7 +209,6 @@ export function ModelPicker() {
     queryKey: queryKeys.system.claudeCodeModels,
     queryFn: () => ipc.chat.claudeCodeModels(),
     enabled:
-      !!settings?.enableClaudeCodeSubscription &&
       !!claudeStatus.data?.connected &&
       !!claudeStatus.data?.compatible &&
       (open ||
@@ -234,8 +222,8 @@ export function ModelPicker() {
     : (claudeModels.data ?? []);
   const useClaudeCode =
     !!settings?.enableClaudeCodeSubscription &&
-    settings.proModelUsage !== "pro" &&
-    settings.proModelUsage !== "api-key" &&
+    settings?.proModelUsage !== "pro" &&
+    settings?.proModelUsage !== "api-key" &&
     !!claudeStatus.data?.connected &&
     !!claudeStatus.data?.compatible;
   const requiresNewChat = (model: LargeLanguageModel) =>
@@ -593,13 +581,8 @@ export function ModelPicker() {
           ([providerId]) => providerId !== "auto",
         )
       : [];
-  const isVisibleCatalogModel = (providerId: string, model: LanguageModel) =>
-    !(
-      dyadProEnabled &&
-      settings.proModelUsage !== "api-key" &&
-      providerId === "openrouter" &&
-      isFreeOpenRouterModelName(model.apiName)
-    );
+  const isVisibleCatalogModel = (_providerId: string, _model: LanguageModel) =>
+    true;
   const isOtherProvider = (providerId: string) => {
     const provider = providers?.find(
       (candidate) => candidate.id === providerId,
@@ -618,10 +601,14 @@ export function ModelPicker() {
       }),
     )
     .sort((a, b) => {
-      const aPrice = a.model.dollarSigns ?? Number.NEGATIVE_INFINITY;
-      const bPrice = b.model.dollarSigns ?? Number.NEGATIVE_INFINITY;
+      const freeOrder =
+        Number(isFreeCatalogModel(b.providerId, b.model)) -
+        Number(isFreeCatalogModel(a.providerId, a.model));
+      if (freeOrder) return freeOrder;
+      const aPrice = a.model.dollarSigns ?? Infinity;
+      const bPrice = b.model.dollarSigns ?? Infinity;
       if (aPrice !== bPrice) {
-        return bPrice - aPrice;
+        return aPrice - bPrice;
       }
       if (a.providerIndex !== b.providerIndex) {
         return a.providerIndex - b.providerIndex;
@@ -855,31 +842,6 @@ export function ModelPicker() {
     setUnlockTarget({ providerId, model });
   };
 
-  const handleUnlockAllClick = () => {
-    posthog.capture("model-picker:upgrade-click", {
-      source: "unlock-all-footer",
-    });
-    ipc.system.openExternalUrl(
-      `${DYAD_PRO_UPGRADE_BASE_URL}&utm_campaign=model-picker-unlock-all`,
-    );
-    setOpen(false);
-  };
-
-  const handleUnlockDialogUpgradeClick = () => {
-    if (!unlockTarget) {
-      return;
-    }
-    posthog.capture("model-picker:upgrade-click", {
-      source: "locked-model-dialog",
-      provider: unlockTarget.providerId,
-      model: unlockTarget.model.apiName,
-    });
-    ipc.system.openExternalUrl(
-      `${DYAD_PRO_UPGRADE_BASE_URL}&utm_campaign=model-picker-locked-model`,
-    );
-    setUnlockTarget(null);
-  };
-
   const handleUnlockDialogOwnKeyClick = () => {
     if (!unlockTarget) {
       return;
@@ -896,7 +858,7 @@ export function ModelPicker() {
   };
 
   const unlockTargetIsFreeModel = unlockTarget
-    ? isFreeOpenRouterModelName(unlockTarget.model.apiName)
+    ? isFreeCatalogModel(unlockTarget.providerId, unlockTarget.model)
     : false;
   const unlockTargetProviderName = unlockTarget
     ? getProviderDisplayName(unlockTarget.providerId)
@@ -958,8 +920,7 @@ export function ModelPicker() {
     const isLocked = isModelLocked(providerId, model);
     const isAutoProviderRow = providerId === "auto";
     const isFreeProRow = isFreeProLanguageModel(providerId, model.apiName);
-    const isFreeProviderRow =
-      providerId === "openrouter" && isFreeOpenRouterModelName(model.apiName);
+    const isFreeProviderRow = isFreeCatalogModel(providerId, model);
     const isAutoOpenRouterFreeRow =
       isAutoProviderRow && model.apiName === "free";
     const shouldShowDataSharingDisclosure =
@@ -1174,7 +1135,7 @@ export function ModelPicker() {
         aria-label={
           isFreeProviderRow
             ? `${model.displayName} — requires an API key from ${getProviderDisplayName(providerId)}`
-            : `${model.displayName} — requires Dyad Pro or an API key from ${getProviderDisplayName(providerId)}`
+            : `${model.displayName} — requires a connected account or an API key from ${getProviderDisplayName(providerId)}`
         }
         onClick={() => handleLockedModelClick(providerId, model)}
       >
@@ -1508,6 +1469,12 @@ export function ModelPicker() {
     );
   };
 
+  const freeModelEntries = providerEntries.flatMap(([providerId, models]) =>
+    models
+      .filter((model) => isFreeCatalogModel(providerId, model))
+      .map((model) => ({ providerId, model })),
+  );
+
   const cloudCatalogGroups = PRICE_TIERS.map((tier) => ({
     tier,
     entries: primaryModelEntries
@@ -1628,28 +1595,9 @@ export function ModelPicker() {
           />
           <SubscriptionModelMenu>
             <DropdownMenuSeparator />
-            {/* Trial user upgrade banner */}
+            {/* Legacy trial selection; no purchase prompts */}
             {isTrial && (
               <>
-                <div className="px-2 py-3 bg-gradient-to-r from-indigo-50 to-sky-50 dark:from-indigo-950/50 dark:to-sky-950/50">
-                  <p className="text-sm text-indigo-700 dark:text-indigo-300 mb-2">
-                    Upgrade from Dyad Pro trial to unlock more models.
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="cursor-pointer w-full bg-indigo-600 hover:bg-indigo-700 text-white hover:text-white border-indigo-600"
-                    onClick={() => {
-                      ipc.system.openExternalUrl(
-                        "https://academy.dyad.sh/subscription",
-                      );
-                      setOpen(false);
-                    }}
-                  >
-                    Upgrade to Dyad Pro
-                  </Button>
-                </div>
-                <DropdownMenuSeparator />
                 {/* Trial users only see the auto model */}
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger
@@ -1854,6 +1802,21 @@ export function ModelPicker() {
                   </div>
                 ) : (
                   <>
+                    {freeModelEntries.length > 0 && (
+                      <>
+                        <DropdownMenuLabel>
+                          Free models · provider limits apply
+                        </DropdownMenuLabel>
+                        {freeModelEntries.map(({ providerId, model }) =>
+                          renderCloudModelItem({
+                            providerId,
+                            model,
+                            showPrice: false,
+                          }),
+                        )}
+                        <DropdownMenuSeparator />
+                      </>
+                    )}
                     {!isTrial && autoModels.length > 0 && (
                       <>
                         {autoModels.map((model) =>
@@ -1916,25 +1879,6 @@ export function ModelPicker() {
                 )}
               </>
             )}
-
-            {/* Upgrade footer for non-Pro users */}
-            {!isTrial && !dyadProEnabled && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  data-testid="model-picker-unlock-all"
-                  className="px-2 py-2 bg-gradient-to-r from-indigo-50 to-sky-50 dark:from-indigo-950/50 dark:to-sky-950/50 focus:from-indigo-100 focus:to-sky-100 dark:focus:from-indigo-950 dark:focus:to-sky-950"
-                  onClick={handleUnlockAllClick}
-                >
-                  <div className="flex items-center gap-2 w-full">
-                    <SparklesIcon className="size-3.5 text-indigo-600 dark:text-indigo-300 shrink-0" />
-                    <span className="text-[13px] font-medium text-indigo-700 dark:text-indigo-300">
-                      Unlock all models with Dyad Pro
-                    </span>
-                  </div>
-                </DropdownMenuItem>
-              </>
-            )}
           </SubscriptionModelMenu>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -1952,57 +1896,19 @@ export function ModelPicker() {
           className="sm:max-w-md"
           data-testid="unlock-model-dialog"
         >
-          {/* Free models aren't a Pro feature, so don't sell Pro for them —
-              they just need the user's own (free) provider API key. */}
-          {unlockTargetIsFreeModel ? (
-            <>
-              <DialogHeader>
-                <DialogTitle>
-                  Use {unlockTarget?.model.displayName} with your own{" "}
-                  {unlockTargetProviderName} API key
-                </DialogTitle>
-                <DialogDescription>
-                  Free models run through your own {unlockTargetProviderName}{" "}
-                  account. Add an API key in provider settings to use this
-                  model.
-                </DialogDescription>
-              </DialogHeader>
-              <Button
-                className="cursor-pointer w-full"
-                onClick={handleUnlockDialogOwnKeyClick}
-              >
-                Add {unlockTargetProviderName} API key
-              </Button>
-            </>
-          ) : (
-            <>
-              <DialogHeader>
-                <DialogTitle>
-                  Unlock {unlockTarget?.model.displayName} with Dyad Pro
-                </DialogTitle>
-                <DialogDescription>
-                  Dyad Pro gives you {unlockTarget?.model.displayName} and every
-                  other leading AI model with one subscription — no API keys
-                  needed.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="flex flex-col gap-3">
-                <Button
-                  className="cursor-pointer w-full"
-                  onClick={handleUnlockDialogUpgradeClick}
-                >
-                  Get Dyad Pro
-                </Button>
-                <button
-                  type="button"
-                  className="cursor-pointer text-sm text-primary hover:underline underline-offset-4"
-                  onClick={handleUnlockDialogOwnKeyClick}
-                >
-                  Or use your own {unlockTargetProviderName} API key
-                </button>
-              </div>
-            </>
-          )}
+          <DialogHeader>
+            <DialogTitle>Configure {unlockTargetProviderName}</DialogTitle>
+            <DialogDescription>
+              {unlockTargetIsFreeModel
+                ? "This model is provider-listed as free; quotas and data policies still apply. "
+                : "Usage is billed by your provider. "}
+              Add your own API key or select a connected provider account. No
+              application subscription is required.
+            </DialogDescription>
+          </DialogHeader>
+          <Button className="w-full" onClick={handleUnlockDialogOwnKeyClick}>
+            Configure {unlockTargetProviderName}
+          </Button>
         </DialogContent>
       </Dialog>
     </>

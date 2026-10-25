@@ -55,7 +55,7 @@ describe("exploreChatHistoryTool contract", () => {
   it("declares the expected tool contract", () => {
     expect(exploreChatHistoryTool.name).toBe("explore_chat_history");
     expect(exploreChatHistoryTool.defaultConsent).toBe("always");
-    expect(exploreChatHistoryTool.usesEngineEndpoint).toBe(true);
+    expect(exploreChatHistoryTool.usesEngineEndpoint).toBe(false);
     // Read-only research tool: must never count as a state-modifying tool.
     expect(exploreChatHistoryTool.modifiesState).toBeUndefined();
   });
@@ -82,11 +82,11 @@ describe("tool exposure via shouldIncludeTool", () => {
     expect(shouldIncludeTool(exploreChatHistoryTool, ctx)).toBe(false);
   });
 
-  it("is excluded in free-model mode even for Pro (engine-backed)", () => {
+  it("remains available in free-model mode because it is provider-backed", () => {
     const ctx = makeAgentContext({ isDyadPro: true });
     expect(
       shouldIncludeTool(exploreChatHistoryTool, ctx, { freeModelMode: true }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("supersedes search_chats for Pro while keeping read_chat", () => {

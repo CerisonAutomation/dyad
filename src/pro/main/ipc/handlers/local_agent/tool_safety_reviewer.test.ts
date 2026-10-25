@@ -16,7 +16,9 @@ import {
   SHELL_REVIEW_TIMEOUT_MS,
 } from "./tool_safety_reviewer";
 const input = {
-  settings: {} as UserSettings,
+  settings: {
+    selectedModel: { provider: "custom::review", name: "configured-reviewer" },
+  } as UserSettings,
   system: "policy",
   fallback: "block" as const,
   prepare: async () => ({ payload: "exact command" }),
@@ -43,7 +45,7 @@ describe("mandatory tool reviewer", () => {
     });
     expect((await reviewToolAction(input)).decision).toBe("allow");
     expect(mocks.getModelClient).toHaveBeenCalledWith(
-      { name: "gpt-6-luna", provider: "openai" },
+      input.settings.selectedModel,
       input.settings,
     );
     expect(mocks.streamText.mock.calls[0][0].messages[0].content).toBe(
@@ -242,4 +244,37 @@ it("reserves a verdict step after six inspections across three tool rounds", asy
   expect(result).toEqual({ decision: "allow", reason: "Inspected six files" });
   expect(inspect).toHaveBeenCalledTimes(6);
   expect(calls).toBe(4);
+});
+
+it.each(["api-key", "subscription"] as const)(
+  "reviews tools with the accepted %s model instead of a fixed helper",
+  async (proModelUsage) => {
+    const selectedModel = {
+      provider: proModelUsage === "subscription" ? "openai" : "anthropic",
+      name: "selected-model",
+      effortLevel: "high",
+    };
+    const settings = { proModelUsage, selectedModel } as UserSettings;
+    mocks.streamText.mockReturnValue({
+      text: Promise.resolve('{"reason":"Bounded task","decision":"allow"}'),
+    });
+    await reviewToolAction({ ...input, settings });
+    expect(mocks.getModelClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: selectedModel.provider,
+        name: "selected-model",
+        effortLevel: "high",
+      }),
+      settings,
+    );
+  },
+);
+
+it("fails closed when no selected model is configured instead of using a fixed helper", async () => {
+  const result = await reviewToolAction({
+    ...input,
+    settings: {} as UserSettings,
+  });
+  expect(result).toMatchObject({ decision: "block", unavailable: true });
+  expect(mocks.getModelClient).not.toHaveBeenCalled();
 });

@@ -135,14 +135,10 @@ describe("HomePage first-prompt projection", () => {
     mocks.updateSettings.mockReset();
   });
 
-  it("opens the Pro page with home upgrade tracking from the upgrade button", () => {
+  it("offers no application subscription upsell", () => {
     render(<HomePage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Upgrade to Pro" }));
-
-    expect(mocks.openExternalUrl).toHaveBeenCalledWith(
-      "https://www.dyad.sh/pro?utm_source=dyad-app&utm_medium=app&utm_campaign=home-upgrade-to-pro",
-    );
+    expect(screen.queryByRole("button", { name: "Upgrade to Pro" })).toBeNull();
+    expect(mocks.openExternalUrl).not.toHaveBeenCalled();
   });
 
   it("does not prompt existing Pro users to upgrade", () => {

@@ -135,3 +135,24 @@ export function getAiHeaders(
     ? { [DYAD_INTERNAL_REQUEST_ID_HEADER]: params.dyadRequestId }
     : undefined;
 }
+
+/** Native helper calls carry reasoning effort, never hosted file/billing metadata. */
+export function getNativeProviderOptions({
+  modelSelection,
+  builtinProviderId,
+  reasoningEffortProviderId,
+}: Pick<
+  GetProviderOptionsParams,
+  "modelSelection" | "builtinProviderId" | "reasoningEffortProviderId"
+>) {
+  const options = getProviderOptions({
+    dyadAppId: 0,
+    files: [],
+    mentionedAppsCodebases: [],
+    modelSelection,
+    builtinProviderId,
+    reasoningEffortProviderId,
+  });
+  delete options["dyad-engine"];
+  return options;
+}

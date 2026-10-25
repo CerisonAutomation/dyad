@@ -1,10 +1,13 @@
-import { getAuxiliarySettings } from "@/lib/auxiliaryModel";
+import {
+  getAuxiliarySettings,
+  getAuxiliaryModel,
+  hasProviderAgentSelection,
+} from "@/lib/auxiliaryModel";
 import { withReferencedAppRead } from "./referenced_app_read";
 import { streamText, stepCountIs, type ModelMessage, type ToolSet } from "ai";
 import log from "electron-log";
 
 import { getChatInferenceSettings } from "@/ipc/services/chat_inference_settings";
-import { SMALL_MODEL_NAME } from "@/ipc/shared/language_model_constants";
 import { resolveModelSelection } from "@/ipc/utils/model_effort";
 import { getModelPreferenceKey } from "@/lib/modelEffort";
 import { cleanMessage } from "@/ipc/utils/ai_messages_utils";
@@ -68,7 +71,6 @@ import { formatExploreProgressLog } from "./explore_code_subagent_progress";
 
 const logger = log.scope("explore_code_subagent");
 
-const SUBAGENT_MODEL = { provider: "openai", name: SMALL_MODEL_NAME } as const;
 // Max model turns in the agent loop. Each step may issue several parallel tool
 // calls, so this is distinct from the read-only tool-call budget below.
 const SUBAGENT_MAX_STEPS = 12;
@@ -119,10 +121,11 @@ export async function runExploreCodeSubagent({
     ctx.inferenceSettings,
   );
   assertDyadValueAvailable(storedSettings);
-  const auxiliaryModel = SUBAGENT_MODEL;
+  const auxiliaryModel = getAuxiliaryModel(storedSettings);
   const selectedModel = await resolveModelSelection({
     model: auxiliaryModel,
     preferredEffortLevel:
+      auxiliaryModel.effortLevel ??
       storedSettings.modelEffortPreferences?.[
         getModelPreferenceKey(auxiliaryModel)
       ],
@@ -377,6 +380,7 @@ function renderFinalReport({
 }
 
 function assertDyadValueAvailable(settings: UserSettings): void {
+  if (hasProviderAgentSelection(settings)) return;
   if (!settings.enableDyadPro || !settings.providerSettings?.auto?.apiKey) {
     throw new DyadError(
       "explore_code sub-agent requires Dyad Pro with an auto provider API key",

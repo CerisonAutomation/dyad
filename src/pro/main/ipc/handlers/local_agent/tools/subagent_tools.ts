@@ -1,3 +1,4 @@
+import { hasProviderAgentSelection } from "@/lib/auxiliaryModel";
 import { z } from "zod";
 import type { ToolSet } from "ai";
 import { DyadError, DyadErrorKind, isDyadError } from "@/errors/dyad_error";
@@ -225,7 +226,6 @@ export function subagentToolNamesForPersona(
     : SUBAGENT_IMPLEMENTER_TOOL_NAMES;
 }
 
-
 export function validateSubagentAllowedToolNames(
   allowedNames: readonly string[],
   registeredTools: readonly Pick<ToolDefinition, "name">[],
@@ -293,10 +293,10 @@ export const spawnAgentTool: ToolDefinition<
   subagentOnly: true,
   mutationTracking: "none",
   requiresBlueprintApproval: false,
-  usesEngineEndpoint: true,
+  usesEngineEndpoint: false,
   isEnabled: (ctx) =>
     Boolean(
-      ctx.isDyadPro &&
+      (ctx.isDyadPro || hasProviderAgentSelection(ctx.inferenceSettings)) &&
       (ctx.canUseExplorerSubagent || ctx.canUseImplementerSubagent) &&
       !ctx.subagentThreadId,
     ),
@@ -393,7 +393,9 @@ const threadIdsSchema = z.object({ thread_ids: z.array(z.string()).min(1) });
 
 function canUseAdvancedSubagentTools(ctx: AgentContext): boolean {
   return Boolean(
-    ctx.isDyadPro && ctx.canUseAdvancedSubagentTools && !ctx.subagentThreadId,
+    (ctx.isDyadPro || hasProviderAgentSelection(ctx.inferenceSettings)) &&
+    ctx.canUseAdvancedSubagentTools &&
+    !ctx.subagentThreadId,
   );
 }
 
@@ -482,7 +484,7 @@ export const followupTaskTool: ToolDefinition<z.infer<typeof messageSchema>> = {
   subagentOnly: true,
   mutationTracking: "none",
   requiresBlueprintApproval: false,
-  usesEngineEndpoint: true,
+  usesEngineEndpoint: false,
   execute: async (args, ctx) => {
     const persona = await followupSubagent(
       ctx.chatId,

@@ -6,8 +6,10 @@ const mocks = vi.hoisted(() => ({
   key: "test-billing-key",
   warn: vi.fn(),
 }));
-vi.mock("node-fetch", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("node-fetch")>()),
+vi.mock("@/main/provider_only_legacy_fetch", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("@/main/provider_only_legacy_fetch")
+  >()),
   default: mocks.accountFetch,
 }));
 vi.mock("@/main/settings", () => ({

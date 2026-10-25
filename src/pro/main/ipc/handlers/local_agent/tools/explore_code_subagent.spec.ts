@@ -170,7 +170,7 @@ describe("runExploreCodeSubagent", () => {
     expect(appOperationCoordinator.isBusy(987655, ["app-path"])).toBe(false);
   });
 
-  it("uses the engine helper model with BYO for code exploration and its token limits", async () => {
+  it("uses the selected provider model with BYO for code exploration and its token limits", async () => {
     const ctx = createMockContext();
     ctx.inferenceSettings = {
       ...mocks.readSettings(),
@@ -182,14 +182,16 @@ describe("runExploreCodeSubagent", () => {
       ctx,
     });
     expect(mocks.getModelClient).toHaveBeenCalledWith(
-      { provider: "openai", name: SMALL_MODEL_NAME },
-      expect.objectContaining({ proModelUsage: "pro" }),
-      expect.objectContaining({ provider: "openai", name: SMALL_MODEL_NAME }),
+      expect.objectContaining({ provider: "anthropic", name: "chosen-model" }),
+      expect.objectContaining({ proModelUsage: "api-key" }),
+      expect.objectContaining({ provider: "anthropic", name: "chosen-model" }),
     );
-    expect(mocks.getMaxTokens).toHaveBeenCalledWith({
-      provider: "openai",
-      name: SMALL_MODEL_NAME,
-    });
+    expect(mocks.getMaxTokens).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "anthropic",
+        name: "chosen-model",
+      }),
+    );
   });
   it.each(["build", "ask", "plan", "local-agent"] as const)(
     "inherits accepted %s billing settings instead of the live default",

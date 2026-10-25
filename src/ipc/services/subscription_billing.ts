@@ -4,6 +4,8 @@ import { isDyadProEnabled, type UserSettings } from "@/lib/schemas";
 export function shouldBillSubscription(settings: UserSettings): boolean {
   return (
     isDyadProEnabled(settings) &&
+    settings.proModelUsage !== "api-key" &&
+    settings.proModelUsage !== "subscription" &&
     settings.selectedChatMode !== "build" &&
     settings.selectedChatMode !== "ask" &&
     settings.selectedChatMode !== "plan"
