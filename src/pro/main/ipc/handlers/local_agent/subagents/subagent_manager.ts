@@ -1,3 +1,5 @@
+import { resolveModelSelection } from "@/ipc/utils/model_effort";
+import { getModelPreferenceKey } from "@/lib/modelEffort";
 import crypto from "node:crypto";
 import { stepCountIs, streamText, type ModelMessage, type ToolSet } from "ai";
 import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
@@ -1917,9 +1919,16 @@ async function personaModelSettings(
   acceptedSettings?: UserSettings,
 ) {
   const settings = await getChatInferenceSettings(chatId, acceptedSettings);
+  const auxiliaryModel = getAuxiliaryModel(settings);
+  const selectedModel = await resolveModelSelection({
+    model: auxiliaryModel,
+    preferredEffortLevel:
+      auxiliaryModel.effortLevel ??
+      settings.modelEffortPreferences?.[getModelPreferenceKey(auxiliaryModel)],
+  });
   return {
     ...getAuxiliarySettings(settings),
-    selectedModel: getAuxiliaryModel(settings),
+    selectedModel,
     thinkingBudget: settings.thinkingBudget,
   };
 }

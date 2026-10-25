@@ -2,6 +2,12 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { improvePromptTool, proposePromptRefinement } from "./improve_prompt";
 import type { AgentContext } from "./types";
 const mocks = vi.hoisted(() => ({ stream: vi.fn(), client: vi.fn() }));
+vi.mock("@/ipc/utils/model_effort", () => ({
+  resolveModelSelection: vi.fn(async ({ model, preferredEffortLevel }) => ({
+    ...model,
+    effortLevel: preferredEffortLevel ?? "medium",
+  })),
+}));
 vi.mock("ai", () => ({ streamText: mocks.stream }));
 vi.mock("@/ipc/utils/get_model_client", () => ({
   getModelClient: mocks.client,

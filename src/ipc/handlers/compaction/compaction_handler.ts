@@ -193,10 +193,10 @@ export async function performCompaction(
         : chat?.modelSelection
           ? await normalizeModelSelection(chat.modelSelection)
           : await resolveDefaultModelSelection(storedSettings);
-    const compactionModel = getAuxiliaryModel({
-      ...storedSettings,
-      selectedModel,
-    });
+    const compactionModel = {
+      ...getAuxiliaryModel({ ...storedSettings, selectedModel }),
+      effortLevel: selectedModel.effortLevel,
+    };
     const settings = {
       ...getAuxiliarySettings(storedSettings),
       selectedModel: compactionModel,

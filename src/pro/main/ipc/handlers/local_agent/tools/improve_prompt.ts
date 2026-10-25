@@ -1,3 +1,5 @@
+import { resolveModelSelection } from "@/ipc/utils/model_effort";
+import { getModelPreferenceKey } from "@/lib/modelEffort";
 import { streamText } from "ai";
 import { z } from "zod";
 import { getNativeProviderOptions } from "@/ipc/utils/provider_options";
@@ -45,7 +47,13 @@ export async function proposePromptRefinement(
       "Prompt improvement requires the accepted root model settings",
     );
   const settings = providerOnlyInferenceSettings(ctx.inferenceSettings);
-  const selectedModel = getAuxiliaryModel(settings);
+  const auxiliaryModel = getAuxiliaryModel(settings);
+  const selectedModel = await resolveModelSelection({
+    model: auxiliaryModel,
+    preferredEffortLevel:
+      auxiliaryModel.effortLevel ??
+      settings.modelEffortPreferences?.[getModelPreferenceKey(auxiliaryModel)],
+  });
   const { modelClient } = await getModelClient(selectedModel, settings);
   const signal = AbortSignal.any([
     ...(ctx.abortSignal ? [ctx.abortSignal] : []),
