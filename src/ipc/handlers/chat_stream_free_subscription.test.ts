@@ -9,6 +9,10 @@ import {
   type ChatFlowHarness,
 } from "@/testing/chat_flow_harness";
 
+// This is a Node harness, not an Electron process. Use the logger's supported
+// Node adapter so CJS imports do not try to boot the desktop binary.
+vi.mock("electron-log/main", async () => await import("electron-log/node"));
+
 const h = vi.hoisted(() => {
   process.env.NODE_ENV = "development";
   process.env.E2E_TEST_BUILD = "true";
@@ -109,7 +113,7 @@ afterAll(async () => {
 });
 
 it.each(["build", "ask", "plan", "local-agent"] as const)(
-  "uses the stored %s mode for Pro subscription billing rather than the default",
+  "keeps provider-owned subscription inference independent of legacy Pro settings in stored %s mode",
   async (chatMode) => {
     writeSettings({
       enableDyadPro: true,
@@ -123,17 +127,11 @@ it.each(["build", "ask", "plan", "local-agent"] as const)(
     const result = await harness.streamChat(
       "Say hello without changing files.",
     );
-    if (chatMode === "local-agent") {
-      expect(result.eventsFor("chat:response:error")).not.toHaveLength(0);
-      expect(h.credits).toHaveBeenCalled();
-      expect(h.model).not.toHaveBeenCalled();
-    } else {
-      expect(result.eventsFor("chat:response:error")).toHaveLength(0);
-      expect(h.credits).not.toHaveBeenCalled();
-      expect(h.account).toHaveBeenCalled();
-      expect(h.model).toHaveBeenCalled();
-      expect(h.model.mock.calls.every((call) => call[1] === null)).toBe(true);
-    }
+    expect(result.eventsFor("chat:response:error")).toHaveLength(0);
+    expect(h.credits).not.toHaveBeenCalled();
+    expect(h.account).toHaveBeenCalled();
+    expect(h.model).toHaveBeenCalled();
+    expect(h.model.mock.calls.every((call) => call[1] === null)).toBe(true);
   },
   30_000,
 );
@@ -158,19 +156,15 @@ it.each(["build", "local-agent"] as const)(
       "Say hello without changing files.",
     );
     expect(h.account.mock.calls.length).toBeGreaterThanOrEqual(2);
-    if (defaultChatMode === "build") {
-      expect(result.eventsFor("chat:response:error")).toHaveLength(0);
-      expect(h.model).toHaveBeenCalled();
-      expect(h.model.mock.calls.every((call) => call[1] === null)).toBe(true);
-    } else {
-      expect(result.eventsFor("chat:response:error")).not.toHaveLength(0);
-      expect(h.model).not.toHaveBeenCalled();
-    }
+    expect(result.eventsFor("chat:response:error")).toHaveLength(0);
+    expect(h.credits).not.toHaveBeenCalled();
+    expect(h.model).toHaveBeenCalled();
+    expect(h.model.mock.calls.every((call) => call[1] === null)).toBe(true);
   },
   30_000,
 );
 
-it("accepts a free subscription turn and records Basic Agent quota usage", async () => {
+it("accepts a provider-owned subscription turn without recording application quota usage", async () => {
   const result = await harness.streamChat("Say hello without changing files.");
   expect(result.eventsFor("chat:response:error")).toHaveLength(0);
   expect(h.model).toHaveBeenCalled();
@@ -178,7 +172,7 @@ it("accepts a free subscription turn and records Basic Agent quota usage", async
   const stored = await harness.db.select().from(messages);
   expect(
     stored.find((message) => message.role === "user")?.usingFreeAgentModeQuota,
-  ).toBe(true);
+  ).toBe(false);
   expect(
     stored.some(
       (message) =>
@@ -188,21 +182,23 @@ it("accepts a free subscription turn and records Basic Agent quota usage", async
   ).toBe(true);
 }, 30_000);
 
-it("blocks exhausted Basic Agent quota before subscription inference and preserves Agent mode", async () => {
+it("does not let obsolete application quota simulation block provider-owned inference", async () => {
   vi.stubEnv("DYAD_SIMULATE_FREE_AGENT_QUOTA_EXCEEDED", "true");
   try {
-    const result = await harness.streamChat("This turn must not run.");
-    expect(JSON.stringify(result.eventsFor("chat:response:error"))).toContain(
-      "FREE_AGENT_QUOTA_EXCEEDED",
+    const result = await harness.streamChat(
+      "This provider-owned turn should proceed.",
     );
-    expect(h.model).not.toHaveBeenCalled();
+    expect(result.eventsFor("chat:response:error")).toHaveLength(0);
+    expect(h.model).toHaveBeenCalled();
     expect(h.credits).not.toHaveBeenCalled();
     const chat = await harness.db
       .select()
       .from(chats)
       .where(eq(chats.id, harness.chatId));
     expect(chat[0].chatMode).toBe("local-agent");
-    expect(await harness.db.select().from(messages)).toHaveLength(0);
+    expect((await harness.db.select().from(messages)).length).toBeGreaterThan(
+      0,
+    );
   } finally {
     vi.unstubAllEnvs();
   }

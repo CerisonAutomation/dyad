@@ -114,3 +114,40 @@ it("rejects truncated proposals instead of presenting incomplete text for applic
     proposePromptRefinement({ prompt: "Build" }, ctx),
   ).rejects.toThrow("output limit");
 });
+
+it("stops waiting for an uncooperative model setup and never starts a late generation", async () => {
+  let resolve!: (value: unknown) => void;
+  mocks.client.mockReturnValueOnce(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  const controller = new AbortController();
+  const pending = proposePromptRefinement(
+    { prompt: "Build" },
+    { ...ctx, abortSignal: controller.signal },
+  );
+  await vi.waitFor(() => expect(mocks.client).toHaveBeenCalled());
+  const rejected = expect(pending).rejects.toThrow();
+  controller.abort();
+  await rejected;
+  resolve({ modelClient: { model: "late-client" } });
+  await Promise.resolve();
+  expect(mocks.stream).not.toHaveBeenCalled();
+});
+it("stops waiting for a provider that ignores cancellation during generation", async () => {
+  mocks.stream.mockReturnValueOnce({
+    text: new Promise(() => {}),
+    finishReason: new Promise(() => {}),
+  });
+  const controller = new AbortController();
+  const pending = proposePromptRefinement(
+    { prompt: "Build" },
+    { ...ctx, abortSignal: controller.signal },
+  );
+  await vi.waitFor(() => expect(mocks.stream).toHaveBeenCalled());
+  const rejected = expect(pending).rejects.toThrow();
+  controller.abort();
+  await rejected;
+  expect(mocks.stream).toHaveBeenCalledTimes(1);
+});

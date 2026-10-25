@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { registerPromptImprovementHandlers } from "./prompt_improvement_handlers";
 import { promptContracts } from "../types/prompts";
 const mocks = vi.hoisted(() => ({
@@ -134,4 +134,56 @@ it("cleans up errors and rejects empty output", async () => {
   await expect(improve(owner)).resolves.toEqual({
     prompt: "Improved notes task",
   });
+});
+
+afterEach(() => vi.useRealTimers());
+it("recovers immediately from an uncooperative hung refiner after cancellation", async () => {
+  mocks.refine.mockReturnValueOnce(new Promise(() => {}));
+  const owner = sender();
+  const pending = improve(owner);
+  const rejected = expect(pending).rejects.toThrow();
+  await cancel(owner);
+  await rejected;
+  expect(owner.listenerCount("destroyed")).toBe(0);
+  await expect(improve(owner)).resolves.toEqual({
+    prompt: "Improved notes task",
+  });
+});
+it("times out a hung settings lookup and releases the slot and timer", async () => {
+  vi.useFakeTimers();
+  mocks.chat.mockReturnValueOnce(new Promise(() => {}));
+  const owner = sender();
+  const pending = improve(owner, { ...params, chatId: 1 });
+  const rejected = expect(pending).rejects.toThrow("timed out");
+  await vi.advanceTimersByTimeAsync(90_000);
+  await rejected;
+  expect(mocks.refine).not.toHaveBeenCalled();
+  expect(owner.listenerCount("destroyed")).toBe(0);
+  expect(vi.getTimerCount()).toBe(0);
+  await expect(improve(owner)).resolves.toEqual({
+    prompt: "Improved notes task",
+  });
+  expect(vi.getTimerCount()).toBe(0);
+});
+it("does not let a late cancelled settings lookup start inference or clear a newer slot", async () => {
+  let resolve!: (value: unknown) => void;
+  mocks.chat.mockReturnValueOnce(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  const owner = sender();
+  const pending = improve(owner, { ...params, chatId: 1 });
+  const rejected = expect(pending).rejects.toThrow();
+  await cancel(owner);
+  await rejected;
+  mocks.refine.mockReturnValueOnce(new Promise(() => {}));
+  const newer = improve(owner);
+  const newerRejected = expect(newer).rejects.toThrow();
+  resolve(settings);
+  await Promise.resolve();
+  expect(mocks.refine).toHaveBeenCalledTimes(1);
+  await expect(improve(owner)).rejects.toThrow("already running");
+  await cancel(owner);
+  await newerRejected;
 });

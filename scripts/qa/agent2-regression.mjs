@@ -6,6 +6,8 @@ const pkg = JSON.parse(
 );
 const providerTargets = pkg.scripts["qa:provider-only"].split(/\s+/).slice(2);
 const additionalTargets = [
+  "src/components/RuntimeModeSelector.test.ts",
+  "src/ipc/services/codex_subscription_usage.test.ts",
   "src/components/chat/ImprovePromptButton.test.tsx",
   "src/ipc/handlers/prompt_improvement_handlers.test.ts",
   "src/prompts/coding_quality_contract.test.ts",

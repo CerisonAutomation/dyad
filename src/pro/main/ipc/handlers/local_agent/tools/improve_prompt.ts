@@ -1,3 +1,4 @@
+import { abortable } from "@/ipc/utils/abortable";
 import { resolveModelSelection } from "@/ipc/utils/model_effort";
 import { getModelPreferenceKey } from "@/lib/modelEffort";
 import { streamText } from "ai";
@@ -67,14 +68,22 @@ export async function refinePrompt(
   ]);
   signal.throwIfAborted();
   const auxiliaryModel = getAuxiliaryModel(settings);
-  const selectedModel = await resolveModelSelection({
-    model: auxiliaryModel,
-    preferredEffortLevel:
-      auxiliaryModel.effortLevel ??
-      settings.modelEffortPreferences?.[getModelPreferenceKey(auxiliaryModel)],
-  });
+  const selectedModel = await abortable(
+    resolveModelSelection({
+      model: auxiliaryModel,
+      preferredEffortLevel:
+        auxiliaryModel.effortLevel ??
+        settings.modelEffortPreferences?.[
+          getModelPreferenceKey(auxiliaryModel)
+        ],
+    }),
+    signal,
+  );
   signal.throwIfAborted();
-  const { modelClient } = await getModelClient(selectedModel, settings);
+  const { modelClient } = await abortable(
+    getModelClient(selectedModel, settings),
+    signal,
+  );
   signal.throwIfAborted();
   const versions: { iteration: number; prompt: string }[] = [];
   for (let iteration = 1; iteration <= args.iterations; iteration++) {
@@ -96,8 +105,13 @@ export async function refinePrompt(
       maxOutputTokens: 4096,
       maxRetries: 0,
     });
-    const text = (await response.text).trim();
-    if ((await response.finishReason) === "length") {
+    const [rawText, finishReason] = await abortable(
+      Promise.all([response.text, response.finishReason]),
+      signal,
+    );
+    signal.throwIfAborted();
+    const text = rawText.trim();
+    if (finishReason === "length") {
       throw new Error(
         "Prompt proposal reached the output limit. Your draft is unchanged; try a shorter task.",
       );

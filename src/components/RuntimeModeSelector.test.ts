@@ -11,21 +11,21 @@ describe("shouldShowCloudSandboxOption", () => {
     ).toBe(false);
   });
 
-  it("shows cloud sandbox when the experiment is enabled", () => {
+  it("keeps the retired cloud sandbox hidden even when the experiment is enabled", () => {
     expect(
       shouldShowCloudSandboxOption({
         runtimeMode: "host",
         cloudSandboxExperimentEnabled: true,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
-  it("keeps cloud sandbox visible when cloud mode is already active", () => {
+  it("keeps the retired cloud sandbox hidden for saved legacy cloud settings", () => {
     expect(
       shouldShowCloudSandboxOption({
         runtimeMode: "cloud",
         cloudSandboxExperimentEnabled: false,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 });
