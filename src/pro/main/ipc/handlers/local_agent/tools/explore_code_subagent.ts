@@ -136,6 +136,7 @@ export async function runExploreCodeSubagent({
     auxiliaryModel,
     settings,
     selectedModel,
+    { chatId: ctx.chatId },
   );
   const maxOutputTokens = Math.min(
     (await getMaxTokens(auxiliaryModel)) ?? SUBAGENT_MAX_OUTPUT_TOKENS,

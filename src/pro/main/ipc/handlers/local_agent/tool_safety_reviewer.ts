@@ -24,6 +24,7 @@ export class ShellReviewCatalogTooLargeError extends Error {
 /** Policy-specific decisions share transport, cancellation, and fail-closed parsing. */
 export async function reviewToolAction<D extends "ask" | "block">({
   settings,
+  chatId,
   system,
   fallback,
   signal,
@@ -31,6 +32,7 @@ export async function reviewToolAction<D extends "ask" | "block">({
   timeoutMs = TOOL_REVIEW_TIMEOUT_MS,
 }: {
   settings: UserSettings;
+  chatId?: number;
   system: string;
   fallback: D;
   signal?: AbortSignal;
@@ -69,6 +71,8 @@ export async function reviewToolAction<D extends "ask" | "block">({
       const { modelClient } = await getModelClient(
         getAuxiliaryModel(settings),
         getAuxiliarySettings(settings),
+        undefined,
+        chatId === undefined ? undefined : { chatId },
       );
       controller.signal.throwIfAborted();
       state.phase = "generation";

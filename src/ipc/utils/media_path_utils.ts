@@ -387,3 +387,27 @@ export async function resolveAttachmentLogicalPath(
   }
   return toStoredAttachmentInfoIfPresent(getDyadMediaDir(appPath), entry);
 }
+
+/** Reject pre-existing managed-directory symlinks before descending into them.
+ * Call under the app/media resource lease where one is available. This is not
+ * a sandbox for hostile processes changing the filesystem concurrently.
+ */
+export async function prepareGeneratedImageDirectory(
+  appPath: string,
+  throwIfCancelled: () => void = () => {},
+): Promise<string> {
+  const root = await fs.realpath(appPath);
+  throwIfCancelled();
+  let directory = root;
+  for (const segment of [DYAD_INTERNAL_DIR_NAME, DYAD_MEDIA_SUBDIR]) {
+    directory = path.join(directory, segment);
+    await fs.mkdir(directory, { recursive: true });
+    throwIfCancelled();
+    const stat = await fs.lstat(directory);
+    if (stat.isSymbolicLink() || !stat.isDirectory())
+      throw new Error(
+        "Generated image directories must be real directories, not symbolic links",
+      );
+  }
+  return directory;
+}

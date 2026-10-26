@@ -1,4 +1,7 @@
 // @vitest-environment node
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 import { createServer as createHttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -112,6 +115,39 @@ describe("McpManager lifecycle", () => {
         where: async () => [...mocks.rows.values()],
       }),
     }));
+  });
+
+  it("launches the shadcn catalog server in its explicitly selected project", async () => {
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), "agent2-mcp-project-"),
+    );
+    const manager = new McpManager();
+    try {
+      seedStdioServer(1);
+      Object.assign(mocks.rows.get(1)!, {
+        catalogSlug: "shadcn-ui-registry",
+        envJson: { DYAD_MCP_PROJECT_DIR: directory },
+      });
+      mocks.createMCPClient.mockResolvedValueOnce(createClient());
+      await manager.getClient(1);
+      expect(mocks.stdioOptions[0]).toMatchObject({
+        cwd: fs.realpathSync(directory),
+        command: "test-mcp-server",
+        args: ["--stdio"],
+      });
+    } finally {
+      await manager.dispose(1);
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+  it("refuses to launch the shadcn preset in an accidental process cwd", async () => {
+    seedStdioServer(1);
+    Object.assign(mocks.rows.get(1)!, { catalogSlug: "shadcn-ui-registry" });
+    await expect(new McpManager().getClient(1)).rejects.toThrow(
+      "DYAD_MCP_PROJECT_DIR",
+    );
+    expect(mocks.createMCPClient).not.toHaveBeenCalled();
+    expect(mocks.stdioOptions).toHaveLength(0);
   });
 
   it("coalesces simultaneous client initialization into one stdio launch", async () => {

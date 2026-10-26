@@ -1,226 +1,97 @@
-import { SubscriptionBillingError } from "@/shared/subscription_billing_error";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import { ChatErrorBox } from "./ChatErrorBox";
-
-const mocks = vi.hoisted(() => ({
-  openExternalUrl: vi.fn(),
-  isTrial: false as boolean | null,
-}));
-
+const mocks = vi.hoisted(() => ({ open: vi.fn() }));
 vi.mock("@/ipc/types", () => ({
-  ipc: { system: { openExternalUrl: mocks.openExternalUrl } },
+  ipc: { system: { openExternalUrl: mocks.open } },
 }));
-
-vi.mock("@/hooks/useFreeAgentQuota", () => ({
-  useFreeAgentQuota: () => ({
-    messagesLimit: 10,
-    resetTime: null,
-  }),
-}));
-
-vi.mock("@/hooks/useFreeModelQuota", () => ({
-  useFreeModelQuota: () => ({
-    messagesLimit: 5,
-    resetTime: null,
-  }),
-}));
-
-vi.mock("@/hooks/useUserBudgetInfo", () => ({
-  useUserBudgetInfo: () => ({
-    userBudget: mocks.isTrial === null ? null : { isTrial: mocks.isTrial },
-  }),
-}));
-
-describe("ChatErrorBox Basic Agent quota error", () => {
-  beforeEach(() => {
-    mocks.openExternalUrl.mockReset();
-  });
-
-  it("offers upgrade and a non-retrying Build switch", () => {
-    const onDismiss = vi.fn();
-    const onSwitchToBuildMode = vi.fn();
-
-    render(
-      <ChatErrorBox
-        error='{"type":"FREE_AGENT_QUOTA_EXCEEDED","resetTime":1787295600000}'
-        isDyadProEnabled={false}
-        onDismiss={onDismiss}
-        onSwitchToBuildMode={onSwitchToBuildMode}
-      />,
-    );
-
-    expect(
-      screen.getByText(/used all 10 free Basic Agent messages/),
-    ).toBeTruthy();
-    expect(screen.getByText(/Your quota resets at/)).toBeTruthy();
-
-    fireEvent.click(screen.getByText("Upgrade to Dyad Pro"));
-    expect(mocks.openExternalUrl).toHaveBeenCalledWith(
-      "https://dyad.sh/pro?utm_source=dyad-app&utm_medium=app&utm_campaign=free-agent-quota-exceeded",
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Switch to Build" }));
-    expect(onSwitchToBuildMode).toHaveBeenCalledOnce();
-    expect(onDismiss).not.toHaveBeenCalled();
-  });
-
-  it("explains that Dyad Free must be changed before using Build", () => {
-    render(
-      <ChatErrorBox
-        error='{"type":"FREE_AGENT_QUOTA_EXCEEDED","resetTime":1787295600000}'
-        isDyadProEnabled={false}
-        onDismiss={vi.fn()}
-      />,
-    );
-
-    expect(
-      screen.getByText(/first choose a model other than Dyad Free/),
-    ).toBeTruthy();
-    expect(
-      screen.queryByRole("button", { name: "Switch to Build" }),
-    ).toBeNull();
-  });
-});
-
-describe("ChatErrorBox error presentation", () => {
-  it("bounds long string errors in a scrollable region", () => {
-    render(
-      <ChatErrorBox
-        error={`Implementer failures:\n${"Detailed failure line\n".repeat(200)}`}
-        isDyadProEnabled
-        onDismiss={vi.fn()}
-      />,
-    );
-
-    const scrollRegion = screen
-      .getByTestId("chat-error-box")
-      .querySelector(".overflow-y-auto");
-    expect(scrollRegion?.className).toContain("max-h-64");
-    expect(scrollRegion?.className).toContain("scrollbar-on-hover");
-  });
-});
-
-describe("ChatErrorBox subscription billing errors", () => {
-  it.each([
-    [
-      "OUT_OF_CREDITS",
-      "Add credits to continue using Pro features.",
-      "Get more credits",
-      "https://academy.dyad.sh/subscription",
-    ],
-    [
-      "KEY_REJECTED",
-      "Get your current Pro key.",
-      "Open membership portal",
-      "https://academy.dyad.sh",
-    ],
-  ] as const)(
-    "offers the right recovery for %s",
-    (code, message, action, url) => {
-      mocks.openExternalUrl.mockReset();
-      render(
-        <ChatErrorBox
-          error={new SubscriptionBillingError(code).serialize()}
-          isDyadProEnabled
-          onDismiss={vi.fn()}
-          onStartNewChat={vi.fn()}
-        />,
-      );
-      expect(screen.getByText(message)).toBeTruthy();
-      expect(screen.queryByText("Start new chat")).toBeNull();
-      expect(screen.queryByText("Read docs")).toBeNull();
-      fireEvent.click(screen.getByText(action));
-      expect(mocks.openExternalUrl).toHaveBeenCalledExactlyOnceWith(url);
-    },
-  );
-});
-
-describe("ChatErrorBox exhausted credit notice", () => {
-  it.each([false, true, null])(
-    "shows actionable credit recovery (trial: %s)",
-    (isTrial) => {
-      mocks.isTrial = isTrial;
-      mocks.openExternalUrl.mockReset();
-      const onDismiss = vi.fn();
-      render(
-        <ChatErrorBox
-          error="ExceededBudget: exhausted"
-          isDyadProEnabled
-          onDismiss={onDismiss}
-          onStartNewChat={vi.fn()}
-        />,
-      );
-      expect(screen.getByText("You’re out of AI credits")).toBeTruthy();
-      expect(screen.queryByText(/this month/)).toBeNull();
-      if (isTrial !== false) {
-        expect(screen.queryByText(/Switch to the Free model/)).toBeNull();
-        expect(screen.getByText("Add credits to continue.")).toBeTruthy();
-      } else {
-        expect(
-          screen.getByText(
-            "Switch to the Free model for 5 free messages per day, or add credits to continue.",
-          ),
-        ).toBeTruthy();
-      }
-      expect(screen.queryByText("Start new chat")).toBeNull();
-      fireEvent.click(screen.getByRole("button", { name: "Get more credits" }));
-      expect(mocks.openExternalUrl).toHaveBeenCalledExactlyOnceWith(
-        "https://academy.dyad.sh/subscription",
-      );
-      fireEvent.click(
-        screen.getByRole("button", { name: "Dismiss billing notice" }),
-      );
-      expect(onDismiss).toHaveBeenCalledOnce();
-      mocks.isTrial = false;
-    },
-  );
-});
-
-describe("ChatErrorBox legacy rejected Pro key", () => {
-  it.each([false, true])(
-    "offers the membership portal (Pro enabled: %s)",
-    (isDyadProEnabled) => {
-      mocks.openExternalUrl.mockReset();
-      const onDismiss = vi.fn();
-      render(
-        <ChatErrorBox
-          error="Provider returned error: LiteLLM Virtual Key expected"
-          isDyadProEnabled={isDyadProEnabled}
-          onDismiss={onDismiss}
-          onStartNewChat={vi.fn()}
-        />,
-      );
-      expect(screen.getByText("Your Dyad Pro key was rejected")).toBeTruthy();
-      expect(screen.getByText("Get your current Pro key.")).toBeTruthy();
-      expect(screen.queryByText("Upgrade to Dyad Pro")).toBeNull();
-      expect(screen.queryByText("Start new chat")).toBeNull();
-      expect(screen.queryByText("Read docs")).toBeNull();
-      fireEvent.click(
-        screen.getByRole("button", { name: "Open membership portal" }),
-      );
-      expect(mocks.openExternalUrl).toHaveBeenCalledExactlyOnceWith(
-        "https://academy.dyad.sh",
-      );
-      fireEvent.click(
-        screen.getByRole("button", { name: "Dismiss billing notice" }),
-      );
-      expect(onDismiss).toHaveBeenCalledOnce();
-    },
-  );
-});
-
-it("recognizes a legacy rejected key inside fallback details", () => {
+beforeEach(() => vi.clearAllMocks());
+it.each([
+  '{"type":"FREE_AGENT_QUOTA_EXCEEDED","resetTime":1787295600000}',
+  "FREE_MODEL_QUOTA_EXCEEDED",
+  "dyad_free_model_quota_exceeded",
+  "Dyad Free limit",
+  "doesn't have a free quota tier",
+  "ExceededBudget: quota",
+])("replaces legacy quota upsells with provider recovery: %s", (error) => {
+  const switchMode = vi.fn();
   render(
     <ChatErrorBox
-      error={
-        'All models failed. Fallbacks=[{"error":"LiteLLM Virtual Key expected"}]'
-      }
-      isDyadProEnabled
+      error={error}
+      isDyadProEnabled={false}
+      onDismiss={vi.fn()}
+      onSwitchToBuildMode={switchMode}
+    />,
+  );
+  expect(screen.getByRole("alert").textContent).toContain(
+    "No application subscription or credits are required",
+  );
+  expect(
+    screen.queryByText(/Upgrade|Get more AI credits|membership portal/),
+  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Switch to Build" })).toBeNull();
+  expect(mocks.open).not.toHaveBeenCalled();
+  expect(switchMode).not.toHaveBeenCalled();
+});
+it.each([false, true])(
+  "uses the same provider recovery regardless of legacy entitlement %s",
+  (enabled) => {
+    render(
+      <ChatErrorBox
+        error='{"type":"SUBSCRIPTION_BILLING_ERROR","code":"OUT_OF_CREDITS"}'
+        isDyadProEnabled={enabled}
+        onDismiss={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Select a configured API-key provider",
+    );
+    expect(screen.getByRole("alert").textContent).not.toContain("Dyad");
+    expect(screen.queryByRole("link")).toBeNull();
+  },
+);
+it.each([
+  "Provider returned error: LiteLLM Virtual Key expected",
+  'All models failed. Fallbacks=[{"error":"LiteLLM Virtual Key expected"}]',
+])(
+  "recognizes rejected legacy connections without a membership link: %s",
+  (error) => {
+    render(<ChatErrorBox error={error} isDyadProEnabled onDismiss={vi.fn()} />);
+    expect(screen.getByText(/legacy connection is unavailable/)).toBeTruthy();
+    expect(screen.queryByRole("link")).toBeNull();
+  },
+);
+it("keeps ordinary provider diagnostics and makes recovery actions explicit", () => {
+  const dismiss = vi.fn(),
+    newChat = vi.fn(),
+    build = vi.fn();
+  render(
+    <ChatErrorBox
+      error="Provider returned error: 429 retry after 60 seconds"
+      isDyadProEnabled={false}
+      onDismiss={dismiss}
+      onStartNewChat={newChat}
+      onSwitchToBuildMode={build}
+    />,
+  );
+  expect(screen.getByText(/429 retry after 60 seconds/)).toBeTruthy();
+  expect(newChat).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Start new chat" }));
+  fireEvent.click(screen.getByRole("button", { name: "Switch to Build" }));
+  fireEvent.click(screen.getByRole("button", { name: "Dismiss error" }));
+  expect(newChat).toHaveBeenCalledOnce();
+  expect(build).toHaveBeenCalledOnce();
+  expect(dismiss).toHaveBeenCalledOnce();
+});
+it("opens a provider diagnostic link only after a user click", () => {
+  render(
+    <ChatErrorBox
+      error="Read [provider help](https://example.com/help)"
+      isDyadProEnabled={false}
       onDismiss={vi.fn()}
     />,
   );
-  expect(
-    screen.getByRole("button", { name: "Open membership portal" }),
-  ).toBeTruthy();
+  expect(mocks.open).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("link", { name: "provider help" }));
+  expect(mocks.open).toHaveBeenCalledWith("https://example.com/help");
 });

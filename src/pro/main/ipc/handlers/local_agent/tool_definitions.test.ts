@@ -32,6 +32,13 @@ describe("Build mode tool profile", () => {
       "reinstall_and_restart_app",
       "update_todos",
       "read_guide",
+      "web_fetch",
+      "web_crawl",
+      "inspect_preview",
+      "control_preview",
+      "run_build",
+      "run_type_checks",
+      "read_logs",
       "planning_questionnaire",
       "write_app_blueprint",
     ]);
@@ -185,7 +192,7 @@ describe("discovery versus invocation availability", () => {
     expect(JSON.stringify(result)).toContain("already run");
     expect(ctx.onXmlComplete).toHaveBeenCalled();
   });
-  it("does not turn search routing preferences into authorization while retaining Pro checks", () => {
+  it("keeps local code search invocable regardless of commercial entitlement", () => {
     const tool = TOOL_DEFINITIONS.find((tool) => tool.name === "code_search")!;
     const ctx = {
       canUseExplorerSubagent: true,
@@ -195,7 +202,7 @@ describe("discovery versus invocation availability", () => {
     expect(shouldIncludeTool(tool, ctx, {}, "invocation")).toBe(true);
     expect(
       shouldIncludeTool(tool, { ...ctx, isDyadPro: false }, {}, "invocation"),
-    ).toBe(false);
+    ).toBe(true);
   });
 });
 

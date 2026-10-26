@@ -1,3 +1,4 @@
+import { ImageGenerationSettingsSchema } from "@/shared/image_generation_config";
 import { hasProviderAgentSelection } from "./auxiliaryModel";
 import { z } from "zod";
 import {
@@ -487,6 +488,7 @@ const BaseUserSettingsFields = {
   ////////////////////////////////
   selectedModel: LargeLanguageModelSchema,
   providerSettings: z.record(z.string(), ProviderSettingSchema),
+  imageGeneration: ImageGenerationSettingsSchema.optional(),
   agentToolConsents: z.record(z.string(), AgentToolConsentSchema).optional(),
   githubUser: GithubUserSchema.optional(),
   githubAccessToken: SecretSchema.optional(),

@@ -36,7 +36,8 @@ const WORKDIR_PREFIX = "AppImageWorkDir";
  * Minimalist Forge maker for AppImages
  */
 export class MakerAppImage extends MakerBase<{ icon?: string }> {
-  override defaultPlatforms = ["linux"];
+  override defaultPlatforms: MakerBase<{ icon?: string }>["defaultPlatforms"] =
+    ["linux"];
   override name = "AppImage";
   override requiredExternalBinaries = ["mksquashfs"];
 

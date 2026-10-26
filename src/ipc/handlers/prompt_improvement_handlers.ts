@@ -47,6 +47,7 @@ export function registerPromptImprovementHandlers() {
           { prompt: params.prompt, iterations: 1 },
           settings,
           entry.controller.signal,
+          params.chatId,
         ),
         entry.controller.signal,
       );

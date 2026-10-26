@@ -1,3 +1,4 @@
+import { resolveMcpWorkingDirectory } from "./mcp_working_directory";
 import { db } from "../../db";
 import { mcpServers } from "../../db/schema";
 import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
@@ -186,6 +187,7 @@ export class McpManager {
         command: s.command,
         args,
         env,
+        cwd: resolveMcpWorkingDirectory(s.catalogSlug, env),
       });
       client = await createMCPClient({ transport: stdio });
     } else if (s.transport === "http") {

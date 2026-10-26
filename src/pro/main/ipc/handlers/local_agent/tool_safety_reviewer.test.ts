@@ -19,6 +19,7 @@ const input = {
   settings: {
     selectedModel: { provider: "custom::review", name: "configured-reviewer" },
   } as unknown as UserSettings,
+  chatId: 23,
   system: "policy",
   fallback: "block" as const,
   prepare: async () => ({ payload: "exact command" }),
@@ -47,6 +48,8 @@ describe("mandatory tool reviewer", () => {
     expect(mocks.getModelClient).toHaveBeenCalledWith(
       input.settings.selectedModel,
       input.settings,
+      undefined,
+      { chatId: 23 },
     );
     expect(mocks.streamText.mock.calls[0][0].messages[0].content).toBe(
       "exact command",
@@ -269,6 +272,8 @@ it.each(["api-key", "subscription"] as const)(
         effortLevel: "high",
       }),
       settings,
+      undefined,
+      { chatId: 23 },
     );
   },
 );

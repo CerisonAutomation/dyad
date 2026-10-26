@@ -12,6 +12,7 @@ export const SECTION_IDS = {
 } as const;
 
 export const SETTING_IDS = {
+  imageGeneration: "setting-image-generation",
   theme: "setting-theme",
   zoom: "setting-zoom",
   autoUpdate: "setting-auto-update",
@@ -295,6 +296,24 @@ export const SETTINGS_SEARCH_INDEX: SearchableSettingItem[] = [
       "gpt",
       "gemini",
       "llm",
+    ],
+    sectionId: SECTION_IDS.providers,
+    sectionLabel: "Model Providers",
+  },
+
+  {
+    id: SETTING_IDS.imageGeneration,
+    label: "Image generation",
+    description:
+      "Configure Cloudflare, ChatGPT OAuth images or a local image API",
+    keywords: [
+      "image",
+      "flux",
+      "schnell",
+      "klein",
+      "cloudflare",
+      "gpt",
+      "image generation",
     ],
     sectionId: SECTION_IDS.providers,
     sectionLabel: "Model Providers",

@@ -67,6 +67,8 @@ it("streams help using the configured model, without hosted search or a hardcode
   expect(mocks.client).toHaveBeenCalledWith(
     selectedModel,
     expect.objectContaining({ enableDyadPro: false }),
+    undefined,
+    { sessionId: "help:routing" },
   );
   const options = mocks.stream.mock.calls[0][0];
   expect(options.model).toBe("configured-client");

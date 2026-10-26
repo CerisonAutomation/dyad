@@ -36,7 +36,10 @@ import {
   OPENROUTER_APP_REFERER,
   OPENROUTER_APP_TITLE,
 } from "./openrouter_attribution";
-import { getLanguageModels } from "../shared/language_model_helpers";
+import {
+  getLanguageModels,
+  getLanguageModelProviders,
+} from "../shared/language_model_helpers";
 
 // These tests exercise provider transport/routing, not native desktop/CLI startup.
 vi.mock("../services/claude_code/model", () => ({ ClaudeCodeModel: class {} }));
@@ -842,4 +845,87 @@ describe("modelClientSupportsPdfInput", () => {
       expect(modelClientSupportsPdfInput(modelClient)).toBe(expected);
     },
   );
+});
+
+test("OpenCode Go SDK requests carry stable conversation headers and preserve authentication", async () => {
+  const sent: Headers[] = [];
+  const settings = {
+    telemetryUserId: "installation-test",
+    providerSettings: { custom: { apiKey: { value: "test-provider-key" } } },
+  } as unknown as UserSettings;
+  setModelClientFetchForTesting(async (_url, init) => {
+    sent.push(new Headers(init?.headers));
+    if (JSON.parse(String(init?.body)).stream) {
+      const chunk = {
+        id: "test",
+        model: "configured-model",
+        choices: [
+          { index: 0, delta: { content: "OK" }, finish_reason: "stop" },
+        ],
+      };
+      return new Response(
+        `data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`,
+        { headers: { "Content-Type": "text/event-stream" } },
+      );
+    }
+    return new Response(
+      JSON.stringify({
+        id: "test",
+        object: "chat.completion",
+        created: 1,
+        model: "configured-model",
+        choices: [
+          {
+            index: 0,
+            message: { role: "assistant", content: "OK" },
+            finish_reason: "stop",
+          },
+        ],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      }),
+      { headers: { "Content-Type": "application/json" } },
+    );
+  });
+  try {
+    for (const [baseURL, chatId, streaming] of [
+      ["https://opencode.ai/zen/go/v1", 11, false],
+      ["https://opencode.ai/zen/go/v1", 11, true],
+      ["https://opencode.ai/zen/go/v1", 12, false],
+      ["https://unrelated.test/v1", 11, false],
+    ] as const) {
+      vi.mocked(getLanguageModelProviders).mockResolvedValueOnce([
+        { id: "custom", name: "Custom", type: "custom", apiBaseUrl: baseURL },
+      ] as Awaited<ReturnType<typeof getLanguageModelProviders>>);
+      const { modelClient } = await getModelClient(
+        { provider: "custom", name: "configured-model" },
+        settings,
+        undefined,
+        { chatId },
+      );
+      const options = {
+        model: modelClient.model,
+        prompt: "hello",
+        maxRetries: 0,
+      };
+      const text = streaming
+        ? await streamText(options).text
+        : (await generateText(options)).text;
+      expect(text).toBe("OK");
+    }
+    expect(sent[0].get("x-opencode-session")).toBeTruthy();
+    expect(sent[0].get("x-opencode-session")).toBe(
+      sent[1].get("x-opencode-session"),
+    );
+    expect(sent[0].get("x-opencode-session")).not.toBe(
+      sent[2].get("x-opencode-session"),
+    );
+    expect(sent[3].get("x-opencode-session")).toBeNull();
+    expect(sent[3].get("x-opencode-client")).toBeNull();
+    expect(sent[3].get("user-agent")).not.toContain("Agent2");
+    expect(sent[0].get("authorization")).toBe("Bearer test-provider-key");
+    expect(sent[0].get("user-agent")).toContain("Agent2");
+    expect(sent[0].get("x-opencode-client")).toBe("agent2");
+  } finally {
+    setModelClientFetchForTesting(undefined);
+  }
 });

@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { streamText } from "ai";
-import { SMALL_MODEL_NAME } from "@/ipc/shared/language_model_constants";
 
 import { DyadErrorKind } from "@/errors/dyad_error";
 import {
@@ -88,6 +87,8 @@ describe("runExploreChatHistorySubagent", () => {
     vi.clearAllMocks();
     harness = setupChatSearchTestDb();
     mocks.readSettings.mockReturnValue({
+      proModelUsage: "api-key",
+      selectedModel: { provider: "openai", name: "fixture-selected-model" },
       enableDyadPro: true,
       providerSettings: {
         auto: {
@@ -129,6 +130,7 @@ describe("runExploreChatHistorySubagent", () => {
       expect.objectContaining({ provider: "google", name: "chosen-model" }),
       expect.objectContaining({ proModelUsage: "api-key" }),
       expect.objectContaining({ provider: "google", name: "chosen-model" }),
+      expect.objectContaining({ chatId: expect.any(Number) }),
     );
   });
   it.each(["build", "ask", "plan", "local-agent"] as const)(
@@ -152,19 +154,19 @@ describe("runExploreChatHistorySubagent", () => {
           providerSettings: ctx.inferenceSettings?.providerSettings,
         }),
         expect.any(Object),
+        expect.objectContaining({ chatId: expect.any(Number) }),
       );
     },
   );
 
-  it("throws a Precondition error when the context is not Dyad Pro", async () => {
-    // makeAgentContext defaults to isDyadPro: false.
+  it("runs with the selected provider without commercial entitlement", async () => {
     await expect(
       runExploreChatHistorySubagent({
         query: "auth decision",
         ctx: makeAgentContext(),
       }),
-    ).rejects.toMatchObject({ kind: DyadErrorKind.Precondition });
-    expect(mocks.streamText).not.toHaveBeenCalled();
+    ).resolves.toHaveProperty("report");
+    expect(mocks.streamText).toHaveBeenCalled();
   });
 
   it("throws a Precondition error when settings do not enable Dyad Pro", async () => {
@@ -211,19 +213,26 @@ describe("runExploreChatHistorySubagent", () => {
       "submit_report",
     ]);
     expect(mocks.getModelClient).toHaveBeenCalledWith(
-      { provider: "openai", name: SMALL_MODEL_NAME },
+      {
+        provider: "openai",
+        name: "fixture-selected-model",
+        connection: "api-key",
+      },
       expect.objectContaining({
         selectedModel: {
           provider: "openai",
-          name: SMALL_MODEL_NAME,
+          name: "fixture-selected-model",
+          connection: "api-key",
           effortLevel: "medium",
         },
       }),
       {
         provider: "openai",
-        name: SMALL_MODEL_NAME,
+        name: "fixture-selected-model",
+        connection: "api-key",
         effortLevel: "medium",
       },
+      expect.objectContaining({ chatId: expect.any(Number) }),
     );
   });
 

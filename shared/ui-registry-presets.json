@@ -1,0 +1,49 @@
+{
+  "verifiedAt": "2026-10-26",
+  "directorySource": "https://github.com/shadcn-ui/ui/blob/main/apps/v4/registry/directory.json",
+  "cliVersion": "4.22.1",
+  "registries": [
+    {
+      "name": "@shadcn",
+      "url": "https://ui.shadcn.com/r/styles/{style}/{name}.json",
+      "role": "Foundation",
+      "aliases": [],
+      "builtin": true
+    },
+    {
+      "name": "@coss",
+      "url": "https://coss.com/ui/r/{name}.json",
+      "role": "Origin UI successor; Base UI components",
+      "aliases": [
+        "@origin"
+      ]
+    },
+    {
+      "name": "@magicui",
+      "url": "https://magicui.design/r/{name}",
+      "role": "Animation and product UI",
+      "aliases": []
+    },
+    {
+      "name": "@kibo-ui",
+      "url": "https://www.kibo-ui.com/r/{name}.json",
+      "role": "Advanced application modules",
+      "aliases": [
+        "@kibo"
+      ]
+    },
+    {
+      "name": "@aceternity",
+      "url": "https://ui.aceternity.com/registry/{name}.json",
+      "role": "Marketing effects",
+      "aliases": []
+    },
+    {
+      "name": "@dashboardblocks",
+      "url": "https://www.dashboardblocks.com/r/{style}/{name}.json",
+      "legacyRadixUrl": "https://www.dashboardblocks.com/r/radix/{name}.json",
+      "role": "Dashboards and data apps",
+      "aliases": []
+    }
+  ]
+}

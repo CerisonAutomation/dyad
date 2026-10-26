@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   readSettings: vi.fn(),
@@ -17,10 +17,21 @@ import {
 } from "./engine_fetch";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 
+// Vitest 4 restores implementations without clearing vi.fn call history.
+// Isolate outer policy tests too, not only tests nested in this describe.
+beforeEach(() => {
+  vi.restoreAllMocks();
+  vi.clearAllMocks();
+  vi.useRealTimers();
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
+
 describe("engineFetch", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.restoreAllMocks();
     mocks.readSettings.mockReturnValue({
       providerSettings: { auto: { apiKey: { value: "test-key" } } },
     });

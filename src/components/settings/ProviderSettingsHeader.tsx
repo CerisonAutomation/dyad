@@ -26,28 +26,12 @@ interface ProviderSettingsHeaderProps {
   onOpenProviderWebsite?: () => void;
 }
 
-function getKeyButtonText({
-  isConfigured,
-  isDyad,
-}: {
-  isConfigured: boolean;
-  isDyad: boolean;
-}) {
-  if (isDyad) {
-    return isConfigured
-      ? "Manage Dyad Pro Subscription"
-      : "Setup Dyad Pro Subscription";
-  }
-  return isConfigured ? "Manage API Keys" : "Setup API Key";
-}
-
 export function ProviderSettingsHeader({
   providerDisplayName,
   isConfigured,
   isLoading,
   hasFreeTier,
   providerWebsiteUrl,
-  isDyad,
   onOpenProviderWebsite,
 }: ProviderSettingsHeaderProps) {
   const handleGetApiKeyClick = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -64,7 +48,7 @@ export function ProviderSettingsHeader({
       className="mb-4 cursor-pointer py-5 w-full ring-4 ring-primary/60 shadow-lg shadow-primary/30 border-primary/60"
     >
       <KeyRound className="mr-2 h-4 w-4" />
-      {getKeyButtonText({ isConfigured, isDyad })}
+      {isConfigured ? "Manage API Keys" : "Setup API Key"}
       <ExternalLink className="ml-2 h-4 w-4" />
     </Button>
   );

@@ -1,0 +1,11 @@
+# Rust application engineering
+
+Use for Rust application code, not instructions for contributing to the Rust compiler. Inspect Cargo.toml, Cargo.lock, rust-toolchain.toml, workspace members, edition, rust-version and enabled features first. Keep the existing runtime and dependency constraints unless the task requires a change.
+
+- Model fallible operations with Result and useful error context. Avoid unwrap/expect on external input and normal operational failures. Respect ownership and lifetimes; do not use cloning, unsafe or global mutexes as automatic fixes for compiler errors.
+- With Tokio, keep blocking filesystem/CPU work off async executor threads. Bound concurrency, queues, payloads, retries and timeouts; propagate cancellation and shut down child processes. Never hold a synchronous lock across await.
+- With Axum, match routing/extractor syntax to the installed version. Validate input and authorization at boundaries, redact secrets, scope CORS deliberately and separate public endpoints from privileged local commands. Loopback alone is not authentication.
+- Rust is useful for measured bottlenecks, native services and isolated tools. Prefer a small typed JSON/stdio or authenticated HTTP boundary to rewriting working provider SDKs. Document framing, request IDs, errors, cancellation and process ownership. Never log provider keys or change the user's provider/model.
+- Check the affected package with the available toolchain: formatting, cargo check --locked, focused cargo test --locked and Clippy as appropriate. Inspect target/features and native dependency availability. Do not launch all-target/all-feature workspace builds for a small edit without need. Report missing toolchains and unrun tests honestly.
+
+References: https://doc.rust-lang.org/book/ and installed crate docs. Context7 application-language starting point: https://context7.com/rust-lang/book/llms.txt?tokens=1500 . https://context7.com/rust-lang/rust/llms.txt?tokens=1500 also responds, but sampled results emphasize compiler/contributor workflows; do not use them as app setup instructions. Axum: https://context7.com/tokio-rs/axum/llms.txt?tokens=1000 . These unversioned references require version checks.

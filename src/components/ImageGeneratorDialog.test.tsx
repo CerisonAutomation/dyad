@@ -11,6 +11,7 @@ import { ImageGeneratorDialog } from "./ImageGeneratorDialog";
 
 const mocks = vi.hoisted(() => ({
   start: vi.fn(),
+  configured: true,
 }));
 
 function deferred<T>() {
@@ -65,18 +66,39 @@ vi.mock("@/hooks/useLoadApps", () => ({
 vi.mock("@/hooks/useGenerateImage", () => ({
   useGenerateImage: () => ({ start: mocks.start }),
 }));
-vi.mock("@/hooks/useUserBudgetInfo", () => ({
-  useUserBudgetInfo: () => ({
-    userBudget: { remaining: 1 },
-    isLoadingUserBudget: false,
+vi.mock("@/hooks/useSettings", () => ({
+  useSettings: () => ({
+    loading: false,
+    settings: mocks.configured
+      ? {
+          imageGeneration: {
+            backend: "openai-compatible",
+            providerId: "local",
+            model: "fixture-image-model",
+            baseUrl: "http://127.0.0.1:7860/v1",
+            allowPaidRemote: false,
+          },
+        }
+      : {},
   }),
 }));
-vi.mock("./ProBanner", () => ({ AiAccessBanner: () => null }));
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({
+    children,
+    to,
+    ...props
+  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { to: string }) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
+}));
 vi.mock("./AppSearchSelect", () => ({ AppSearchSelect: () => null }));
 
 describe("ImageGeneratorDialog", () => {
   beforeEach(() => {
     mocks.start.mockReset();
+    mocks.configured = true;
   });
 
   it("keeps the dialog and prompt open when submit admission is rejected", async () => {
@@ -160,4 +182,17 @@ describe("ImageGeneratorDialog", () => {
 
     expect(onOpenChange).not.toHaveBeenCalled();
   });
+});
+
+it("offers image-specific setup without a commercial gate when images are not configured", () => {
+  mocks.configured = false;
+  render(<ImageGeneratorDialog open onOpenChange={vi.fn()} defaultAppId={7} />);
+  expect(
+    screen.getByRole("link", { name: "Open image generation settings" }),
+  ).toBeTruthy();
+  expect(screen.queryByText("Pro-only feature")).toBeNull();
+  expect(
+    (screen.getByRole("button", { name: "Generate" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
 });

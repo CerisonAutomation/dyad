@@ -1,4 +1,4 @@
-import { BrowserWindow, clipboard } from "electron";
+import { BrowserWindow, clipboard, ClipboardItem } from "electron";
 import {
   discardCapture,
   getCapture,
@@ -573,7 +573,11 @@ export function registerDebugHandlers() {
   createTypedHandler(systemContracts.recopyScreenshot, async (_, params) => {
     const image = getCapture(params.captureId);
     if (!image) return { copied: false };
-    clipboard.writeImage(image);
+    await clipboard.write([
+      new ClipboardItem({
+        "image/png": new Blob([Uint8Array.from(image.toPNG())], { type: "image/png" }),
+      }),
+    ]);
     // A full-resolution picture of the window can show source, paths or an
     // open .env, and the clipboard is its last stop. Nothing reads it again.
     discardCapture(params.captureId);

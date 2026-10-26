@@ -1,3 +1,4 @@
+import { isBrowserPreview } from "@/browser_preview/adapter";
 import { useMemo, useState } from "react";
 import { Star } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -117,6 +118,7 @@ export function CatalogSection() {
                   serverBySlug,
                   connectingServerId,
                 })}
+                readOnly={isBrowserPreview()}
                 isAdding={addingSlug === entry.slug}
                 onAdd={addFromCatalog}
               />
@@ -140,6 +142,7 @@ export function CatalogSection() {
                   serverBySlug,
                   connectingServerId,
                 })}
+                readOnly={isBrowserPreview()}
                 isAdding={addingSlug === entry.slug}
                 onAdd={addFromCatalog}
               />

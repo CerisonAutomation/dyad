@@ -96,16 +96,15 @@ describe("tool exposure via shouldIncludeTool", () => {
     expect(shouldIncludeTool(readChatTool, ctx)).toBe(true);
   });
 
-  it("keeps search_chats for non-Pro, and for Pro when the explorer is filtered out", () => {
+  it("keeps direct history lookup when no explorer is eligible", () => {
     // Non-Pro: no explorer, direct search remains.
     const nonPro = makeAgentContext({ isDyadPro: false });
     expect(shouldIncludeTool(searchChatsTool, nonPro)).toBe(true);
-    // Pro in free-model mode: the engine-backed explorer is filtered, so
-    // hiding search_chats too would leave no history discovery at all.
+    // History exploration uses the selected provider, not an Engine endpoint.
     const pro = makeAgentContext({ isDyadPro: true });
     expect(
       shouldIncludeTool(searchChatsTool, pro, { freeModelMode: true }),
-    ).toBe(true);
+    ).toBe(false);
     const child = makeAgentContext({
       isDyadPro: true,
       subagentThreadId: "child-1",

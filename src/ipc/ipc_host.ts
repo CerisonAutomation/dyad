@@ -1,3 +1,5 @@
+import { app } from "electron";
+import { closeAllPreviewBrowserSessions } from "./utils/preview_browser_driver";
 import { registerAppHandlers } from "./handlers/app_handlers";
 import { registerChatHandlers } from "./handlers/chat_handlers";
 import { registerChatStreamHandlers } from "./handlers/chat_stream_handlers";
@@ -63,6 +65,9 @@ import { registerNativeThemeHandlers } from "./handlers/native_theme_handlers";
 import { registerCoolifySetupHandlers } from "./handlers/coolify_setup_handlers";
 
 export function registerIpcHandlers() {
+  app.once("before-quit", () => {
+    void closeAllPreviewBrowserSessions();
+  });
   // Register all IPC handlers by category
   registerAppHandlers();
   registerChatHandlers();

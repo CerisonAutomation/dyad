@@ -64,10 +64,15 @@ export function registerHelpBotHandlers() {
       activeHelpStreams.set(sessionId, abortController);
       const settings = providerOnlyInferenceSettings(readSettings());
       const selectedModel = await resolveDefaultModelSelection(settings);
-      const { modelClient } = await getModelClient(selectedModel, {
-        ...settings,
+      const { modelClient } = await getModelClient(
         selectedModel,
-      });
+        {
+          ...settings,
+          selectedModel,
+        },
+        undefined,
+        { sessionId: `help:${sessionId}` },
+      );
       abortController.signal.throwIfAborted();
 
       let assistantContent = "";

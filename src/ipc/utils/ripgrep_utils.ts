@@ -5,6 +5,7 @@
 import { app } from "electron";
 import path from "node:path";
 import os from "node:os";
+import fs from "node:fs";
 
 export const MAX_FILE_SEARCH_SIZE = 1024 * 1024;
 export const RIPGREP_EXCLUDED_GLOBS = [
@@ -21,6 +22,15 @@ export function getRgExecutablePath(): string {
   const isWindows = os.platform() === "win32";
   const executableName = isWindows ? "rg.exe" : "rg";
   if (!app.isPackaged) {
+    const configured = process.env.DYAD_DEV_RIPGREP_EXECUTABLE;
+    if (configured) {
+      if (!path.isAbsolute(configured) || !fs.statSync(configured).isFile())
+        throw new Error(
+          "DYAD_DEV_RIPGREP_EXECUTABLE must be an absolute executable file",
+        );
+      fs.accessSync(configured, fs.constants.X_OK);
+      return configured;
+    }
     // Dev: app.getAppPath() is the project root (same pattern as dugite)
     return path.join(
       app.getAppPath(),

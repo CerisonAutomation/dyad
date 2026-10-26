@@ -4,7 +4,6 @@ import type { ModelMessage } from "ai";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { SMALL_MODEL_NAME } from "@/ipc/shared/language_model_constants";
 
 import { appOperationCoordinator } from "@/ipc/services/app_operation_coordinator";
 import { runExploreCodeSubagent } from "./explore_code_subagent";
@@ -108,6 +107,8 @@ describe("runExploreCodeSubagent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.readSettings.mockReturnValue({
+      proModelUsage: "api-key",
+      selectedModel: { provider: "openai", name: "fixture-selected-model" },
       enableDyadPro: true,
       providerSettings: {
         auto: {
@@ -185,6 +186,7 @@ describe("runExploreCodeSubagent", () => {
       expect.objectContaining({ provider: "anthropic", name: "chosen-model" }),
       expect.objectContaining({ proModelUsage: "api-key" }),
       expect.objectContaining({ provider: "anthropic", name: "chosen-model" }),
+      expect.objectContaining({ chatId: expect.any(Number) }),
     );
     expect(mocks.getMaxTokens).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -214,6 +216,7 @@ describe("runExploreCodeSubagent", () => {
           providerSettings: ctx.inferenceSettings?.providerSettings,
         }),
         expect.any(Object),
+        expect.objectContaining({ chatId: expect.any(Number) }),
       );
     },
   );
@@ -258,19 +261,26 @@ describe("runExploreCodeSubagent", () => {
     });
 
     expect(mocks.getModelClient).toHaveBeenCalledWith(
-      { provider: "openai", name: SMALL_MODEL_NAME },
+      {
+        provider: "openai",
+        name: "fixture-selected-model",
+        connection: "api-key",
+      },
       expect.objectContaining({
         selectedModel: {
           provider: "openai",
-          name: SMALL_MODEL_NAME,
+          name: "fixture-selected-model",
+          connection: "api-key",
           effortLevel: "medium",
         },
       }),
       {
         provider: "openai",
-        name: SMALL_MODEL_NAME,
+        name: "fixture-selected-model",
+        connection: "api-key",
         effortLevel: "medium",
       },
+      expect.objectContaining({ chatId: expect.any(Number) }),
     );
     const options = vi.mocked(streamText).mock.calls[0][0] as any;
     expect(Object.keys(options.tools).sort()).toEqual([

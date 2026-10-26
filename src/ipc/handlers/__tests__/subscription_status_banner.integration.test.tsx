@@ -61,14 +61,12 @@ describe("subscription status banner (integration)", () => {
     }
   });
 
-  it("renders Academy status through the real main-process IPC handler", async () => {
+  it("does not mount or fetch retired application billing status", async () => {
     harness.mountSurface({
       route: "/",
       withSubscriptionStatusBanner: true,
     });
-    const banner = await screen.findByTestId("subscription-status-banner");
-    expect(banner.dataset.alert).toBe("subscription_paused");
-    expect(banner.textContent).toContain("Resume subscription");
-    expect(receivedAuthorization).toBe("Bearer integration-pro-key");
+    expect(screen.queryByTestId("subscription-status-banner")).toBeNull();
+    expect(receivedAuthorization).toBeUndefined();
   });
 });

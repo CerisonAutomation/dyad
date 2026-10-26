@@ -178,23 +178,14 @@ describe("ProviderSettingsPage", () => {
     });
   });
 
-  it("resumes an implicit first prompt with the new Dyad Pro default", async () => {
+  it("rejects retired hosted-provider setup without enabling billing or submitting a prompt", () => {
     mocks.hasArmedPayload = true;
-    mocks.validateProviderApiKey.mockResolvedValue(undefined);
-    mocks.updateSettings.mockResolvedValue(undefined);
-
     renderProviderSettingsPage("auto");
-    await saveApiKey("Dyad", "auto");
-
-    await waitFor(() =>
-      expect(mocks.sendFirstPrompt).toHaveBeenCalledWith({
-        providerSettings: {
-          auto: { apiKey: { value: "test-google-key" } },
-        },
-        enableDyadPro: true,
-        defaultChatMode: "local-agent",
-      }),
-    );
+    expect(screen.getByText("Provider Not Found")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Setup API Key" })).toBeNull();
+    expect(mocks.validateProviderApiKey).not.toHaveBeenCalled();
+    expect(mocks.updateSettings).not.toHaveBeenCalled();
+    expect(mocks.sendFirstPrompt).not.toHaveBeenCalled();
   });
 
   it("does not auto-submit when replacing an existing provider key", async () => {

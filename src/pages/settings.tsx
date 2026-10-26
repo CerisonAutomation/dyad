@@ -1,3 +1,4 @@
+import { ImageGenerationSettingsControl } from "@/components/settings/ImageGenerationSettings";
 import { ShellExperimentSwitch } from "@/components/ShellExperimentSwitch";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTheme } from "../contexts/ThemeContext";
@@ -146,6 +147,7 @@ export default function SettingsPage() {
             description="Connect the AI providers Dyad uses to build and run your apps."
           >
             <ProviderSettingsGrid />
+            <ImageGenerationSettingsControl />
           </SettingsSection>
 
           <SettingsSection
