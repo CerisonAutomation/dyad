@@ -2,7 +2,12 @@ import { afterEach, expect, it, vi } from "vitest";
 import { McpCatalogEntrySchema } from "@/ipc/types/mcp_catalog";
 const remote = vi.hoisted(() => vi.fn());
 vi.mock("./remote_mcp_catalog", () => ({ getRemoteMcpCatalog: remote }));
-import { BROWSER_MCP_CATALOG, getMcpCatalog } from "./builtin_mcp_catalog";
+import {
+  BROWSER_MCP_CATALOG,
+  BUILTIN_MCP_CATALOG,
+  UI_REGISTRY_MCP_CATALOG,
+  getMcpCatalog,
+} from "./builtin_mcp_catalog";
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.resetAllMocks();
@@ -12,9 +17,11 @@ it("provides pinned browser tools offline without probing Dyad", async () => {
   vi.stubEnv("DYAD_ALLOW_CLOUD", "false");
   vi.stubEnv("DYAD_MCP_CATALOG_URL", "");
   const entries = await getMcpCatalog();
-  expect(entries).toEqual(BROWSER_MCP_CATALOG);
+  expect(entries).toEqual(BUILTIN_MCP_CATALOG);
   expect(remote).not.toHaveBeenCalled();
-  for (const entry of entries) {
+  for (const entry of entries)
+    expect(McpCatalogEntrySchema.safeParse(entry).success).toBe(true);
+  for (const entry of BROWSER_MCP_CATALOG) {
     expect(McpCatalogEntrySchema.safeParse(entry).success).toBe(true);
     if (entry.transport !== "stdio")
       throw new Error("Expected local stdio tool");
@@ -42,5 +49,17 @@ it("merges a configured catalog without overriding reviewed local commands", asy
   remote.mockResolvedValue([
     { ...BROWSER_MCP_CATALOG[0], name: "unreviewed override" },
   ]);
-  expect(await getMcpCatalog()).toEqual(BROWSER_MCP_CATALOG);
+  expect(await getMcpCatalog()).toEqual(BUILTIN_MCP_CATALOG);
+});
+
+it("provides a pinned official shadcn server with explicit project targeting", () => {
+  const entry = UI_REGISTRY_MCP_CATALOG[0];
+  expect(McpCatalogEntrySchema.safeParse(entry).success).toBe(true);
+  if (entry.transport !== "stdio") throw new Error("Expected stdio");
+  expect(entry.args).toEqual(["-y", "shadcn@4.22.1", "mcp"]);
+  expect(entry.inputs).toContainEqual({
+    kind: "env",
+    name: "DYAD_MCP_PROJECT_DIR",
+    label: expect.any(String),
+  });
 });

@@ -1,3 +1,4 @@
+import { isBrowserPreview } from "@/browser_preview/adapter";
 import React, { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import { BackButton } from "@/components/ui/back-button";
@@ -9,14 +10,15 @@ import { useDeepLink } from "@/contexts/DeepLinkContext";
 const PluginsPage: React.FC = () => {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const { lastDeepLink } = useDeepLink();
+  const browserPreview = isBrowserPreview();
 
   // The dyad://add-mcp-server deep link lands on this page; open the
   // add dialog so the prefilled form (see AddPluginDialog) is visible.
   useEffect(() => {
-    if (lastDeepLink?.type === "add-mcp-server") {
+    if (!browserPreview && lastDeepLink?.type === "add-mcp-server") {
       setIsAddDialogOpen(true);
     }
-  }, [lastDeepLink?.timestamp]);
+  }, [lastDeepLink?.timestamp, browserPreview]);
 
   return (
     <div className="w-full min-h-screen px-8 py-4">
@@ -31,11 +33,25 @@ const PluginsPage: React.FC = () => {
               Connect plugins (MCP servers) to give the AI new tools.
             </p>
           </div>
-          <Button onClick={() => setIsAddDialogOpen(true)}>
+          <Button
+            onClick={() => setIsAddDialogOpen(true)}
+            disabled={browserPreview}
+            title={
+              browserPreview
+                ? "Requires the Electron desktop backend"
+                : undefined
+            }
+          >
             <Plus size={16} />
             Add Plugin
           </Button>
         </header>
+        {browserPreview && (
+          <p role="note" className="mb-6 text-sm text-muted-foreground">
+            Catalog preview only. No plugins are connected. Add, connect and run
+            plugins in the Electron desktop app.
+          </p>
+        )}
         <PluginsList
           addDialogOpen={isAddDialogOpen}
           onAddDialogOpenChange={setIsAddDialogOpen}

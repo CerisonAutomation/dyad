@@ -1,3 +1,7 @@
+import {
+  FRAMEWORK_REFERENCE_PROMPT,
+  DEFAULT_PROJECT_RULES as DEFAULT_AI_RULES,
+} from "./framework_reference_prompt";
 import path from "node:path";
 import fs from "node:fs";
 import log from "electron-log";
@@ -535,25 +539,6 @@ const BUILD_SYSTEM_PROMPT_BASE = `${BUILD_SYSTEM_PREFIX}
 
 ${BUILD_SYSTEM_POSTFIX}`;
 
-const DEFAULT_AI_RULES = `# Tech Stack
-- You are building a React application.
-- Use TypeScript.
-- Use React Router. KEEP the routes in src/App.tsx
-- Always put source code in the src folder.
-- Put pages into src/pages/
-- Put components into src/components/
-- The main page (default page) is src/pages/Index.tsx
-- UPDATE the main page to include the new components. OTHERWISE, the user can NOT see any components!
-- ALWAYS try to use the shadcn/ui library.
-- Tailwind CSS: always use Tailwind CSS for styling components. Utilize Tailwind classes extensively for layout, spacing, colors, and other design aspects.
-
-Available packages and libraries:
-- The lucide-react package is installed for icons.
-- You ALREADY have ALL the shadcn/ui components and their dependencies installed. So you don't need to install them again.
-- You have ALL the necessary Radix UI components installed.
-- Use prebuilt components from the shadcn/ui library after importing them. Note that these files shouldn't be edited, so make new components if you need to change them.
-`;
-
 const ASK_MODE_SYSTEM_PROMPT = `
 # Role
 You are a helpful AI assistant that specializes in web development, programming, and technical guidance. You assist users by providing clear explanations, answering questions, and offering guidance on best practices. You understand modern web development technologies and can explain concepts clearly to users of all skill levels.
@@ -854,7 +839,7 @@ export const getSystemPromptForChatMode = ({
   hasSupabaseProject?: boolean;
 }) => {
   if (chatMode === "ask") {
-    return ASK_MODE_SYSTEM_PROMPT;
+    return ASK_MODE_SYSTEM_PROMPT + "\n\n" + FRAMEWORK_REFERENCE_PROMPT;
   }
   // The Nitro server-layer nudge is Vite-specific. Only inject it for Vite
   // apps that haven't already enabled Nitro (`"vite-nitro"` apps already have
@@ -867,7 +852,12 @@ export const getSystemPromptForChatMode = ({
   const buildPrompt =
     BUILD_SYSTEM_PROMPT_BASE +
     (shouldAppendNitroNudge ? `\n\n${BUILD_SERVER_LAYER_NUDGE}` : "");
-  return buildPrompt + (enableTurboEditsV2 ? TURBO_EDITS_V2_SYSTEM_PROMPT : "");
+  return (
+    buildPrompt +
+    (enableTurboEditsV2 ? TURBO_EDITS_V2_SYSTEM_PROMPT : "") +
+    "\n\n" +
+    FRAMEWORK_REFERENCE_PROMPT
+  );
 };
 
 export const readAiRules = async (dyadAppPath: string) => {

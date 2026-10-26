@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { McpCatalogEntry } from "@/ipc/types/mcp_catalog";
 import { CatalogCard, type CatalogCardStatus } from "./CatalogCard";
@@ -99,4 +99,23 @@ describe("CatalogCard icon", () => {
     expect(screen.queryByTestId("plugin-icon")).toBeNull();
     expect(screen.getByTestId("plugin-icon-fallback").textContent).toBe("E");
   });
+});
+
+it("disables installation in a read-only catalog without invoking onAdd", () => {
+  const onAdd = vi.fn();
+  render(
+    <CatalogCard
+      entry={entry}
+      status="not-added"
+      isAdding={false}
+      readOnly
+      onAdd={onAdd}
+    />,
+  );
+  const button = screen.getByRole<HTMLButtonElement>("button", {
+    name: "Desktop only",
+  });
+  expect(button.disabled).toBe(true);
+  fireEvent.click(button);
+  expect(onAdd).not.toHaveBeenCalled();
 });

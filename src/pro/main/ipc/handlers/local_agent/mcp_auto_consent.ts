@@ -22,6 +22,7 @@ export interface ClassifyMcpToolConsentInput {
   args: unknown;
   recentTurns: RecentTurn[];
   settings: UserSettings;
+  chatId?: number;
   signal?: AbortSignal;
 }
 
@@ -51,6 +52,7 @@ export async function classifyMcpToolConsent(
 ): Promise<McpConsentDecision> {
   return reviewToolAction({
     settings: input.settings,
+    chatId: input.chatId,
     system: buildMcpConsentSystemPrompt(),
     fallback: "ask",
     signal: input.signal,
@@ -94,6 +96,7 @@ export function buildMcpAutoApprove(params: {
         args: params.args,
         recentTurns,
         settings: params.settings,
+        chatId: params.chatId,
         signal: params.signal,
       });
       return {

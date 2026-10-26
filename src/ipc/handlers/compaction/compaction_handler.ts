@@ -244,6 +244,7 @@ export async function performCompaction(
       compactionModel,
       settings,
       compactionModel,
+      { chatId },
     );
 
     // Generate summary

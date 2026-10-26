@@ -1,3 +1,4 @@
+import { closePreviewBrowserSession } from "@/ipc/utils/preview_browser_driver";
 import { z } from "zod";
 
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
@@ -28,6 +29,7 @@ async function executeLifecycle({
   ctx: AgentContext;
   operation: "restart" | "rebuild";
 }): Promise<void> {
+  await closePreviewBrowserSession(ctx.appId);
   await appRunActorService.executeExternalLifecycle({
     appId: ctx.appId,
     operation,

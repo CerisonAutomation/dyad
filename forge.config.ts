@@ -1,4 +1,4 @@
-import { windowsSign } from "./windowsSign";
+import { windowsSign, squirrelWindowsSign } from "./windowsSign";
 import {
   removeUnusedAppPackageFiles,
   removeUnusedCopiedResources,
@@ -172,19 +172,13 @@ const config: ForgeConfig = {
     derefSymlinks: true,
     windowsSign: isWindowsSigningEnabled ? windowsSign : undefined,
     afterCopy: [
-      (buildPath, _electronVersion, platform, arch, callback) => {
-        removeUnusedAppPackageFiles(buildPath, platform, arch).then(
-          () => callback(),
-          (error) => callback(error as Error),
-        );
+      async ({ buildPath, platform, arch }) => {
+        await removeUnusedAppPackageFiles(buildPath, platform, arch);
       },
     ],
     afterCopyExtraResources: [
-      (buildPath, _electronVersion, platform, _arch, callback) => {
-        removeUnusedCopiedResources(buildPath, platform).then(
-          () => callback(),
-          (error) => callback(error as Error),
-        );
+      async ({ buildPath, platform }) => {
+        await removeUnusedCopiedResources(buildPath, platform);
       },
     ],
     protocols: [
@@ -230,10 +224,9 @@ const config: ForgeConfig = {
       },
   makers: [
     new MakerSquirrel(
-      // @ts-expect-error - incorrect types exported by MakerSquirrel
       isWindowsSigningEnabled
         ? {
-            windowsSign,
+            windowsSign: squirrelWindowsSign,
             iconUrl:
               "https://raw.githubusercontent.com/dyad-sh/dyad/main/assets/icon/logo.ico",
             setupIcon: "./assets/icon/logo.ico",

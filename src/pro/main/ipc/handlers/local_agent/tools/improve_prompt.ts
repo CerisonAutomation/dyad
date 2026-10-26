@@ -51,7 +51,7 @@ export async function proposePromptRefinement(
     throw new Error(
       "Prompt improvement requires the accepted root model settings",
     );
-  return refinePrompt(args, ctx.inferenceSettings, ctx.abortSignal);
+  return refinePrompt(args, ctx.inferenceSettings, ctx.abortSignal, ctx.chatId);
 }
 
 /** Shared by the consented composer action and the agent tool; no tools execute here. */
@@ -59,6 +59,7 @@ export async function refinePrompt(
   input: z.input<typeof inputSchema>,
   acceptedSettings: UserSettings,
   abortSignal?: AbortSignal,
+  chatId?: number,
 ) {
   const args = inputSchema.parse(input);
   const settings = providerOnlyInferenceSettings(acceptedSettings);
@@ -81,7 +82,12 @@ export async function refinePrompt(
   );
   signal.throwIfAborted();
   const { modelClient } = await abortable(
-    getModelClient(selectedModel, settings),
+    getModelClient(
+      selectedModel,
+      settings,
+      undefined,
+      chatId === undefined ? undefined : { chatId },
+    ),
     signal,
   );
   signal.throwIfAborted();

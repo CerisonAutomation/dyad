@@ -1,3 +1,4 @@
+import { getOpenCodeHeaders, withOpenCodeHeaders } from "./opencode_headers";
 import { freeAutoCandidates } from "@/lib/modelCatalogPolicy";
 import { withAnthropicPreservedThinking } from "./anthropic_preserved_thinking";
 import type { ExternalModelAdmission } from "../services/external_model_admission";
@@ -104,7 +105,8 @@ export async function getModelClient(
   settings: UserSettings,
   modelSelectionOverride?: ModelSelection,
   context?: {
-    chatId: number;
+    chatId?: number;
+    sessionId?: string;
     autoModelCandidates?: AutoModelCandidates;
     externalModelAdmission?: ExternalModelAdmission;
   },
@@ -182,7 +184,9 @@ export async function getModelClient(
         model: await createCodexSubscriptionModel(
           modelSelection.name,
           subscriptionBillingKey(settings),
-          context,
+          context?.chatId === undefined
+            ? undefined
+            : { ...context, chatId: context.chatId },
           settings.chatgptFastMode,
         ),
         builtinProviderId: "openai",
@@ -315,7 +319,13 @@ export async function getModelClient(
       DyadErrorKind.Validation,
     );
   }
-  const regular = getRegularModelClient(model, settings, providerConfig);
+  const regular = getRegularModelClient(
+    model,
+    settings,
+    providerConfig,
+    false,
+    context?.sessionId ?? context?.chatId,
+  );
   return {
     ...regular,
     runtimeModel: model,
@@ -356,6 +366,7 @@ function getRegularModelClient(
   settings: UserSettings,
   providerConfig: LanguageModelProvider,
   includeUsage = false,
+  chatId?: number | string,
 ): {
   modelClient: ModelClient;
   backupModelClients: ModelClient[];
@@ -630,12 +641,27 @@ function getRegularModelClient(
           );
         }
         // Assume custom providers are OpenAI compatible for now
+        const fetchOptions = getModelClientFetchOption();
+        const openCodeHeaders = getOpenCodeHeaders(
+          providerConfig.apiBaseUrl,
+          settings.telemetryUserId,
+          chatId,
+        );
         const provider = createOpenAICompatible({
           name: providerConfig.id,
           includeUsage,
           baseURL: providerConfig.apiBaseUrl,
+          headers: openCodeHeaders,
           apiKey,
-          ...getModelClientFetchOption(),
+          ...fetchOptions,
+          ...(openCodeHeaders
+            ? {
+                fetch: withOpenCodeHeaders(
+                  fetchOptions.fetch ?? globalThis.fetch,
+                  openCodeHeaders,
+                ),
+              }
+            : {}),
         });
         return {
           modelClient: {

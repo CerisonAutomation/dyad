@@ -108,7 +108,11 @@ it.skipIf(process.platform === "win32")(
         await fs.readFile(path.join(directory, "result.txt"), "utf8"),
       ).toBe("partial");
       const pid = Number(result.stdout.trim());
-      expect(() => process.kill(pid, 0)).toThrow();
+      // Process-group SIGKILL delivery/reaping can lag the parent close event
+      // under CPU contention; require eventual disappearance, not same-tick reaping.
+      await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow(), {
+        timeout: 3000,
+      });
     } finally {
       await fs.rm(directory, { recursive: true, force: true });
     }

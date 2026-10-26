@@ -1,245 +1,367 @@
-import log from "electron-log/main";
-import { getRunningTestBaseUrl } from "@/ipc/handlers/tests_handlers";
-
+import log from "electron-log";
+import type { Page } from "playwright";
+import { collectPreviewDom } from "./preview_dom";
 const logger = log.scope("preview_browser_driver");
-
-/**
- * A long-lived Chromium page per running app, pointed at that app's preview
- * proxy. Dyad already runs Playwright against the same proxy URL for
- * `run_tests`; this reuses that base URL so ad-hoc inspection and
- * interaction see exactly the app the user is looking at, and so it works
- * for any dev server (Vite, Next.js, ...) rather than a specific framework.
- */
-
-type ConsoleEntry = { type: string; text: string };
-
-interface Session {
-  page: any;
-  consoleLog: ConsoleEntry[];
-  close: () => Promise<void>;
-}
-
-const sessions = new Map<number, Session>();
-/** In-flight launches, so two concurrent tool calls for one app share a page. */
-const launching = new Map<number, Promise<Session | null>>();
 const NAV_TIMEOUT_MS = 20_000;
 const ACTION_TIMEOUT_MS = 10_000;
+const NO_PREVIEW =
+  "No running preview. Start the app first, then inspect its rendered page.";
+type Entry = { type: string; text: string };
+type Session = { page: Page; close: () => Promise<void>; consoleLog: Entry[] };
+type Slot = {
+  baseUrl: string;
+  closed: boolean;
+  ready: Promise<Session | null>;
+  session?: Session;
+  tail: Promise<void>;
+};
+// One registry owns both pending launches and live pages. Closed slots cannot
+// publish a late launch into a new generation for the same app.
+const slots = new Map<number, Slot>();
+let browserLeases = 0;
+let browserModule: Promise<typeof import("playwright")> | undefined;
 
-async function launchPage() {
-  // Resolved lazily: the browser binary is only needed once an agent actually
-  // drives the preview, and a failure here must not break app startup.
-  const { chromium } = await import("playwright");
-  let browser;
-  try {
-    browser = await chromium.launch({ headless: true });
-  } catch (error) {
+let previewHost:
+  | Promise<typeof import("@/ipc/handlers/tests_handlers")>
+  | undefined;
+async function baseUrlFor(appId: number) {
+  // Avoid importing the test/preview host (and its IPC graph) at tool registration.
+  const { getRunningTestBaseUrl } = await (previewHost ??=
+    import("@/ipc/handlers/tests_handlers").catch((error) => {
+      previewHost = undefined;
+      throw error;
+    }));
+  return getRunningTestBaseUrl(appId);
+}
+export function resolvePreviewTarget(baseUrl: string, path: string): string {
+  const base = new URL(baseUrl);
+  const target = new URL(path, base);
+  if (
+    !/^https?:$/.test(target.protocol) ||
+    !/^https?:$/.test(base.protocol) ||
+    base.username ||
+    base.password ||
+    target.origin !== base.origin ||
+    target.username ||
+    target.password
+  ) {
     throw new Error(
-      "Could not start the preview browser. Playwright's Chromium is not " +
-        "installed on this machine — run `npx playwright install chromium` " +
-        `in the Dyad source tree. Underlying error: ${(error as Error).message}`,
+      "Preview navigation must stay on the running app's HTTP(S) origin. External pages and credential URLs are not allowed.",
     );
   }
-  const context = await browser.newContext({
-    viewport: { width: 1280, height: 800 },
-  });
-  const page = await context.newPage();
-  return {
-    page,
-    close: () => browser.close(),
-  };
+  return target.href;
 }
-
-/**
- * Client-rendered dev servers (Vite, Next.js) paint a splash or empty shell
- * before hydration finishes. Acting during that window sees zero elements and
- * reports a false "page is empty", so settle before observing or interacting.
- */
-async function settle(page: any) {
-  await page
-    .waitForLoadState("networkidle", { timeout: 8_000 })
-    .catch(() => undefined);
-  // React/TanStack commit after the network goes quiet; give the paint a beat.
-  await page.waitForTimeout(400);
-}
-
-async function getSession(appId: number): Promise<Session | null> {
-  const existing = sessions.get(appId);
-  if (existing) return existing;
-
-  const inFlight = launching.get(appId);
-  if (inFlight) return inFlight;
-
-  const baseUrl = getRunningTestBaseUrl(appId);
-  if (!baseUrl) {
-    logger.debug("No running preview proxy for app", appId);
-    return null;
-  }
-
-  const promise = launchSession(appId, baseUrl);
-  launching.set(appId, promise);
+async function launch(slot: Slot): Promise<Session | null> {
+  // Closing an in-flight launch must not free its resource slot prematurely.
+  // Otherwise rapid close/reopen calls can bypass the four-browser bound.
+  if (browserLeases >= 4)
+    throw new Error(
+      "Preview browser limit reached (4 apps), including launches still closing.",
+    );
+  browserLeases++;
   try {
-    return await promise;
-  } finally {
-    launching.delete(appId);
-  }
-}
-
-async function launchSession(
-  appId: number,
-  baseUrl: string,
-): Promise<Session | null> {
-  try {
-    const { page, close } = await launchPage();
-    const consoleLog: ConsoleEntry[] = [];
-    page.on("console", (msg: any) => {
-      consoleLog.push({ type: msg.type(), text: msg.text() });
-      // Keep the buffer bounded; long agent sessions otherwise grow it without
-      // limit and the console read becomes unusable.
-      if (consoleLog.length > 200)
-        consoleLog.splice(0, consoleLog.length - 200);
-    });
-    page.on("pageerror", (err: Error) => {
-      consoleLog.push({ type: "pageerror", text: err.message });
-    });
-
-    const session: Session = { page, consoleLog, close };
-    sessions.set(appId, session);
-    logger.info("Preview browser session opened for app", appId, baseUrl);
+    const session = await launchBrowser(slot);
+    if (!session) {
+      browserLeases--;
+      return null;
+    }
+    const closeBrowser = session.close;
+    let closed = false;
+    session.close = async () => {
+      if (closed) return;
+      closed = true;
+      try {
+        await closeBrowser();
+      } finally {
+        browserLeases--;
+      }
+    };
     return session;
   } catch (error) {
-    logger.error("Failed to open preview browser session", error);
-    return null;
+    browserLeases--;
+    throw error;
   }
 }
-
-export async function closePreviewBrowserSession(appId: number): Promise<void> {
-  const session = sessions.get(appId);
-  if (!session) return;
-  sessions.delete(appId);
-  await session.close().catch(() => undefined);
-}
-
-export async function closeAllPreviewBrowserSessions(): Promise<void> {
-  await Promise.all(
-    [...sessions.keys()].map((id) => closePreviewBrowserSession(id)),
-  );
-}
-
-const NO_PREVIEW_MESSAGE =
-  "The app is not currently running, so there is no preview to drive. Start the app first (preview the app), then retry.";
-
-async function currentPage(appId: number) {
-  const session = await getSession(appId);
-  if (!session) return null;
-  return { session, baseUrl: getRunningTestBaseUrl(appId)! };
-}
-
-export async function previewNavigate(appId: number, path: string) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session, baseUrl } = resolved;
-  const target = /^https?:\/\//.test(path)
-    ? path
-    : new URL(path, baseUrl).toString();
-  await session.page.goto(target, {
-    waitUntil: "domcontentloaded",
+async function launchBrowser(slot: Slot): Promise<Session | null> {
+  const { chromium } = await (browserModule ??= import("playwright").catch(
+    (error) => {
+      browserModule = undefined;
+      throw error;
+    },
+  ));
+  const browser = await chromium.launch({
+    headless: true,
+    executablePath: process.env.DYAD_PREVIEW_CHROMIUM_EXECUTABLE || undefined,
     timeout: NAV_TIMEOUT_MS,
   });
-  session.consoleLog.length = 0;
-  await settle(session.page);
-  return describePage(session.page, target);
+  try {
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+      serviceWorkers: "block",
+      acceptDownloads: false,
+    });
+    const page = await context.newPage();
+    page.setDefaultTimeout(ACTION_TIMEOUT_MS);
+    page.setDefaultNavigationTimeout(NAV_TIMEOUT_MS);
+    const session: Session = {
+      page,
+      close: () => browser.close(),
+      consoleLog: [],
+    };
+    const append = (type: string, text: string) => {
+      session.consoleLog.push({ type, text: text.slice(0, 2000) });
+      if (session.consoleLog.length > 200)
+        session.consoleLog.splice(0, session.consoleLog.length - 200);
+    };
+    page.on("close", () => {
+      // A crashed/closed page must not occupy one of the four browser leases
+      // until the agent happens to inspect that same app again.
+      for (const [appId, current] of slots) {
+        if (current === slot) {
+          void closePreviewBrowserSession(appId);
+          break;
+        }
+      }
+    });
+    page.on("console", (msg) => append(msg.type(), msg.text()));
+    page.on("pageerror", (error: Error) => append("pageerror", error.message));
+    page.on("popup", (popup) => {
+      void popup.close().catch(() => {});
+    });
+    page.on("dialog", (dialog) => {
+      void dialog.dismiss().catch(() => {});
+    });
+    await context.route("**/*", async (route) => {
+      const request = route.request();
+      if (request.isNavigationRequest()) {
+        try {
+          resolvePreviewTarget(slot.baseUrl, request.url());
+        } catch {
+          append(
+            "navigation-blocked",
+            "Blocked navigation outside the running preview origin",
+          );
+          await route.abort();
+          return;
+        }
+      }
+      await route.continue();
+    });
+    await page.goto(resolvePreviewTarget(slot.baseUrl, slot.baseUrl), {
+      waitUntil: "domcontentloaded",
+      timeout: NAV_TIMEOUT_MS,
+    });
+    if (slot.closed) {
+      await browser.close();
+      return null;
+    }
+    slot.session = session;
+    return session;
+  } catch (error) {
+    await browser.close().catch(() => {});
+    throw error;
+  }
 }
-
-export async function previewClick(appId: number, selector: string) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session } = resolved;
-  const locator = session.page.locator(selector).first();
+async function getSlot(appId: number): Promise<Slot | null> {
+  const baseUrl = await baseUrlFor(appId);
+  let slot = slots.get(appId);
+  if (
+    slot &&
+    (!baseUrl || slot.baseUrl !== baseUrl || slot.session?.page.isClosed())
+  ) {
+    await closePreviewBrowserSession(appId);
+    // Another caller may already have published the replacement while close
+    // awaited Playwright. Re-read the registry instead of overwriting it.
+    return getSlot(appId);
+  }
+  if (!baseUrl) return null;
+  if (!slot) {
+    resolvePreviewTarget(baseUrl, baseUrl);
+    if (slots.size >= 4)
+      throw new Error(
+        "Preview browser limit reached (4 apps). Close an unused preview session before opening another.",
+      );
+    slot = {
+      baseUrl,
+      closed: false,
+      ready: Promise.resolve(null),
+      tail: Promise.resolve(),
+    };
+    slots.set(appId, slot);
+    const owned = slot;
+    owned.ready = launch(owned).catch((error) => {
+      if (slots.get(appId) === owned) slots.delete(appId);
+      logger.warn("Preview launch failed; a later explicit call may retry");
+      throw error;
+    });
+  }
+  const session = await slot.ready;
+  return session && !slot.closed ? slot : null;
+}
+export async function closePreviewBrowserSession(appId: number): Promise<void> {
+  const slot = slots.get(appId);
+  if (!slot) return;
+  slot.closed = true;
+  slots.delete(appId);
+  const session = await slot.ready.catch(() => null);
+  await session?.close().catch(() => {});
+}
+export async function closeAllPreviewBrowserSessions(): Promise<void> {
+  await Promise.all([...slots.keys()].map(closePreviewBrowserSession));
+}
+async function withPage(
+  appId: number,
+  action: (session: Session, base: string) => Promise<string>,
+): Promise<string> {
+  const slot = await getSlot(appId);
+  if (!slot) return NO_PREVIEW;
+  // Parallel agent calls must not navigate/type into each other's intermediate page.
+  const result = slot.tail.then(async () => {
+    if (slot.closed || slot.session!.page.isClosed())
+      throw new Error(
+        "Preview closed. Inspect the current app again before retrying.",
+      );
+    // page.evaluate/title have no Playwright timeout. Bound the entire operation,
+    // including a page whose main thread is wedged, and discard that session.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        if (slots.get(appId) === slot) void closePreviewBrowserSession(appId);
+        reject(
+          new Error(
+            "Preview operation timed out after 30 seconds; the stuck session was closed. Inspect again to create a fresh session.",
+          ),
+        );
+      }, 30_000);
+      timer.unref?.();
+    });
+    return Promise.race([
+      action(slot.session!, slot.baseUrl),
+      deadline,
+    ]).finally(() => clearTimeout(timer));
+  });
+  slot.tail = result.then(
+    () => {},
+    () => {},
+  );
+  return result;
+}
+async function settle(page: Page) {
+  // Do not wait for networkidle: HMR, polling and analytics can keep it busy forever.
+  await page.waitForLoadState("domcontentloaded", {
+    timeout: ACTION_TIMEOUT_MS,
+  });
+  await page.waitForTimeout(150);
+}
+async function describePage(page: Page) {
+  const text = await page.evaluate(() =>
+    (document.body?.innerText ?? "").replace(/\s+/g, " ").trim().slice(0, 4000),
+  );
+  return `URL: ${page.url()}\nTitle: ${await page.title()}\nVisible text: ${text}`;
+}
+async function uniqueLocator(page: Page, selector: string) {
+  const locator = page.locator(selector);
+  const count = await locator.count();
+  if (count !== 1)
+    throw new Error(
+      `Selector must identify exactly one element (matched ${count}). Inspect DOM and use a precise selector; do not repeat an unchanged failing selector.`,
+    );
   await locator.waitFor({ state: "visible", timeout: ACTION_TIMEOUT_MS });
-  await locator.click({ timeout: ACTION_TIMEOUT_MS });
-  await settle(session.page);
-  return `Clicked ${selector}. ${await describePage(session.page, session.page.url())}`;
+  return locator;
 }
-
+export async function previewNavigate(appId: number, path: string) {
+  return withPage(appId, async ({ page, consoleLog }, base) => {
+    consoleLog.length = 0;
+    await page.goto(resolvePreviewTarget(base, path), {
+      waitUntil: "domcontentloaded",
+      timeout: NAV_TIMEOUT_MS,
+    });
+    await settle(page);
+    return describePage(page);
+  });
+}
+export async function previewClick(appId: number, selector: string) {
+  return withPage(appId, async ({ page }) => {
+    await (
+      await uniqueLocator(page, selector)
+    ).click({ timeout: ACTION_TIMEOUT_MS });
+    await settle(page);
+    return `Clicked ${selector}. ${await describePage(page)}`;
+  });
+}
 export async function previewType(
   appId: number,
   selector: string,
   text: string,
   submit: boolean,
 ) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { session } = resolved;
-  const locator = session.page.locator(selector).first();
-  await locator.waitFor({ state: "visible", timeout: ACTION_TIMEOUT_MS });
-  await locator.fill(text, { timeout: ACTION_TIMEOUT_MS });
-  if (submit) {
-    await locator.press("Enter", { timeout: ACTION_TIMEOUT_MS });
-    await settle(session.page);
-  }
-  return `Typed into ${selector}${submit ? " and pressed Enter" : ""}. ${await describePage(
-    session.page,
-    session.page.url(),
-  )}`;
+  return withPage(appId, async ({ page }) => {
+    const locator = await uniqueLocator(page, selector);
+    await locator.fill(text, { timeout: ACTION_TIMEOUT_MS });
+    if (submit) await locator.press("Enter", { timeout: ACTION_TIMEOUT_MS });
+    await settle(page);
+    return `Filled ${selector}${submit ? " and submitted" : ""}. ${await describePage(page)}`;
+  });
 }
-
-/** Read the rendered page: title, url, and the text a user would actually see. */
 export async function previewRead(appId: number) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  await settle(resolved.session.page);
-  return describePage(resolved.session.page, resolved.session.page.url());
+  return withPage(appId, async ({ page }) => {
+    await settle(page);
+    return describePage(page);
+  });
 }
-
+export async function previewDom(appId: number) {
+  return withPage(appId, async ({ page }) => {
+    await settle(page);
+    return JSON.stringify(await page.evaluate(collectPreviewDom)).slice(
+      0,
+      14000,
+    );
+  });
+}
 export async function previewConsole(appId: number) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const { consoleLog } = resolved.session;
-  if (consoleLog.length === 0)
-    return "The preview has logged no console output.";
-  return consoleLog
-    .map((entry) => `[${entry.type}] ${entry.text}`)
-    .join("\n")
-    .slice(0, 8000);
+  return withPage(
+    appId,
+    async ({ consoleLog }) =>
+      consoleLog
+        .map((e) => `[${e.type}] ${e.text}`)
+        .join("\n")
+        .slice(-8000) || "No console output.",
+  );
 }
-
-/**
- * Screenshots are returned as a data URL and saved through the same path the
- * test-runner uses, so the agent can attach them without a new transport.
- */
-/**
- * The screenshot travels as a TEXT tool result, so its size is paid for
- * repeatedly: it is retained in the SDK step state, the persisted transcript
- * and every later request of the turn. Cap it so a single retina PNG cannot
- * dominate the context window.
- */
-const MAX_PREVIEW_SCREENSHOT_CHARS = 60_000;
-
 export async function previewScreenshot(appId: number) {
-  const resolved = await currentPage(appId);
-  if (!resolved) return NO_PREVIEW_MESSAGE;
-  const dataUrl = (await resolved.session.page.screenshot({
-    type: "png",
-    fullPage: false,
-  })) as unknown as string;
-  const dataUrlWithPrefix = `data:image/png;base64,${dataUrl
-    .toString()
-    .replace(/^data:image\/png;base64,/, "")}`;
-  if (dataUrlWithPrefix.length > MAX_PREVIEW_SCREENSHOT_CHARS) {
-    return `Screenshot omitted: the image data (${dataUrlWithPrefix.length} characters) exceeds the ${MAX_PREVIEW_SCREENSHOT_CHARS}-character context budget.`;
-  }
-  return dataUrlWithPrefix;
+  return withPage(appId, async ({ page }) => {
+    const data = await page.screenshot({
+      type: "jpeg",
+      quality: 55,
+      scale: "css",
+      fullPage: false,
+      animations: "disabled",
+      timeout: ACTION_TIMEOUT_MS,
+    });
+    const result = `data:image/jpeg;base64,${Buffer.from(data).toString("base64")}`;
+    return result.length <= 60_000
+      ? result
+      : "Screenshot exceeds the 60,000-character context budget. Inspect DOM or visible text instead.";
+  });
 }
 
-async function describePage(page: any, url: string) {
-  const title = await page.title().catch(() => "");
-  const text = (await page.evaluate(() => document.body?.innerText ?? ""))
-    .toString()
-    .replace(/\s+/g, " ")
-    .trim();
-  return [
-    `URL: ${url}`,
-    `Title: ${title}`,
-    `Visible text: ${text.slice(0, 4000)}`,
-  ].join("\n");
+export async function previewViewport(
+  appId: number,
+  width: number,
+  height: number,
+) {
+  if (
+    !Number.isInteger(width) ||
+    width < 320 ||
+    width > 1920 ||
+    !Number.isInteger(height) ||
+    height < 240 ||
+    height > 1200
+  )
+    throw new Error("Viewport must be 320–1920 by 240–1200 pixels.");
+  return withPage(appId, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await settle(page);
+    return `Viewport ${width}x${height}. ${await describePage(page)}`;
+  });
 }

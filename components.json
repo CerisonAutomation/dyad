@@ -17,5 +17,14 @@
     "lib": "@/lib",
     "hooks": "@/hooks"
   },
-  "iconLibrary": "lucide"
+  "iconLibrary": "lucide",
+  "registries": {
+    "@coss": "https://coss.com/ui/r/{name}.json",
+    "@origin": "https://coss.com/ui/r/{name}.json",
+    "@magicui": "https://magicui.design/r/{name}",
+    "@kibo-ui": "https://www.kibo-ui.com/r/{name}.json",
+    "@kibo": "https://www.kibo-ui.com/r/{name}.json",
+    "@aceternity": "https://ui.aceternity.com/registry/{name}.json",
+    "@dashboardblocks": "https://www.dashboardblocks.com/r/radix/{name}.json"
+  }
 }

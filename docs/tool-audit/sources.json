@@ -1,0 +1,456 @@
+{
+  "scope": "Registered tool source files; sibling presence is not execution coverage",
+  "tools": [
+    {
+      "symbol": "writeFileTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/write_file.ts",
+      "siblingTests": [],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "searchReplaceTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/search_replace.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/search_replace.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "copyFileTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/copy_file.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/copy_file.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "deleteFileTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/delete_file.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/delete_file.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "renameFileTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/rename_file.ts",
+      "siblingTests": [],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "addDependencyTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/add_dependency.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/add_dependency.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "executeSqlTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/execute_sql.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/execute_sql.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "readFileTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/read_file.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/read_file.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "listFilesTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/list_files.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/list_files.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "gitStatusTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/git.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/git.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "gitDiffTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/git.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/git.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "gitLogTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/git.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/git.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "gitShowCommitTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/git.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/git.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "gitShowFileTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/git.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/git.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "gitRestoreFileTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/git.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/git.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "grepTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/grep.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/grep.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "codeSearchTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/code_search.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/code_search.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "exploreChatHistoryTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/explore_chat_history.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/explore_chat_history.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "searchChatsTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/search_chats.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/search_chats.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "readChatTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/read_chat.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/read_chat.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "exploreCodeTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/subagent_tools.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/subagent_tools.test.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "spawnAgentTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/subagent_tools.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/subagent_tools.test.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "listAgentsTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/subagent_tools.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/subagent_tools.test.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "waitAgentsTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/subagent_tools.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/subagent_tools.test.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "cancelAgentTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/subagent_tools.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/subagent_tools.test.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "sendMessageTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/subagent_tools.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/subagent_tools.test.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "followupTaskTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/subagent_tools.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/subagent_tools.test.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "getSupabaseProjectInfoTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/get_supabase_project_info.ts",
+      "siblingTests": [],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "getNeonProjectInfoTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/get_neon_project_info.ts",
+      "siblingTests": [],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "getDatabaseTableSchemaTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/get_database_table_schema.ts",
+      "siblingTests": [],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "setChatSummaryTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/set_chat_summary.ts",
+      "siblingTests": [],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "addIntegrationTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/add_integration.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/add_integration.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "enableNitroTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/enable_nitro.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/enable_nitro.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "readLogsTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/read_logs.ts",
+      "siblingTests": [],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "inspectPreviewTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/preview.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/preview.test.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "controlPreviewTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/preview.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/preview.test.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "webSearchTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/web_search.ts",
+      "siblingTests": [],
+      "legacyEngineCallInSource": true
+    },
+    {
+      "symbol": "webCrawlTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/web_crawl.ts",
+      "siblingTests": [],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "webFetchTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/web_fetch.ts",
+      "siblingTests": [],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "generateImageTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/generate_image.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/generate_image.test.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "updateTodosTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/update_todos.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/update_todos.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "runTypeChecksTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/run_type_checks.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/run_type_checks.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "runPreCommitTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/run_pre_commit.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/run_pre_commit.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "runShellTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/run_shell.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/run_shell.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "runBuildTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/run_build.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/run_build.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "runTestsTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/run_tests.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/run_tests.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "generateTestAssertionsTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/generate_test_assertions.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/generate_test_assertions.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "restartAppTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/app_lifecycle.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/app_lifecycle.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "reinstallAndRestartAppTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/app_lifecycle.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/app_lifecycle.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "readGuideTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/read_guide.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/read_guide.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "improvePromptTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/improve_prompt.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/improve_prompt.test.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "executeSandboxScriptTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/execute_sandbox_script.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/execute_sandbox_script.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "searchMcpToolsTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/search_mcp_tools.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/search_mcp_tools.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "getMcpToolSchemaTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/get_mcp_tool_schema.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/get_mcp_tool_schema.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "suggestPluginTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/suggest_plugin.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/suggest_plugin.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "planningQuestionnaireTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/planning_questionnaire.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/planning_questionnaire.test.ts",
+        "src/pro/main/ipc/handlers/local_agent/tools/planning_questionnaire.spec.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "writePlanTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/write_plan.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/write_plan.test.ts"
+      ],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "exitPlanTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/exit_plan.ts",
+      "siblingTests": [],
+      "legacyEngineCallInSource": false
+    },
+    {
+      "symbol": "writeAppBlueprintTool",
+      "source": "src/pro/main/ipc/handlers/local_agent/tools/write_app_blueprint.ts",
+      "siblingTests": [
+        "src/pro/main/ipc/handlers/local_agent/tools/write_app_blueprint.test.ts"
+      ],
+      "legacyEngineCallInSource": false
+    }
+  ]
+}

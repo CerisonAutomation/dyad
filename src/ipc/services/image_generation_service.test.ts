@@ -18,7 +18,14 @@ vi.mock("@/main/settings", async (importOriginal) => {
     ...actual,
     readSettings: () => ({
       ...actual.DEFAULT_SETTINGS,
-      providerSettings: { auto: { apiKey: { value: "test-api-key" } } },
+      providerSettings: { images: { apiKey: { value: "test-api-key" } } },
+      imageGeneration: {
+        backend: "openai-compatible",
+        providerId: "images",
+        model: "fixture-image-model",
+        baseUrl: "https://example.com/v1",
+        allowPaidRemote: true,
+      },
     }),
   };
 });
@@ -183,7 +190,7 @@ describe("ImageGenerationService", () => {
     );
 
     await expect(generation).rejects.toMatchObject({
-      message: "Image download timed out. Please try again.",
+      message: "Image generation timed out. Please try again.",
       kind: DyadErrorKind.External,
     });
     await expect(cancel("download-timeout")).resolves.toEqual({
@@ -209,9 +216,8 @@ describe("ImageGenerationService", () => {
     );
 
     await expect(generate("download-network-failure")).rejects.toMatchObject({
-      message: "Failed to download generated image.",
+      message: "Failed to read a valid image from the configured provider.",
       kind: DyadErrorKind.External,
-      cause: expect.any(TypeError),
     });
   });
 
@@ -271,10 +277,16 @@ describe("ImageGenerationService", () => {
           { status: 200 },
         ),
       )
-      .mockResolvedValueOnce({
-        ok: true,
-        arrayBuffer: () => body.promise,
-      });
+      .mockResolvedValueOnce(
+        new Response(
+          new ReadableStream({
+            async start(controller) {
+              controller.enqueue(new Uint8Array(await body.promise));
+              controller.close();
+            },
+          }),
+        ),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     const generation = generate("download-body-phase");
@@ -296,7 +308,12 @@ describe("ImageGenerationService", () => {
         new Response(
           JSON.stringify({
             created: 1,
-            data: [{ b64_json: Buffer.from("image").toString("base64") }],
+            data: [
+              {
+                b64_json:
+                  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=",
+              },
+            ],
           }),
           { status: 200 },
         ),
@@ -335,7 +352,12 @@ describe("ImageGenerationService", () => {
         new Response(
           JSON.stringify({
             created: 1,
-            data: [{ b64_json: Buffer.from("image").toString("base64") }],
+            data: [
+              {
+                b64_json:
+                  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=",
+              },
+            ],
           }),
           { status: 200 },
         ),
@@ -384,7 +406,12 @@ describe("ImageGenerationService", () => {
         new Response(
           JSON.stringify({
             created: 1,
-            data: [{ b64_json: Buffer.from("image").toString("base64") }],
+            data: [
+              {
+                b64_json:
+                  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=",
+              },
+            ],
           }),
           { status: 200 },
         ),
@@ -440,7 +467,12 @@ describe("ImageGenerationService", () => {
         new Response(
           JSON.stringify({
             created: 1,
-            data: [{ b64_json: Buffer.from("image").toString("base64") }],
+            data: [
+              {
+                b64_json:
+                  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=",
+              },
+            ],
           }),
           { status: 200 },
         ),

@@ -1,3 +1,5 @@
+import { inspectPreviewTool, controlPreviewTool } from "./tools/preview";
+import { ToolLoopGuard } from "./tool_loop_guard";
 import { hasProviderAgentSelection } from "@/lib/auxiliaryModel";
 import { withReferencedAppRead } from "./tools/referenced_app_read";
 import { recordShellReviewOutcome } from "./shell_review_history";
@@ -182,6 +184,8 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   addIntegrationTool,
   enableNitroTool,
   readLogsTool,
+  inspectPreviewTool,
+  controlPreviewTool,
   webSearchTool,
   webCrawlTool,
   webFetchTool,
@@ -443,7 +447,8 @@ export interface BuildAgentToolSetOptions {
   /**
    * Selects the fail-closed surface for the active writable mode. Build mode
    * intentionally exposes only the tools needed to create an app without
-   * Agent-only orchestration, Engine, diagnostics, or verification tools.
+   * Agent-only orchestration or Engine endpoints. Bounded preview and local
+   * diagnostics/verification are available to validate builder results.
    */
   toolProfile?: "agent" | "build";
   /**
@@ -493,6 +498,13 @@ export const BUILD_MODE_TOOL_NAMES = [
   "reinstall_and_restart_app",
   "update_todos",
   "read_guide",
+  "web_fetch",
+  "web_crawl",
+  "inspect_preview",
+  "control_preview",
+  "run_build",
+  "run_type_checks",
+  "read_logs",
   "planning_questionnaire",
   "write_app_blueprint",
 ] as const satisfies readonly AgentToolName[];
@@ -767,8 +779,17 @@ export function shouldIncludeTool(
   if (options.basicAgentMode && PRO_AGENT_ONLY_TOOLS.has(tool.name)) {
     return false;
   }
-  if (options.freeModelMode && tool.usesEngineEndpoint) {
-    return false;
+  // Provider-owned turns cannot use a legacy Engine adapter. Enforce this
+  // during both discovery and invocation, even if a stale entitlement is true.
+  if (tool.usesEngineEndpoint) {
+    const source = (ctx.inferenceSettings ?? readSettings()).proModelUsage;
+    if (
+      options.freeModelMode ||
+      source === "api-key" ||
+      source === "subscription"
+    ) {
+      return false;
+    }
   }
   if (
     tool.subagentOnly &&
@@ -857,6 +878,7 @@ export function buildAgentToolSet(
   options: BuildAgentToolSetOptions = {},
 ) {
   const toolSet: Record<string, any> = {};
+  const loopGuard = new ToolLoopGuard();
   if (shouldIncludeTool(runShellTool, ctx, options)) {
     ctx.shellReviewContext = {
       tools: TOOL_DEFINITIONS.filter((tool) => tool.name !== "run_shell").map(
@@ -885,6 +907,8 @@ export function buildAgentToolSet(
         const toolCallId = executionOptions?.toolCallId;
         let presentationXml = "";
         let executionStarted = false;
+        let outcomeRecorded = false;
+        let loopArgs = args;
         const invocationCtx =
           toolCallId && ctx.onToolActivity
             ? {
@@ -933,6 +957,9 @@ export function buildAgentToolSet(
             args,
             invocationCtx,
           );
+
+          loopArgs = processedArgs;
+          loopGuard.assertAllowed(tool.name, processedArgs);
 
           if (toolCallId && invocationCtx.onToolActivity) {
             presentationXml = tool.buildXml?.(processedArgs, false) ?? "";
@@ -983,6 +1010,7 @@ export function buildAgentToolSet(
                 DyadErrorKind.UserCancelled,
               );
             }
+            loopGuard.assertAllowed(tool.name, processedArgs);
             // Track file edit tool usage before execution to capture all attempts
             // (including failures) for retry/fallback telemetry
             trackFileEditTool(invocationCtx, tool.name, processedArgs);
@@ -993,6 +1021,14 @@ export function buildAgentToolSet(
               invocationCtx,
               (readCtx) => tool.execute(processedArgs, readCtx),
             );
+            loopGuard.record(
+              tool.name,
+              processedArgs,
+              result,
+              false,
+              toolModifiesState(tool, invocationCtx),
+            );
+            outcomeRecorded = true;
             recordShellReviewOutcome(ctx, tool.name, processedArgs, { result });
 
             // Only completed mutations unblock run_tests. Failed tool calls are
@@ -1035,6 +1071,15 @@ export function buildAgentToolSet(
             ? await withTrackedMutation(invocationCtx, invoke)
             : await invoke();
         } catch (error) {
+          if (executionStarted && !outcomeRecorded) {
+            loopGuard.record(
+              tool.name,
+              loopArgs,
+              getToolErrorSummary(error),
+              true,
+              toolModifiesState(tool, invocationCtx),
+            );
+          }
           recordShellReviewOutcome(ctx, tool.name, args, {
             error,
             executed: executionStarted,

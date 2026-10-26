@@ -208,6 +208,7 @@ export async function reviewShellCommand(
   const evidence: InspectionEvidence = new Map();
   const result = await reviewToolAction({
     settings: ctx.inferenceSettings ?? readSettings(),
+    chatId: ctx.chatId,
     system: buildShellReviewPrompt(),
     fallback: "block",
     timeoutMs: SHELL_REVIEW_TIMEOUT_MS,

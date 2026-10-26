@@ -13,6 +13,7 @@ vi.mock("@/ipc/utils/get_model_client", () => ({
   getModelClient: mocks.client,
 }));
 const ctx = {
+  chatId: 17,
   inferenceSettings: {
     selectedModel: {
       provider: "anthropic",
@@ -40,6 +41,8 @@ it("uses the accepted model and API source without legacy routing", async () => 
       effortLevel: "high",
     }),
     expect.objectContaining({ enableDyadPro: false }),
+    undefined,
+    { chatId: 17 },
   );
   expect(mocks.stream.mock.calls[0][0]).toMatchObject({
     model: "selected-client",

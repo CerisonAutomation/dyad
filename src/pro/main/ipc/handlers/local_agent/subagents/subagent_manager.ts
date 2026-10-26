@@ -1790,7 +1790,12 @@ async function runModel(
     params.chatId,
     params.inferenceSettings,
   );
-  const modelInfo = await getModelClient(settings.selectedModel, settings);
+  const modelInfo = await getModelClient(
+    settings.selectedModel,
+    settings,
+    undefined,
+    { chatId: params.chatId },
+  );
   const history = await buildModelHistory(params.threadId, params.assignment);
   let streamError: unknown;
   const result = streamText({
@@ -1945,7 +1950,9 @@ async function preflightPersonaModel(
   );
 
   try {
-    await getModelClient(settings.selectedModel, settings);
+    await getModelClient(settings.selectedModel, settings, undefined, {
+      chatId,
+    });
   } catch (error) {
     throw new DyadError(
       `${persona} could not start because ${settings.selectedModel.name} is not configured. Check your selected model and credentials and try again.`,

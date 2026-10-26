@@ -9,16 +9,24 @@ import {
   escapeXmlAttr,
   escapeXmlContent,
 } from "./types";
-import { engineFetch } from "./engine_fetch";
-import { DYAD_MEDIA_DIR_NAME } from "@/ipc/utils/media_path_utils";
-import { ImageGenerationApiResponseSchema } from "@/ipc/types/image_generation";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import { readSettings } from "@/main/settings";
+import {
+  generateProviderImage,
+  isProviderImageGenerationConfigured,
+} from "@/ipc/utils/provider_image_generation";
+import {
+  DYAD_MEDIA_DIR_NAME,
+  prepareGeneratedImageDirectory,
+} from "@/ipc/utils/media_path_utils";
 
 const logger = log.scope("generate_image");
 
 const generateImageSchema = z.object({
   prompt: z
     .string()
+    .trim()
+    .min(1)
+    .max(12000)
     .describe(
       "A detailed, descriptive prompt for the image to generate. Be specific about colors, composition, style, mood, and subject matter. Avoid generic or vague descriptions.",
     ),
@@ -47,71 +55,32 @@ Write detailed, descriptive prompts. Be specific about:
 The tool returns the file path in .dyad/media. Use the copy_file tool to copy it to the appropriate location in the project (e.g., public/assets/) and reference that path in your code.
 `;
 
-async function callGenerateImage(
-  prompt: string,
-  ctx: Pick<AgentContext, "dyadRequestId" | "abortSignal">,
-): Promise<z.infer<typeof ImageGenerationApiResponseSchema>["data"][number]> {
-  const response = await engineFetch(ctx, "/images/generations", {
-    method: "POST",
-    body: JSON.stringify({
-      prompt,
-      model: "dyad/image-gen",
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Image generation failed: ${response.status} ${response.statusText} - ${errorText}`,
-    );
-  }
-
-  const data = ImageGenerationApiResponseSchema.parse(await response.json());
-
-  if (!data.data || data.data.length === 0) {
-    throw new DyadError(
-      "Image generation returned no results",
-      DyadErrorKind.External,
-    );
-  }
-
-  return data.data[0];
-}
-
 async function saveGeneratedImage(
-  imageData: z.infer<typeof ImageGenerationApiResponseSchema>["data"][number],
+  image: { bytes: Buffer; extension: string },
   appPath: string,
+  signal?: AbortSignal,
 ): Promise<string> {
-  const mediaDir = path.join(appPath, DYAD_MEDIA_DIR_NAME);
-  await fs.mkdir(mediaDir, { recursive: true });
-
-  const hash = crypto.randomBytes(8).toString("hex");
-  const timestamp = Date.now();
-  const fileName = `generated-${timestamp}-${hash}.png`;
+  signal?.throwIfAborted();
+  const mediaDir = await prepareGeneratedImageDirectory(appPath, () =>
+    signal?.throwIfAborted(),
+  );
+  const fileName = `generated-${Date.now()}-${crypto.randomBytes(8).toString("hex")}.${image.extension}`;
   const filePath = path.join(mediaDir, fileName);
-  const relativePath = path.join(DYAD_MEDIA_DIR_NAME, fileName);
-
-  if (imageData.b64_json) {
-    const buffer = Buffer.from(imageData.b64_json, "base64");
-    await fs.writeFile(filePath, buffer);
-  } else if (imageData.url) {
-    const response = await fetch(imageData.url);
-    if (!response.ok) {
-      throw new DyadError(
-        `Failed to download generated image: ${response.status}`,
-        DyadErrorKind.External,
-      );
-    }
-    const arrayBuffer = await response.arrayBuffer();
-    await fs.writeFile(filePath, Buffer.from(arrayBuffer));
-  } else {
-    throw new DyadError(
-      "Image generation returned no image data",
-      DyadErrorKind.External,
-    );
+  const temporaryPath = `${filePath}.tmp`;
+  let published = false;
+  try {
+    await fs.writeFile(temporaryPath, image.bytes, { signal, flag: "wx" });
+    signal?.throwIfAborted();
+    await fs.rename(temporaryPath, filePath);
+    published = true;
+    signal?.throwIfAborted();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST")
+      await fs.rm(temporaryPath, { force: true });
+    if (published) await fs.rm(filePath, { force: true });
+    throw error;
   }
-
-  return relativePath;
+  return path.join(DYAD_MEDIA_DIR_NAME, fileName);
 }
 
 export const generateImageTool: ToolDefinition<
@@ -120,13 +89,17 @@ export const generateImageTool: ToolDefinition<
   name: "generate_image",
   description: DESCRIPTION,
   inputSchema: generateImageSchema,
-  defaultConsent: "always",
+  defaultConsent: "ask",
   modifiesState: true,
-  usesEngineEndpoint: true,
+  usesEngineEndpoint: false,
 
-  isEnabled: (ctx) => ctx.isDyadPro,
+  isEnabled: (ctx) =>
+    isProviderImageGenerationConfigured(
+      ctx.inferenceSettings ?? readSettings(),
+    ),
 
-  getConsentPreview: (args) => `Generate image: "${args.prompt}"`,
+  getConsentPreview: (args) =>
+    `Generate image with your configured image provider (account pricing/quotas apply; no fallback): "${args.prompt}"`,
 
   shouldTrackMutation: (_args, result) =>
     result.startsWith("Image generated and saved"),
@@ -138,16 +111,26 @@ export const generateImageTool: ToolDefinition<
   },
 
   execute: async (args, ctx: AgentContext) => {
-    logger.log(`Executing image generation with prompt: ${args.prompt}`);
+    logger.log(
+      "Generating image with the explicitly configured image provider",
+    );
 
     ctx.onXmlStream(
       `<dyad-image-generation prompt="${escapeXmlAttr(args.prompt)}">`,
     );
 
     try {
-      const imageData = await callGenerateImage(args.prompt, ctx);
+      const imageData = await generateProviderImage(
+        ctx.inferenceSettings ?? readSettings(),
+        args.prompt,
+        ctx.abortSignal,
+      );
 
-      const relativePath = await saveGeneratedImage(imageData, ctx.appPath);
+      const relativePath = await saveGeneratedImage(
+        imageData,
+        ctx.appPath,
+        ctx.abortSignal,
+      );
 
       ctx.onXmlComplete(
         `<dyad-image-generation prompt="${escapeXmlAttr(args.prompt)}" path="${escapeXmlAttr(relativePath)}">${escapeXmlContent(relativePath)}</dyad-image-generation>`,

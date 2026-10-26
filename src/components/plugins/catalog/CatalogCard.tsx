@@ -41,10 +41,12 @@ export function CatalogCard({
   status,
   isAdding,
   onAdd,
+  readOnly = false,
 }: {
   entry: McpCatalogEntry;
   status: CatalogCardStatus;
   isAdding: boolean;
+  readOnly?: boolean;
   onAdd: (entry: McpCatalogEntry) => void;
 }) {
   return (
@@ -84,8 +86,15 @@ export function CatalogCard({
             {sourceOf(entry)}
           </span>
           {status === "not-added" ? (
-            <Button size="sm" onClick={() => onAdd(entry)} disabled={isAdding}>
-              {isAdding ? "Adding…" : "Add"}
+            <Button
+              size="sm"
+              onClick={() => onAdd(entry)}
+              disabled={isAdding || readOnly}
+              title={
+                readOnly ? "Requires the Electron desktop backend" : undefined
+              }
+            >
+              {readOnly ? "Desktop only" : isAdding ? "Adding…" : "Add"}
             </Button>
           ) : (
             // A live region only where the label can still change, so a

@@ -1,3 +1,5 @@
+import { BROWSER_MCP_PRESETS } from "../../shared/browser_mcp_presets";
+import { UI_REGISTRY_MCP_PRESETS } from "../../shared/ui_registry_mcp_presets";
 /// <reference types="vite/client" />
 import { themesData } from "../shared/themes";
 import { localTemplatesData } from "../shared/templates";
@@ -50,6 +52,17 @@ export async function invokeBrowserPreview(channel: string): Promise<unknown> {
     case "get-chats":
     case "search-chats":
       return [];
+    case "mcp:list-servers":
+    case "mcp:get-tool-consents":
+      return [];
+    case "mcp:list-catalog":
+      return {
+        entries: structuredClone([
+          ...BROWSER_MCP_PRESETS,
+          ...UI_REGISTRY_MCP_PRESETS,
+        ]),
+        addedSlugs: [],
+      };
     case "get-system-platform":
       return "linux";
     case "get-app-version":

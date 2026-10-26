@@ -67,3 +67,61 @@ describe("readGuideTool", () => {
     expect(guide).not.toContain("[[PREVIEW_COOKIE_GUIDANCE]]");
   });
 });
+
+describe("framework and Context7 guides", () => {
+  const titles = [
+    ["framework-rust", "# Rust application engineering"],
+    ["framework-svelte", "# Svelte and SvelteKit application engineering"],
+    ["framework-flutter", "# Flutter and Dart application engineering"],
+    ["framework-tauri", "# Tauri desktop migration and security"],
+    [
+      "framework-selection",
+      "# Technology selection: evidence, not framework hype",
+    ],
+    ["context7-reference", "# Context7 reference retrieval"],
+    ["ui-registries", "# Six-source React UI registries"],
+  ];
+  it.each(titles)(
+    "loads %s independently of web-framework filters/settings",
+    async (guide, title) => {
+      vi.mocked(readSettings).mockClear();
+      for (const frameworkType of [
+        "nextjs",
+        "vite",
+        "vite-nitro",
+        null,
+      ] as const) {
+        const content = await readGuideTool.execute({ guide }, {
+          frameworkType,
+        } as AgentContext);
+        expect(content).toContain(title);
+        expect(content).toContain("https://context7.com/");
+      }
+      expect(readSettings).not.toHaveBeenCalled();
+    },
+  );
+  it("records redirects, stale results and separate research/app reachability", async () => {
+    const content = await readGuideTool.execute(
+      { guide: "context7-reference" },
+      {} as AgentContext,
+    );
+    for (const term of [
+      "SSL_ERROR_SYSCALL",
+      "/flutter/website",
+      "legacy example",
+      "untrusted data",
+      "Never send private source",
+      "not an enforceable response-size ceiling",
+      "does NOT certify reachability",
+    ])
+      expect(content).toContain(term);
+  });
+  it.each(["__proto__", "constructor", "toString", "missing-guide"])(
+    "rejects unknown guide %s",
+    async (guide) => {
+      await expect(
+        readGuideTool.execute({ guide }, {} as AgentContext),
+      ).rejects.toThrow("not found");
+    },
+  );
+});

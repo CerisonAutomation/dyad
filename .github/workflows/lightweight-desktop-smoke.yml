@@ -1,0 +1,54 @@
+name: Lightweight desktop smoke
+
+on:
+  push:
+    branches: [arena/cc530196-dyad]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      CI: "true"
+      PLAYWRIGHT_PARALLELISM: "1"
+      PLAYWRIGHT_RETRIES: "0"
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      LOCAL_GIT_DIRECTORY: /usr
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install one virtual display and Electron system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgtk-3-0t64 libnss3 libgbm1 libasound2t64
+      - name: Install locked JavaScript packages without unrelated download scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install real Electron runtime
+        run: node node_modules/electron/install.js
+      - name: Verify dependency advisories
+        run: npm audit --audit-level=moderate
+      - name: Install local fake model server dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: testing/fake-llm-server
+      - name: Build real desktop test package and native modules
+        run: npm run pre:e2e
+      - name: Run one real Electron first-window smoke under Xvfb
+        run: xvfb-run -a -s "-screen 0 1280x800x24 -nolisten tcp" npx playwright test e2e-tests/1.spec.ts --workers=1 --retries=0 --reporter=line
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: desktop-smoke-diagnostics
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 3

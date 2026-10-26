@@ -1,0 +1,1363 @@
+{
+  "scope": "All built-in registered tools; synthetic contexts, not installed user integrations or live provider calls",
+  "count": 59,
+  "tools": [
+    {
+      "name": "write_file",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "search_replace",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "copy_file",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "delete_file",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "rename_file",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "add_dependency",
+      "consent": "ask",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "execute_sql",
+      "consent": "ask",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "read_file",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": true,
+          "plan": true
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": true,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "list_files",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": true,
+          "plan": true
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": true,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "git_status",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": false,
+          "ask": true,
+          "plan": true
+        },
+        "subscription": {
+          "agent": true,
+          "build": false,
+          "ask": true,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "git_diff",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": false,
+          "ask": true,
+          "plan": true
+        },
+        "subscription": {
+          "agent": true,
+          "build": false,
+          "ask": true,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "git_log",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": false,
+          "ask": true,
+          "plan": true
+        },
+        "subscription": {
+          "agent": true,
+          "build": false,
+          "ask": true,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "git_show_commit",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": false,
+          "ask": true,
+          "plan": true
+        },
+        "subscription": {
+          "agent": true,
+          "build": false,
+          "ask": true,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "git_show_file",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": false,
+          "ask": true,
+          "plan": true
+        },
+        "subscription": {
+          "agent": true,
+          "build": false,
+          "ask": true,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "git_restore_file",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": false,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": false,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "grep",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": true,
+          "plan": true
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": true,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "code_search",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": true,
+      "scenarios": {
+        "api-key": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "explore_chat_history",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": false,
+          "ask": true,
+          "plan": true
+        },
+        "subscription": {
+          "agent": true,
+          "build": false,
+          "ask": true,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "search_chats",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "read_chat",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": false,
+          "ask": true,
+          "plan": true
+        },
+        "subscription": {
+          "agent": true,
+          "build": false,
+          "ask": true,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "explore_code",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "spawn_agent",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": false,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": false,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "list_agents",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": false,
+          "ask": true,
+          "plan": true
+        },
+        "subscription": {
+          "agent": true,
+          "build": false,
+          "ask": true,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "wait_agents",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": false,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": false,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "cancel_agent",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": false,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": false,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "send_message",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": false,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": false,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "followup_task",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": false,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": false,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "get_supabase_project_info",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "get_neon_project_info",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "get_database_table_schema",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "set_chat_summary",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": true,
+          "plan": true
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": true,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "add_integration",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "enable_nitro",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "read_logs",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": true,
+          "plan": true
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": true,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "inspect_preview",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": true,
+          "plan": true
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": true,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "control_preview",
+      "consent": "ask",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "web_search",
+      "consent": "ask",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "web_crawl",
+      "consent": "ask",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": true,
+          "plan": true
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": true,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "web_fetch",
+      "consent": "ask",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": true,
+          "plan": true
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": true,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "generate_image",
+      "consent": "ask",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "update_todos",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "run_type_checks",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": true,
+          "plan": true
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": true,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "run_pre_commit",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": true,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": false,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": false,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "run_shell",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": false,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": false,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "run_build",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "run_tests",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": false,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": false,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "generate_test_assertions",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": false,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": false,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "restart_app",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "reinstall_and_restart_app",
+      "consent": "ask",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "read_guide",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": true,
+          "plan": true
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": true,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "improve_prompt",
+      "consent": "ask",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": false,
+          "ask": true,
+          "plan": true
+        },
+        "subscription": {
+          "agent": true,
+          "build": false,
+          "ask": true,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "execute_sandbox_script",
+      "consent": "always",
+      "modifiesState": "context-dependent",
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "search_mcp_tools",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": false,
+          "ask": true,
+          "plan": true
+        },
+        "subscription": {
+          "agent": true,
+          "build": false,
+          "ask": true,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "get_mcp_tool_schema",
+      "consent": "always",
+      "modifiesState": false,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": false,
+          "ask": true,
+          "plan": true
+        },
+        "subscription": {
+          "agent": true,
+          "build": false,
+          "ask": true,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "suggest_plugin",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": true,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "planning_questionnaire",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": true
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "write_plan",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": true
+        },
+        "subscription": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "exit_plan",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": true
+        },
+        "subscription": {
+          "agent": false,
+          "build": false,
+          "ask": false,
+          "plan": true
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    },
+    {
+      "name": "write_app_blueprint",
+      "consent": "always",
+      "modifiesState": true,
+      "engineAdapter": false,
+      "hasEligibilityGate": false,
+      "hasDiscoveryGate": false,
+      "scenarios": {
+        "api-key": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        },
+        "subscription": {
+          "agent": true,
+          "build": true,
+          "ask": false,
+          "plan": false
+        }
+      },
+      "executionEvidence": "Registry/schema/policy checks only; inspect per-tool test and runtime results separately"
+    }
+  ]
+}

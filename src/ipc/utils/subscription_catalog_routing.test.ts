@@ -112,22 +112,16 @@ it.each([
         account,
       ),
     ).toBe(true);
-    const { modelClient } = await getModelClient(
+    const { modelClient, runtimeModel } = await getModelClient(
       selection === "auto"
         ? { provider: "auto", name: "auto" }
         : { provider: "openai", name: "gpt-fallback" },
       settings,
     );
-    if (selection === "auto") {
-      // Pro is a real available candidate; a passing test must prove it is not attempted.
-      expect(
-        (
-          modelClient.model as unknown as {
-            settings: { allowFallback: boolean[] };
-          }
-        ).settings.allowFallback,
-      ).toEqual([false, true]);
-    }
+    // Auto now resolves directly to the subscription model rather than a
+    // legacy paid candidate chain. Verify the source and actual network calls.
+    expect(runtimeModel.provider).toBe("openai");
+    expect(runtimeModel.connection).toBe("subscription");
     const model = modelClient.model as LanguageModelV3;
     await expect(
       method === "stream"

@@ -1,3 +1,4 @@
+import { isBrowserPreview } from "@/browser_preview/adapter";
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -35,6 +36,7 @@ export function useOauthCallbackPort() {
   // at their provider mid-form. A taken port surfaces on bind instead.
   const callbackPortQuery = useQuery({
     queryKey: ["mcp", "callbackPort"],
+    enabled: !isBrowserPreview(),
     queryFn: () =>
       ipc.mcp
         .probeCallbackPort()
@@ -51,6 +53,7 @@ export function useOauthStorageEncrypted() {
   // worse than going silent on a transient IPC hiccup.
   const oauthStorageEncryptedQuery = useQuery({
     queryKey: ["mcp", "isOauthStorageEncrypted"],
+    enabled: !isBrowserPreview(),
     queryFn: () =>
       ipc.mcp
         .isOauthStorageEncrypted()

@@ -61,6 +61,7 @@ it("uses current selected settings for Home without a fixed model", async () => 
     { prompt: "Build notes", iterations: 1 },
     settings,
     expect.any(AbortSignal),
+    undefined,
   );
   expect(mocks.chat).not.toHaveBeenCalled();
   expect(owner.listenerCount("destroyed")).toBe(0);
@@ -74,6 +75,7 @@ it("resolves a chat's selected source instead of reading Home settings", async (
   expect(mocks.chat).toHaveBeenCalledWith(4);
   expect(mocks.settings).not.toHaveBeenCalled();
   expect(mocks.refine.mock.calls[0][1]).toBe(selected);
+  expect(mocks.refine.mock.calls[0][3]).toBe(4);
 });
 it("bounds input and rejects malformed request identifiers at the contract", () => {
   for (const input of [
